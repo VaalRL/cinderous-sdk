@@ -132,6 +132,8 @@ export type RejectKind =
   | "unknown-path"
   | "bad-lane"
   | "rate-limited"
+  /** 主平面同一個 IP 反覆重連（SDK ADR 0111；Cinderous ADR-0391）：以 1013 關閉、原因保留文件網址 */
+  | "reconnect-limited"
   | "over-quota"
   | "unavailable"
   /** 全站連線數已滿（`MAX_CONNECTIONS`；SDK ADR 0100） */
@@ -181,6 +183,8 @@ export function upgradeRejection(kind: RejectKind, host: string, docsUrl: string
         ]
       : kind === "unavailable"
         ? ["temporarily unavailable", "temporarily unavailable: this relay could not open its storage. Retry in a few minutes or use another relay."]
+        : kind === "reconnect-limited"
+          ? ["rate-limited: reconnects", `rate-limited: too many reconnects from your IP; wait a few minutes before reconnecting.${docsTail}`]
         : kind === "rate-limited"
       ? ["rate-limited", `rate-limited: too many new connections to app lanes from your IP; retry in a minute.${docsTail}`]
       : kind === "bad-lane"
@@ -216,9 +220,10 @@ export function trafficNearFullWarning(percent: number): string {
   return `warning: near-full: ${percent}: 本站本月流量已用 ${percent}% 以上；用完後會暫停服務到下個重置日，建議另外連一座中繼`;
 }
 
-/** 升級被拒時用哪個關閉碼（SDK ADR 0097、0100）：暫時不能用的是 1013 Try Again Later，用法錯了是 1008 */
+/** 升級被拒時用哪個關閉碼（SDK ADR 0097、0100、0111）：暫時不能用的是 1013 Try Again Later，用法錯了是 1008 */
 export function upgradeCloseCode(kind: RejectKind): number {
-  return TRY_AGAIN_LATER.has(kind) ? UPGRADE_UNAVAILABLE_CLOSE_CODE : UPGRADE_REJECT_CLOSE_CODE;
+  // 反覆重連（SDK ADR 0111）：用法沒錯、只是太頻繁，也是 1013——用戶端會整座退避（SDK ADR 0108），不會立刻再連
+  return TRY_AGAIN_LATER.has(kind) || kind === "reconnect-limited" ? UPGRADE_UNAVAILABLE_CLOSE_CODE : UPGRADE_REJECT_CLOSE_CODE;
 }
 
 /** 僅限車道模式下，被拒路徑的 NIP-11 回應本文（SDK ADR 0051）：與猜錯車道一模一樣、不透露任何車道。 */

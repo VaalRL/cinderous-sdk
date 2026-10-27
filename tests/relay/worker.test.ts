@@ -12,7 +12,7 @@
 import { createRequire } from "node:module";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import { buildAuthEvent, buildHttpAuthEvent, buildInboxAck, finalizeEvent, minePow, generateSecretKey, getPublicKey, httpAuthHeader, type NostrEvent, type SecretKey } from "../../src/protocol/index.js";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import worker, { mintTurnResponse, turnPreflightResponse, RelayRoom, type Env } from "../../src/relay/worker.js";
 import {
   MAX_MESSAGES_PER_MINUTE,
@@ -21,6 +21,8 @@ import {
 } from "../../src/relay/host-config.js";
 import { namedLaneName } from "../../src/relay/shard.js";
 import { fetchRelayFilePolicy, type RelayInfoFetch } from "../../src/sync/vault/relay-check.js";
+import { upgradeCloseCode, upgradeRejection } from "../../src/relay/reject-messages.js";
+import { classifyRelayClose } from "../../src/protocol/relay-reject.js";
 import { leadingZeroBits, OFFLINE_CEILING_REJECT, RelayCore } from "../../src/relay/relay-core.js";
 import { relayWorkerVars } from "../../src/deploy/shared.js";
 import { guardFor, messagesPerSecondPerIpFrom, storeOptions } from "../../src/relay/host-config.js";
@@ -2470,5 +2472,179 @@ describe("DO 起不來時說明原因（SDK ADR 0097／Cinderous ADR-0387；額�
     const ok = await upgradeWith(() => Promise.resolve(new Response(null, { status: 101 })));
     expect(ok.status).toBe(101);
     expect(ok.server).toBeUndefined();
+  });
+});
+
+describe("主平面的反覆重連限速（SDK ADR 0111；Cinderous ADR-0391）", () => {
+  const IP = "203.0.113.7";
+  const limiter = (allow: boolean) => {
+    const keys: string[] = [];
+    return {
+      keys,
+      binding: {
+        limit: (opts: { key: string }) => {
+          keys.push(opts.key);
+          return Promise.resolve({ success: allow });
+        },
+      },
+    };
+  };
+  /** 經 worker 送一次升級；回傳 [狀態碼, 是否碰到 DO, worker 自建那組的伺服端] */
+  const viaWorker = async (path: string, env: Partial<Env>, ip?: string) => {
+    let touchedDo = false;
+    FakeWebSocketPair.last = undefined;
+    const full = {
+      ...env,
+      RELAY_ROOM: {
+        idFromName: () => {
+          touchedDo = true;
+          return {} as never;
+        },
+        get: () => ({ fetch: () => new Response(null, { status: 101 }) }),
+      },
+    } as unknown as Env;
+    const headers: Record<string, string> = { Upgrade: "websocket" };
+    if (ip !== undefined) headers["CF-Connecting-IP"] = ip;
+    const res = await worker.fetch(new Request(`https://${HOST}${path}`, { headers }), full);
+    // 上面先設成 undefined，TS 會把它收窄掉；這裡讀的是 worker 剛建立的那一組
+    return { status: res.status, touchedDo, server: (FakeWebSocketPair.last as FakeWebSocketPair | undefined)?.[1] };
+  };
+  const noticeOf = (ws: FakeWs | undefined): string => (JSON.parse(ws?.sent[0] ?? "[]") as unknown[])[1] as string;
+
+  it("🔴 回絕的句子與 Cinderous 錨點逐字相同；以 1013 關閉、原因保留文件網址", () => {
+    const withDocs = upgradeRejection("reconnect-limited", HOST, "https://docs.example/relay");
+    expect(withDocs).toEqual({
+      notice: "rate-limited: too many reconnects from your IP; wait a few minutes before reconnecting. Docs: https://docs.example/relay",
+      reason: "rate-limited: reconnects; docs: https://docs.example/relay",
+    });
+    expect(upgradeRejection("reconnect-limited", HOST, undefined)).toEqual({
+      notice: "rate-limited: too many reconnects from your IP; wait a few minutes before reconnecting.",
+      reason: "rate-limited: reconnects",
+    });
+    // 文件網址太長（關閉原因超過 123 bytes）就只留短句
+    expect(upgradeRejection("reconnect-limited", HOST, `https://docs.example/${"x".repeat(120)}`).reason).toBe("rate-limited: reconnects");
+    expect(upgradeCloseCode("reconnect-limited")).toBe(1013);
+    // 用戶端把 1013 當成「這座暫時不能用」、整座退避（SDK ADR 0108）——不會立刻再連
+    expect(classifyRelayClose(1013, withDocs.reason)).toMatchObject({ kind: "unavailable", retryable: true });
+  });
+
+  it("🔴 Worker 一道：以「IP＋DO 名」計數，超過就說明原因並以 1013 關閉，**不碰 DO**", async () => {
+    // 鍵用 DO 名而不是原始路徑：`/s/B` 這類大小寫變化就繞不過去
+    for (const [path, doName] of [["/", "global"], ["/s/b", "shard-b"], ["/s/B", "shard-b"], ["/presence", "presence"]] as const) {
+      const { binding, keys } = limiter(false);
+      const { status, touchedDo, server } = await viaWorker(path, { STRICT_UPGRADE_LIMIT: binding }, IP);
+      expect(touchedDo, path).toBe(false);
+      expect(status, path).toBe(101);
+      expect(keys, path).toEqual([`${IP} ${doName}`]);
+      expect(noticeOf(server).startsWith("rate-limited:"), path).toBe(true);
+      expect(noticeOf(server), path).toContain("reconnect");
+      expect(server?.closeCode, path).toBe(1013);
+    }
+  });
+
+  it("額度內照常升級；車道不套這一道（車道有自己的 APP_LANE_LIMIT）", async () => {
+    const ok = limiter(true);
+    expect(await viaWorker("/s/b", { STRICT_UPGRADE_LIMIT: ok.binding }, IP)).toMatchObject({ status: 101, touchedDo: true });
+    const deny = limiter(false);
+    expect(await viaWorker("/app/testgame", { STRICT_UPGRADE_LIMIT: deny.binding }, IP)).toMatchObject({ status: 101, touchedDo: true });
+    expect(deny.keys).toEqual([]);
+  });
+
+  it("沒有 CF-Connecting-IP 或沒有綁定就不限——不把所有人塞進同一個桶", async () => {
+    const deny = limiter(false);
+    expect(await viaWorker("/s/b", { STRICT_UPGRADE_LIMIT: deny.binding })).toMatchObject({ status: 101, touchedDo: true });
+    expect(deny.keys).toEqual([]);
+    expect(await viaWorker("/s/b", {}, IP)).toMatchObject({ status: 101, touchedDo: true });
+  });
+
+  const upgradeDo = (room: RelayRoom, ip: string, path = "/s/b") =>
+    room.fetch(new Request(`https://${HOST}${path}`, { headers: { Upgrade: "websocket", "CF-Connecting-IP": ip } }));
+
+  it("🔴 DO 一道：同一個 IP 10 分鐘內第 21 次在 acceptWebSocket 之前回絕（不掛連線、不寫儲存）；別的 IP 照常", async () => {
+    const state = new FakeState();
+    const room = newRoom(state);
+    for (let i = 0; i < 20; i += 1) await upgradeDo(room, IP);
+    expect(state.sockets).toHaveLength(20);
+    const kvBefore = JSON.stringify([...state.kv]);
+    FakeWebSocketPair.last = undefined;
+    const res = await upgradeDo(room, IP);
+    expect(res.status).toBe(101);
+    expect(state.sockets).toHaveLength(20);
+    expect(JSON.stringify([...state.kv])).toBe(kvBefore);
+    const server = (FakeWebSocketPair.last as FakeWebSocketPair | undefined)?.[1];
+    expect(noticeOf(server).startsWith("rate-limited:")).toBe(true);
+    expect(server?.closeCode).toBe(1013);
+    await upgradeDo(room, "198.51.100.9");
+    expect(state.sockets).toHaveLength(21);
+  });
+
+  it("DO 一道可以用 RECONNECT_GUARD 調整或關掉；車道的 DO 不套", async () => {
+    const off = new FakeState();
+    const roomOff = newRoom(off, { RECONNECT_GUARD: "off" } as Env);
+    for (let i = 0; i < 25; i += 1) await upgradeDo(roomOff, IP);
+    expect(off.sockets).toHaveLength(25);
+    const tight = new FakeState();
+    const roomTight = newRoom(tight, { RECONNECT_GUARD: "2/600/600" } as Env);
+    for (let i = 0; i < 3; i += 1) await upgradeDo(roomTight, IP);
+    expect(tight.sockets).toHaveLength(2);
+    const lane = new FakeState();
+    const roomLane = newRoom(lane, { RECONNECT_GUARD: "2/600/600" } as Env);
+    for (let i = 0; i < 3; i += 1) await upgradeDo(roomLane, IP, "/app/testgame");
+    expect(lane.sockets).toHaveLength(3);
+  });
+});
+
+describe("診斷沒認證就斷線的連線（SDK ADR 0111；Cinderous ADR-0392）", () => {
+  const openStrict = async (room: RelayRoom, state: FakeState): Promise<FakeWs> => {
+    const before = state.sockets.length;
+    await room.fetch(new Request(`https://${HOST}/s/b`));
+    return state.sockets[before]!;
+  };
+
+  it("🔴 DIAG_UNAUTH_LOG=1：沒認證就斷線印一行（動詞、kind、回覆、關閉碼），不含 filter 的公鑰", async () => {
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => void logs.push(args.join(" ")));
+    try {
+      const state = new FakeState();
+      const room = newRoom(state, { DIAG_UNAUTH_LOG: "1" } as Env);
+      const ws = await openStrict(room, state);
+      room.webSocketMessage(ws as unknown as WebSocket, JSON.stringify(["REQ", "s", { kinds: [10050], authors: ["b".repeat(64)] }]));
+      room.webSocketClose(ws as unknown as WebSocket, 1006);
+      const line = logs.find((l) => l.startsWith("unauth-diag"));
+      expect(line).toMatch(/^unauth-diag in=REQ kinds=10050 out=.*CLOSED:auth-required.* code=1006$/);
+      expect(line).not.toContain("b".repeat(16));
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("🔴 認證過的連線不印", async () => {
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => void logs.push(args.join(" ")));
+    try {
+      const state = new FakeState();
+      const room = newRoom(state, { DIAG_UNAUTH_LOG: "1" } as Env);
+      const ws = await openStrict(room, state);
+      expect(authenticate(room, ws, generateSecretKey())).toBe(true);
+      room.webSocketClose(ws as unknown as WebSocket, 1000);
+      expect(logs.filter((l) => l.startsWith("unauth-diag"))).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("預設（沒設 DIAG_UNAUTH_LOG）什麼都不印", async () => {
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => void logs.push(args.join(" ")));
+    try {
+      const state = new FakeState();
+      const room = newRoom(state);
+      const ws = await openStrict(room, state);
+      room.webSocketMessage(ws as unknown as WebSocket, JSON.stringify(["REQ", "s", { kinds: [1] }]));
+      room.webSocketClose(ws as unknown as WebSocket, 1006);
+      expect(logs.filter((l) => l.startsWith("unauth-diag"))).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

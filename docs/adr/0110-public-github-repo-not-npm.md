@@ -56,11 +56,21 @@
 - － 在公開 repo 建立之前，NIP-11 `software` 的預設網址連不到（404）。
 - 驗證：`npm run check` 全過；NIP-11、部署包快照、配對 QR 容量的測試照新的網址。
 
+## 公開（2026-10-27）
+
+- 使用者建立了 `VaalRL/cinderous-sdk`（GitHub 範本帶了一個 Apache-2.0 的 `LICENSE`），選「用一個 commit 直接覆蓋」：以 dev repo 的 `v0.76.1` 匯出（LF），force push 成單一初始 commit `0180d6a`，打上 `v0.76.1`；GitHub 認得的授權是 AGPL-3.0。打開了 private vulnerability reporting。
+- 匯出時做的調整（dev repo 保留原樣，因為那些檔案在 dev repo 還在）：
+  - 拿掉第 6 項的檔案；
+  - README 兩份與 PRD 裡連到 companion-specs、`RESEARCH-JOURNEY.md` 的連結改成純文字。
+- 匯出時順便改、dev repo 也同步改的：VPS 指南的前置條件改成 `git clone https://github.com/VaalRL/cinderous-sdk`；PRD 的署名從虛構的團隊名稱改成「維護者：VaalRL」（使用者 2026-10-27）。
+- 驗證：
+  - 匯出的副本 `npm ci`、typecheck、測試：215 個測試檔、3,030 個測試，`node-capacity` 一個在全套負載下失敗，單獨重跑 3 次都過（時間相關的測試，dev repo 的完整檢查也過）；少掉的 5 個測試檔在 `poc/`。
+  - 空專案 `npm install github:VaalRL/cinderous-sdk#v0.76.1` 裝得起來，主入口與 `./relay` 載得到，NIP-11 `software` 是公開 repo。
+- 之後每次發版都要重做一樣的匯出：建議寫成腳本（排除清單與連結改寫放在同一處）。
+
 ## 後續（未做）
 
 **公開時要做：**
-- 照第 6 項排除檔案，修掉連到被排除檔案的連結。
-- 建立 `VaalRL/cinderous-sdk`（單一初始 commit），打上與 dev repo 相同的 tag；打開 GitHub 的 private vulnerability reporting（`SECURITY.md` 靠它）。
 - ADR 0094：發布流程把 `relayWorkerSource` 上傳成 release asset，外掛改用 `fetchRelayWorker`。
 - ADR 0050：部署包預設從內嵌 `sdk/` 改成 `github:VaalRL/cinderous-sdk#vX.Y.Z`；JSON Schema 的 `$id` 從 URN 改成可解析的網址。
 - Docker 映像改名 `ghcr.io/vaalrl/cinderous-relay-lite`（`cinderous/relay-lite` 也被佔了）。

@@ -102,6 +102,10 @@ export class RelayCore {
     isAuthed(connId) {
         return this.authState.get(connId)?.pubkey !== undefined;
     }
+    /** 這條連線完成 NIP-42 認證了嗎（SDK ADR 0111 的診斷用：認證過的連線一律不記） */
+    isAuthenticated(connId) {
+        return this.isAuthed(connId);
+    }
     now() {
         return this.opts.now?.() ?? Math.floor(Date.now() / 1000);
     }

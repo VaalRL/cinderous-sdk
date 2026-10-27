@@ -141,8 +141,8 @@ export interface Env extends IotHomeEnv {
      * 可以持續灌訊息而完全不需要再升級。核心那一道超限就關連線，關了要回來就得再升級
      * ——兩道接起來，每個 IP 的**持續**成本才是有界的。
      *
-     * ⚠ 嚴格平面刻意不套：那裡是本專案自己的使用者、且要求 NIP-42，而行動網路的
-     * 共用 IP 會讓一整群人共用同一個桶。
+     * ⚠ 嚴格平面不套這一道：那裡是本專案自己的使用者、且要求 NIP-42，而行動網路的
+     * 共用 IP 會讓一整群人共用同一個桶。主平面另有一道比較寬的（`STRICT_UPGRADE_LIMIT`，SDK ADR 0111）。
      */
     APP_LANE_LIMIT?: {
         limit(opts: {
@@ -151,6 +151,28 @@ export interface Env extends IotHomeEnv {
             success: boolean;
         }>;
     };
+    /**
+     * 主平面的升級限速（SDK ADR 0111；Cinderous ADR-0391）：以「IP＋DO 名」計數（主平面分 16 片，同一個共用 IP 後面的人
+     * 分散在不同的桶），在碰 DO 之前擋掉。**未綁定＝不限速**。Cloudflare 只支援 10／60 秒窗口，擋不住慢速重連——
+     * 長窗口那道在 DO 裡（`RECONNECT_GUARD`）。
+     */
+    STRICT_UPGRADE_LIMIT?: {
+        limit(opts: {
+            key: string;
+        }): Promise<{
+            success: boolean;
+        }>;
+    };
+    /**
+     * 主平面 DO 的反覆重連限速（SDK ADR 0111）：`次數/窗口秒/封鎖秒`（預設 `20/600/600`），`off`＝關掉。
+     * 只在記憶體計數、不寫儲存。
+     */
+    RECONNECT_GUARD?: string;
+    /**
+     * 診斷「沒認證就斷線」的主平面連線（SDK ADR 0111；Cinderous ADR-0392）：`1`＝每條印一行摘要到 console
+     * （動詞、kind、回覆、存活秒數、關閉碼；不記內容、公鑰、IP）。**預設關閉**；只在要查的時候開，看完關掉。
+     */
+    DIAG_UNAUTH_LOG?: string;
     /** 站名／描述／營運者公鑰（hex）／聯絡方式；未設＝該欄不出現在文件裡。 */
     RELAY_NAME?: string;
     RELAY_DESCRIPTION?: string;
@@ -218,6 +240,7 @@ export default _default;
  *（放不下 16KB 的大訂閱溢位到 DO SQLite，Cinderous ADR-0373），喚醒時據此重建 RelayCore。
  */
 export declare class RelayRoom {
+    #private;
     private readonly ctx;
     private readonly env;
     /** DO 內建 SQLite 的同步執行器；政策確定後要用它重建 store（ADR-0366 P1 #7）。 */
@@ -244,6 +267,8 @@ export declare class RelayRoom {
      * 與 `node-relay.ts` 用同一組常數，兩座宿主不可能各走各的。
      */
     private buildCore;
+    private unauthDiag;
+    private reconnectGuard;
     /** DO 定時鬧鐘（C2）：清除已過期留言並重排下一次。 */
     alarm(): Promise<void>;
     fetch(request: Request): Promise<Response>;
@@ -252,7 +277,7 @@ export declare class RelayRoom {
     /** 唯讀寬限期已過（SDK ADR 0052）：這顆 DO 的車道列在 `READONLY_LANES` 但到期了 */
     private laneExpired;
     webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): void;
-    webSocketClose(ws: WebSocket): void;
+    webSocketClose(ws: WebSocket, code?: number): void;
     webSocketError(ws: WebSocket): void;
     /** 連線結束：記憶體與溢位列一起清（Cinderous ADR-0373）。 */
     private forget;

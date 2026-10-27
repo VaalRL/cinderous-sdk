@@ -215,6 +215,8 @@ export declare class RelayCore {
     constructor(opts?: RelayCoreOptions);
     private newChallenge;
     private isAuthed;
+    /** 這條連線完成 NIP-42 認證了嗎（SDK ADR 0111 的診斷用：認證過的連線一律不記） */
+    isAuthenticated(connId: string): boolean;
     private now;
     /**
      * 建立連線；`requireAuth` 時回 NIP-42 AUTH 挑戰供宿主送出（否則空）。

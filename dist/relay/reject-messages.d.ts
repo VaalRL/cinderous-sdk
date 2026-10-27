@@ -80,7 +80,9 @@ export declare function droppedNotice(d: DroppedSummary): string;
  * 升級請求被拒的原因（ADR-0368）。`over-quota`／`unavailable`（SDK ADR 0097）：路徑沒錯，是這座中繼的
  * Durable Object 起不來——寫入額度用完，或其他暫時的錯誤；客戶端該稍後再試或改用別座。
  */
-export type RejectKind = "unknown-path" | "bad-lane" | "rate-limited" | "over-quota" | "unavailable"
+export type RejectKind = "unknown-path" | "bad-lane" | "rate-limited"
+/** 主平面同一個 IP 反覆重連（SDK ADR 0111；Cinderous ADR-0391）：以 1013 關閉、原因保留文件網址 */
+ | "reconnect-limited" | "over-quota" | "unavailable"
 /** 全站連線數已滿（`MAX_CONNECTIONS`；SDK ADR 0100） */
  | "too-many-connections"
 /** 這個 IP 的連線數已滿（`MAX_CONNECTIONS_PER_IP`；SDK ADR 0100） */
@@ -109,7 +111,7 @@ export declare function trafficQuotaRejection(resetsAtSec: number): {
 };
 /** 本月流量快用完（SDK ADR 0101）：與空間預警同一個詞元（`warning: near-full: <級>:`），客戶端照既有的分類認得 */
 export declare function trafficNearFullWarning(percent: number): string;
-/** 升級被拒時用哪個關閉碼（SDK ADR 0097、0100）：暫時不能用的是 1013 Try Again Later，用法錯了是 1008 */
+/** 升級被拒時用哪個關閉碼（SDK ADR 0097、0100、0111）：暫時不能用的是 1013 Try Again Later，用法錯了是 1008 */
 export declare function upgradeCloseCode(kind: RejectKind): number;
 /** 僅限車道模式下，被拒路徑的 NIP-11 回應本文（SDK ADR 0051）：與猜錯車道一模一樣、不透露任何車道。 */
 export declare const UNKNOWN_PATH_INFO_BODY = "unknown relay path";

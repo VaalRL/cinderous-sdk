@@ -9,6 +9,8 @@ import { routeForPath } from "./shard.js";
 import { routeIotRequest } from "./iot-home-room.js";
 export { IotHomeRoom } from "./iot-home-room.js";
 import { SqlMessageStore } from "./sql-message-store.js";
+import { ReconnectGuard, reconnectGuardFrom } from "./reconnect-guard.js";
+import { UnauthDiag, unauthDiagEnabled } from "./unauth-diag.js";
 /**
  * `/turn` 的 CORS 標頭（審查發現 #1）。
  *
@@ -257,6 +259,12 @@ export default {
             if (!success)
                 return rejectUpgrade("rate-limited", url.host, env);
         }
+        // 主平面的升級限速（SDK ADR 0111）：以「IP＋DO 名」計數，同樣在碰 DO 之前擋掉；缺標頭或未綁定就不限
+        if (route.profile !== "app" && env.STRICT_UPGRADE_LIMIT && clientIp) {
+            const { success } = await env.STRICT_UPGRADE_LIMIT.limit({ key: `${clientIp} ${route.doName}` });
+            if (!success)
+                return rejectUpgrade("reconnect-limited", url.host, env);
+        }
         // 原始 request 原封不動轉給 DO——DO 對**同一個路徑**跑**同一個** `routeForPath` 算出政策，
         // 所以兩邊不可能不一致。刻意不用標頭傳遞：那要 clone request，而「`Upgrade` 標頭在
         // clone 之後還在不在」是平台細節，賭它不如不賭。
@@ -413,6 +421,22 @@ export class RelayRoom {
             inboxAckGraceSec: inboxAckGraceFor(storeOpts),
         });
     }
+    /** 沒認證就斷線的診斷（SDK ADR 0111）：`DIAG_UNAUTH_LOG=1` 才有，否則 null */
+    #unauthDiag;
+    unauthDiag() {
+        if (this.#unauthDiag === undefined)
+            this.#unauthDiag = unauthDiagEnabled(this.env.DIAG_UNAUTH_LOG) ? new UnauthDiag() : null;
+        return this.#unauthDiag;
+    }
+    /** 反覆重連限速（SDK ADR 0111）：第一次用到才依 `RECONNECT_GUARD` 建立；`off` 時為 null */
+    #reconnectGuard;
+    reconnectGuard() {
+        if (this.#reconnectGuard === undefined) {
+            const config = reconnectGuardFrom(this.env.RECONNECT_GUARD);
+            this.#reconnectGuard = config ? new ReconnectGuard(config) : null;
+        }
+        return this.#reconnectGuard;
+    }
     /** DO 定時鬧鐘（C2）：清除已過期留言並重排下一次。 */
     async alarm() {
         // 順手還原＋清孤兒溢位列（Cinderous ADR-0373）：部署重啟時 `webSocketClose` 不保證會跑，
@@ -426,6 +450,12 @@ export class RelayRoom {
         // 認不得的路徑在 worker 就被擋掉了（ADR-0368，不碰 DO）；真的漏進來就當嚴格（fail-closed）。
         const route = routeOf(new URL(request.url).pathname, this.env);
         const wanted = route?.profile ?? "strict";
+        // 主平面的反覆重連限速（SDK ADR 0111）：在 acceptWebSocket 與任何儲存寫入之前回絕——只花這一次 DO 請求
+        const clientIp = request.headers.get("CF-Connecting-IP");
+        const guard = this.reconnectGuard();
+        if (wanted !== "app" && clientIp && guard && !guard.admit(clientIp)) {
+            return rejectUpgrade("reconnect-limited", hostOf(request) ?? new URL(request.url).host, this.env);
+        }
         // 已知租戶有自己的 DO（`app:<id>`），所以這個旗標對一顆 DO 而言是恆定的；
         // 第一次請求時釘住，與政策同一個時機。
         const wantedKnown = route?.profile === "app" && route.known;
@@ -490,7 +520,9 @@ export class RelayRoom {
         // 設定檔——同一份 Worker 可能同時服務 workers.dev 與自訂網域，寫死任一個都會誤擋另一個。
         const relayHost = hostOf(request);
         // IP 只用在每 IP 速率限制；CF-Connecting-IP 由 Cloudflare 填寫，客戶端偽造不了
-        const out = this.core.connect(connId, relayHost, request.headers.get("CF-Connecting-IP") ?? undefined); // 產生 NIP-42 AUTH 挑戰
+        const out = this.core.connect(connId, relayHost, clientIp ?? undefined); // 產生 NIP-42 AUTH 挑戰
+        if (wanted !== "app")
+            this.unauthDiag()?.open(connId);
         const unsaved = this.persist(server, connId); // 存回 attachment（含挑戰），休眠後可還原
         this.dispatch([...restored, ...out, ...unsaved]);
         return new Response(null, { status: 101, webSocket: client });
@@ -524,18 +556,31 @@ export class RelayRoom {
             return;
         }
         const raw = typeof message === "string" ? message : "";
+        const diag = this.unauthDiag();
+        diag?.inbound(connId, raw);
         const out = this.core.handle(connId, raw);
+        if (diag) {
+            for (const o of out)
+                if (o.to === connId)
+                    diag.outbound(connId, o.message);
+            if (this.core.isAuthenticated(connId))
+                diag.authed(connId);
+        }
         const unsaved = this.persist(ws, connId); // 訂閱/認證可能已變，更新 attachment（沒變則零寫入）
         // 存不住的訂閱已被關掉：它的 EVENT/EOSE 不送，只送 CLOSED（說明原因）。
         const closed = new Set(unsaved.map((o) => o.message[1]));
         const kept = closed.size === 0 ? out : out.filter((o) => !isSubReply(o, connId, closed));
         this.dispatch([...restored, ...kept, ...unsaved]);
     }
-    webSocketClose(ws) {
+    webSocketClose(ws, code) {
         const restored = this.ensureHydrated();
         const connId = connIdOf(ws);
-        if (connId)
+        if (connId) {
+            const line = this.unauthDiag()?.close(connId, code);
+            if (line)
+                console.log(line);
             this.forget(connId);
+        }
         try {
             ws.close();
         }
@@ -548,8 +593,12 @@ export class RelayRoom {
         // 先還原（Cinderous ADR-0373）：休眠後才斷線時，要先讀回 attachment 才知道有哪些溢位列要刪。
         const restored = this.ensureHydrated();
         const connId = connIdOf(ws);
-        if (connId)
+        if (connId) {
+            const line = this.unauthDiag()?.close(connId, undefined);
+            if (line)
+                console.log(line);
             this.forget(connId);
+        }
         this.dispatch(restored);
     }
     /** 連線結束：記憶體與溢位列一起清（Cinderous ADR-0373）。 */

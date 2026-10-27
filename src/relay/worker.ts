@@ -28,6 +28,8 @@ import { routeForPath } from "./shard.js";
 import { routeIotRequest, type IotHomeEnv } from "./iot-home-room.js";
 export { IotHomeRoom } from "./iot-home-room.js";
 import { type SqlExec, SqlMessageStore } from "./sql-message-store.js";
+import { ReconnectGuard, reconnectGuardFrom } from "./reconnect-guard.js";
+import { UnauthDiag, unauthDiagEnabled } from "./unauth-diag.js";
 
 export interface Env extends IotHomeEnv {
   RELAY_ROOM: DurableObjectNamespace;
@@ -160,10 +162,26 @@ export interface Env extends IotHomeEnv {
    * 可以持續灌訊息而完全不需要再升級。核心那一道超限就關連線，關了要回來就得再升級
    * ——兩道接起來，每個 IP 的**持續**成本才是有界的。
    *
-   * ⚠ 嚴格平面刻意不套：那裡是本專案自己的使用者、且要求 NIP-42，而行動網路的
-   * 共用 IP 會讓一整群人共用同一個桶。
+   * ⚠ 嚴格平面不套這一道：那裡是本專案自己的使用者、且要求 NIP-42，而行動網路的
+   * 共用 IP 會讓一整群人共用同一個桶。主平面另有一道比較寬的（`STRICT_UPGRADE_LIMIT`，SDK ADR 0111）。
    */
   APP_LANE_LIMIT?: { limit(opts: { key: string }): Promise<{ success: boolean }> };
+  /**
+   * 主平面的升級限速（SDK ADR 0111；Cinderous ADR-0391）：以「IP＋DO 名」計數（主平面分 16 片，同一個共用 IP 後面的人
+   * 分散在不同的桶），在碰 DO 之前擋掉。**未綁定＝不限速**。Cloudflare 只支援 10／60 秒窗口，擋不住慢速重連——
+   * 長窗口那道在 DO 裡（`RECONNECT_GUARD`）。
+   */
+  STRICT_UPGRADE_LIMIT?: { limit(opts: { key: string }): Promise<{ success: boolean }> };
+  /**
+   * 主平面 DO 的反覆重連限速（SDK ADR 0111）：`次數/窗口秒/封鎖秒`（預設 `20/600/600`），`off`＝關掉。
+   * 只在記憶體計數、不寫儲存。
+   */
+  RECONNECT_GUARD?: string;
+  /**
+   * 診斷「沒認證就斷線」的主平面連線（SDK ADR 0111；Cinderous ADR-0392）：`1`＝每條印一行摘要到 console
+   * （動詞、kind、回覆、存活秒數、關閉碼；不記內容、公鑰、IP）。**預設關閉**；只在要查的時候開，看完關掉。
+   */
+  DIAG_UNAUTH_LOG?: string;
   // ── NIP-11 Relay Information Document（ADR-0260／0089／0092）─────────────────
   /** 站名／描述／營運者公鑰（hex）／聯絡方式；未設＝該欄不出現在文件裡。 */
   RELAY_NAME?: string;
@@ -446,6 +464,11 @@ export default {
       const { success } = await env.APP_LANE_LIMIT.limit({ key: clientIp });
       if (!success) return rejectUpgrade("rate-limited", url.host, env);
     }
+    // 主平面的升級限速（SDK ADR 0111）：以「IP＋DO 名」計數，同樣在碰 DO 之前擋掉；缺標頭或未綁定就不限
+    if (route.profile !== "app" && env.STRICT_UPGRADE_LIMIT && clientIp) {
+      const { success } = await env.STRICT_UPGRADE_LIMIT.limit({ key: `${clientIp} ${route.doName}` });
+      if (!success) return rejectUpgrade("reconnect-limited", url.host, env);
+    }
     // 原始 request 原封不動轉給 DO——DO 對**同一個路徑**跑**同一個** `routeForPath` 算出政策，
     // 所以兩邊不可能不一致。刻意不用標頭傳遞：那要 clone request，而「`Upgrade` 標頭在
     // clone 之後還在不在」是平台細節，賭它不如不賭。
@@ -615,6 +638,23 @@ export class RelayRoom {
     });
   }
 
+  /** 沒認證就斷線的診斷（SDK ADR 0111）：`DIAG_UNAUTH_LOG=1` 才有，否則 null */
+  #unauthDiag: UnauthDiag | null | undefined;
+  private unauthDiag(): UnauthDiag | null {
+    if (this.#unauthDiag === undefined) this.#unauthDiag = unauthDiagEnabled(this.env.DIAG_UNAUTH_LOG) ? new UnauthDiag() : null;
+    return this.#unauthDiag;
+  }
+
+  /** 反覆重連限速（SDK ADR 0111）：第一次用到才依 `RECONNECT_GUARD` 建立；`off` 時為 null */
+  #reconnectGuard: ReconnectGuard | null | undefined;
+  private reconnectGuard(): ReconnectGuard | null {
+    if (this.#reconnectGuard === undefined) {
+      const config = reconnectGuardFrom(this.env.RECONNECT_GUARD);
+      this.#reconnectGuard = config ? new ReconnectGuard(config) : null;
+    }
+    return this.#reconnectGuard;
+  }
+
   /** DO 定時鬧鐘（C2）：清除已過期留言並重排下一次。 */
   async alarm(): Promise<void> {
     // 順手還原＋清孤兒溢位列（Cinderous ADR-0373）：部署重啟時 `webSocketClose` 不保證會跑，
@@ -629,6 +669,12 @@ export class RelayRoom {
     // 認不得的路徑在 worker 就被擋掉了（ADR-0368，不碰 DO）；真的漏進來就當嚴格（fail-closed）。
     const route = routeOf(new URL(request.url).pathname, this.env);
     const wanted: RelayProfile = route?.profile ?? "strict";
+    // 主平面的反覆重連限速（SDK ADR 0111）：在 acceptWebSocket 與任何儲存寫入之前回絕——只花這一次 DO 請求
+    const clientIp = request.headers.get("CF-Connecting-IP");
+    const guard = this.reconnectGuard();
+    if (wanted !== "app" && clientIp && guard && !guard.admit(clientIp)) {
+      return rejectUpgrade("reconnect-limited", hostOf(request) ?? new URL(request.url).host, this.env);
+    }
     // 已知租戶有自己的 DO（`app:<id>`），所以這個旗標對一顆 DO 而言是恆定的；
     // 第一次請求時釘住，與政策同一個時機。
     const wantedKnown = route?.profile === "app" && route.known;
@@ -694,7 +740,8 @@ export class RelayRoom {
     // 設定檔——同一份 Worker 可能同時服務 workers.dev 與自訂網域，寫死任一個都會誤擋另一個。
     const relayHost = hostOf(request);
     // IP 只用在每 IP 速率限制；CF-Connecting-IP 由 Cloudflare 填寫，客戶端偽造不了
-    const out = this.core.connect(connId, relayHost, request.headers.get("CF-Connecting-IP") ?? undefined); // 產生 NIP-42 AUTH 挑戰
+    const out = this.core.connect(connId, relayHost, clientIp ?? undefined); // 產生 NIP-42 AUTH 挑戰
+    if (wanted !== "app") this.unauthDiag()?.open(connId);
     const unsaved = this.persist(server, connId); // 存回 attachment（含挑戰），休眠後可還原
     this.dispatch([...restored, ...out, ...unsaved]);
     return new Response(null, { status: 101, webSocket: client });
@@ -729,7 +776,13 @@ export class RelayRoom {
       return;
     }
     const raw = typeof message === "string" ? message : "";
+    const diag = this.unauthDiag();
+    diag?.inbound(connId, raw);
     const out = this.core.handle(connId, raw);
+    if (diag) {
+      for (const o of out) if (o.to === connId) diag.outbound(connId, o.message);
+      if (this.core.isAuthenticated(connId)) diag.authed(connId);
+    }
     const unsaved = this.persist(ws, connId); // 訂閱/認證可能已變，更新 attachment（沒變則零寫入）
     // 存不住的訂閱已被關掉：它的 EVENT/EOSE 不送，只送 CLOSED（說明原因）。
     const closed = new Set(unsaved.map((o) => o.message[1]));
@@ -737,10 +790,14 @@ export class RelayRoom {
     this.dispatch([...restored, ...kept, ...unsaved]);
   }
 
-  webSocketClose(ws: WebSocket): void {
+  webSocketClose(ws: WebSocket, code?: number): void {
     const restored = this.ensureHydrated();
     const connId = connIdOf(ws);
-    if (connId) this.forget(connId);
+    if (connId) {
+      const line = this.unauthDiag()?.close(connId, code);
+      if (line) console.log(line);
+      this.forget(connId);
+    }
     try {
       ws.close();
     } catch {
@@ -753,7 +810,11 @@ export class RelayRoom {
     // 先還原（Cinderous ADR-0373）：休眠後才斷線時，要先讀回 attachment 才知道有哪些溢位列要刪。
     const restored = this.ensureHydrated();
     const connId = connIdOf(ws);
-    if (connId) this.forget(connId);
+    if (connId) {
+      const line = this.unauthDiag()?.close(connId, undefined);
+      if (line) console.log(line);
+      this.forget(connId);
+    }
     this.dispatch(restored);
   }
 

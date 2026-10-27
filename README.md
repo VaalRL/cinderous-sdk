@@ -526,7 +526,7 @@ Everything below is shipped and tested. Design records live in [`docs/adr/`](doc
 
 > ⚠ The crypto engines are **experimental**. The Double Ratchet is newly written code that has had one internal independent review but **no external audit**. The post-quantum hybrid protects encryption only — signatures are still secp256k1 — so it defends against "harvest now, decrypt later", and **this is not "quantum-safe"**.
 
-Install from the public GitHub repository, pinned to a tag: `npm install github:VaalRL/cinderous-sdk#v0.76.1` ([ADR 0110](docs/adr/0110-public-github-repo-not-npm.md)).
+Install from the public GitHub repository, pinned to a tag: `npm install github:VaalRL/cinderous-sdk#v0.77.0` ([ADR 0110](docs/adr/0110-public-github-repo-not-npm.md)).
 
 > ⚠ **Not published on npm.** The `@cinderous` scope on npm belongs to an unrelated account, so any `@cinderous/*` package on the npm registry is **not ours**. Always depend on the GitHub URL with a tag and keep your lockfile. Never write a version range such as `"@cinderous/client": "^0.76.1"`: npm would resolve it from the registry.
 
@@ -692,6 +692,8 @@ npx cinderous relay deploy \
 | `--developer-docs-url` | | none | cloudflare: developer docs URL shown when a connection is refused (https). |
 | `--relay-software-url` | | SDK repository | NIP-11 `software` (https): point it at your modified source if you changed the relay (AGPL §13). |
 | `--config` | `-c` | none | Deploy from `cinderous.config.json` instead of flags (only `--output-env` / `--dry-run` may be added). |
+
+**Reconnect guard (SDK ADR 0111).** On the main plane (`/`, `/s/<n>`, `/presence`; lanes are not affected), each Durable Object counts upgrades per source IP in memory: more than 20 in 10 minutes blocks that IP for 10 minutes. Tune with `RECONNECT_GUARD=<max>/<window seconds>/<block seconds>` or turn it off with `off`. A blocked upgrade gets a `rate-limited: too many reconnects…` NOTICE and is closed with 1013, so clients back off. If you add a Cloudflare rate-limit binding named `STRICT_UPGRADE_LIMIT` to your `wrangler.toml`, the Worker also limits upgrades per IP and shard before they reach the Durable Object. The deploy tools do not add it. `DIAG_UNAUTH_LOG=1` logs one line per main-plane connection that closes without authenticating: message verbs, subscribed kinds, the relay's replies, lifetime and close code. It never logs content, pubkeys or IPs. It is off by default.
 
 #### Config file (repeatable deployments, [ADR 0050](docs/adr/0050-deploy-configurator.md)):
 Keep every choice in `cinderous.config.json` (validated against `schema/cinderous.config.schema.json`) and deploy the same file every time — a redeploy no longer resets a parameter to its default because a flag was forgotten. Secrets are referenced by environment-variable name only.
