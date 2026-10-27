@@ -1,0 +1,158 @@
+{
+  "name": "@cinderous/client",
+  "version": "0.76.1",
+  "description": "Cinderous SDK：客戶端（多中繼連線池、NIP-44／NIP-17、封鎖名單、身分、試算器）、共用協定，中繼（核心、Cloudflare Worker、Node 主機），以及 `cinderous` 命令列與一鍵部署",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/VaalRL/cinderous-sdk.git"
+  },
+  "homepage": "https://github.com/VaalRL/cinderous-sdk#readme",
+  "bugs": {
+    "url": "https://github.com/VaalRL/cinderous-sdk/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./estimator": {
+      "types": "./dist/estimator.d.ts",
+      "import": "./dist/estimator.js"
+    },
+    "./protocol": {
+      "types": "./dist/protocol/index.d.ts",
+      "import": "./dist/protocol/index.js"
+    },
+    "./relay": {
+      "types": "./dist/relay/index.d.ts",
+      "import": "./dist/relay/index.js"
+    },
+    "./relay/worker": {
+      "types": "./dist/relay/worker.d.ts",
+      "import": "./dist/relay/worker.js"
+    },
+    "./relay/node": {
+      "types": "./dist/relay/node.d.ts",
+      "import": "./dist/relay/node.js"
+    },
+    "./deploy": {
+      "types": "./dist/deploy/index.d.ts",
+      "import": "./dist/deploy/index.js"
+    },
+    "./deploy/config": {
+      "types": "./dist/deploy/config/index.d.ts",
+      "import": "./dist/deploy/config/index.js"
+    },
+    "./config.schema.json": "./schema/cinderous.config.schema.json",
+    "./deploy/cloudflare-api": {
+      "types": "./dist/deploy/cloudflare-api/index.d.ts",
+      "import": "./dist/deploy/cloudflare-api/index.js"
+    },
+    "./sync": {
+      "types": "./dist/sync/index.d.ts",
+      "import": "./dist/sync/index.js"
+    },
+    "./sync/vault": {
+      "types": "./dist/sync/vault/index.d.ts",
+      "import": "./dist/sync/vault/index.js"
+    },
+    "./transfer": {
+      "types": "./dist/transfer/index.d.ts",
+      "import": "./dist/transfer/index.js"
+    },
+    "./pairing": {
+      "types": "./dist/pairing/index.d.ts",
+      "import": "./dist/pairing/index.js"
+    },
+    "./durability": {
+      "types": "./dist/durability/index.d.ts",
+      "import": "./dist/durability/index.js"
+    },
+    "./star": {
+      "types": "./dist/star/index.d.ts",
+      "import": "./dist/star/index.js"
+    },
+    "./iot": {
+      "types": "./dist/iot/index.d.ts",
+      "import": "./dist/iot/index.js"
+    },
+    "./iot/bridge": {
+      "types": "./dist/iot/bridge/index.d.ts",
+      "import": "./dist/iot/bridge/index.js"
+    },
+    "./iot/push-gateway": {
+      "types": "./dist/iot/push-gateway/index.d.ts",
+      "import": "./dist/iot/push-gateway/index.js"
+    },
+    "./iot/push-gateway/worker": {
+      "types": "./dist/iot/push-gateway/worker.d.ts",
+      "import": "./dist/iot/push-gateway/worker.js"
+    },
+    "./iot/push-gateway/node": {
+      "types": "./dist/iot/push-gateway/node.d.ts",
+      "import": "./dist/iot/push-gateway/node.js"
+    }
+  },
+  "files": [
+    "dist",
+    "schema",
+    "LICENSE",
+    "THIRD-PARTY-NOTICES.md"
+  ],
+  "scripts": {
+    "build": "npm run build:worker-bundle && tsc -p tsconfig.build.json && tsc -p tsconfig.build.worker.json && tsc -p tsconfig.build.node.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.worker.json && tsc --noEmit -p tsconfig.node.json",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm test && npm run build && git diff --exit-code -- dist src/deploy/cloudflare-api/relay-worker-bundle.ts src/deploy/cloudflare-api/relay-worker-info.ts",
+    "build:worker-bundle": "node scripts/build-relay-worker-bundle.mjs",
+    "measure:inbox-ack": "vitest run -c vitest.measure.config.ts tests/bench/inbox-ack-expiry.measure.ts",
+    "measure:relay-budget": "vitest run -c vitest.measure.config.ts tests/bench/relay-budget.measure.ts",
+    "measure:duplicate-sends": "vitest run -c vitest.measure.config.ts tests/bench/duplicate-sends.measure.ts"
+  },
+  "dependencies": {
+    "@noble/ciphers": "2.4.0",
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
+    "@noble/post-quantum": "^0.7.1",
+    "@scure/base": "2.4.0",
+    "nostr-tools": "^2.25.1"
+  },
+  "overrides": {
+    "@noble/ciphers": "$@noble/ciphers",
+    "@noble/curves": "$@noble/curves",
+    "@noble/hashes": "$@noble/hashes",
+    "@scure/base": "$@scure/base",
+    "@scure/bip32": "2.4.0",
+    "@scure/bip39": "2.4.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260702.1",
+    "@types/node": "^22.20.4",
+    "@types/ws": "^8.18.1",
+    "aedes": "^1.2.0",
+    "esbuild": "0.28.2",
+    "mqtt": "^5.16.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "optionalDependencies": {
+    "ws": "^8.22.0"
+  },
+  "peerDependencies": {
+    "mqtt": "^5.16.0"
+  },
+  "peerDependenciesMeta": {
+    "mqtt": {
+      "optional": true
+    }
+  },
+  "bin": {
+    "cinderous": "./dist/cli/index.js"
+  }
+}

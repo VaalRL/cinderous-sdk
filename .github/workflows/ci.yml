@@ -1,0 +1,25 @@
+# SDK 的 CI（SDK ADR 0008）：型別檢查、測試、打包，並確認提交的 dist 與原始碼一致。
+# dist 必須提交：遊戲是用 git 相依安裝的，安裝時不會跑 build（ADR 0001）。
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # node:sqlite（Node 主機與 Worker 測試用）需要 22.5 以上
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          check-latest: true
+          cache: npm
+      - run: npm ci
+      - run: npm run check

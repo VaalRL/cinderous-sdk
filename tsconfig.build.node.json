@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.node.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true
+  },
+  "include": [
+    "src/relay/node.ts",
+    "src/cli/index.ts",
+    "src/deploy/index.ts"
+  ],
+  "exclude": []
+}

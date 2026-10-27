@@ -1,0 +1,4 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+# 官方測試向量要逐位元組保留（測試會驗 SHA-256；SDK ADR 0034）
+tests/fixtures/*.vectors.json -text

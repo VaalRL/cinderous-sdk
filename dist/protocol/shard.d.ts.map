@@ -1,0 +1,1 @@
+{"version":3,"file":"shard.d.ts","sourceRoot":"","sources":["../../src/protocol/shard.ts"],"names":[],"mappings":"AAMA,2DAA2D;AAC3D,eAAO,MAAM,WAAW,KAAK,CAAC;AAE9B,wEAAwE;AACxE,wBAAgB,WAAW,CAAC,MAAM,EAAE,MAAM,GAAG,SAAS,GAAG,MAAM,CAG9D;AAED,kFAAkF;AAClF,wBAAgB,SAAS,CAAC,MAAM,EAAE,MAAM,GAAG,SAAS,GAAG,MAAM,CAE5D;AAED,mDAAmD;AACnD,eAAO,MAAM,aAAa,cAAc,CAAC"}

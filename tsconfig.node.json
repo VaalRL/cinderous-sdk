@@ -1,0 +1,26 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": [
+      "ES2022"
+    ],
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src/relay/node-relay.ts",
+    "src/relay/dev-server.ts",
+    "tests/relay/node-host.test.ts",
+    "tests/relay/iot-node.test.ts",
+    "src/relay/node.ts",
+    "src/cli/**/*.ts",
+    "src/deploy/**/*.ts",
+    "tests/cli/**/*.ts",
+    "tests/deploy/**/*.ts",
+    "tests/peer/peer-relay.integration.test.ts",
+    "tests/call/call-relay.integration.test.ts",
+    "tests/relay/lanes-only-node.test.ts"
+  ],
+  "exclude": []
+}

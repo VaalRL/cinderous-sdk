@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#142834" />
+      <stop offset="50%" stop-color="#0f2028" />
+      <stop offset="100%" stop-color="#09141a" />
+    </linearGradient>
+
+    <!-- Signal Beacon Glow -->
+    <radialGradient id="beaconGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ff7b25" stop-opacity="0.8" />
+      <stop offset="45%" stop-color="#ffa400" stop-opacity="0.35" />
+      <stop offset="100%" stop-color="#0f2028" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Core Ember Gradient -->
+    <linearGradient id="coreEmber" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff4500" />
+      <stop offset="50%" stop-color="#ff8c00" />
+      <stop offset="100%" stop-color="#ffe49e" />
+    </linearGradient>
+
+    <!-- Cyan Signal Pulse -->
+    <linearGradient id="cyanPulse" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4ecdc4" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#2a9d8f" stop-opacity="0.2" />
+    </linearGradient>
+
+    <!-- Filter for soft glow -->
+    <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Squircle Base Canvas -->
+  <rect x="24" y="24" width="464" height="464" rx="108" fill="url(#bgGrad)" stroke="#223e4d" stroke-width="4" />
+
+  <!-- Ambient Glow -->
+  <circle cx="256" cy="270" r="160" fill="url(#beaconGlow)" />
+
+  <!-- Concentric Ephemeral Signaling Waves (Echoing outwards) -->
+  <path d="M 176 190 A 110 110 0 0 1 336 190" fill="none" stroke="url(#cyanPulse)" stroke-width="5" stroke-linecap="round" stroke-dasharray="8 8" opacity="0.6" />
+  <path d="M 140 154 A 160 160 0 0 1 372 154" fill="none" stroke="url(#cyanPulse)" stroke-width="6" stroke-linecap="round" opacity="0.8" filter="url(#softGlow)" />
+  <path d="M 104 118 A 210 210 0 0 1 408 118" fill="none" stroke="url(#cyanPulse)" stroke-width="4" stroke-linecap="round" stroke-dasharray="12 10" opacity="0.45" />
+
+  <!-- Beacon Tower Structure (Minimalist Geometric Antenna / Pylon) -->
+  <path d="M 232 390 L 250 265 L 262 265 L 280 390 Z" fill="#1b3847" stroke="#2e5366" stroke-width="3" stroke-linejoin="round" />
+  <line x1="220" y1="350" x2="292" y2="350" stroke="#366278" stroke-width="3" stroke-linecap="round" />
+  <line x1="236" y1="310" x2="276" y2="310" stroke="#366278" stroke-width="3" stroke-linecap="round" />
+  <line x1="200" y1="390" x2="312" y2="390" stroke="#4ecdc4" stroke-width="4" stroke-linecap="round" opacity="0.7" />
+
+  <!-- Floating Twin Orbit Embers (Client Peer Nodes in P2P Resonance) -->
+  <!-- Peer A (Lower Left Orbit) -->
+  <g transform="translate(145, 295)">
+    <circle cx="0" cy="0" r="16" fill="#ff4500" opacity="0.3" filter="url(#softGlow)" />
+    <circle cx="0" cy="0" r="10" fill="url(#coreEmber)" />
+    <circle cx="-2" cy="-2" r="3" fill="#ffffff" opacity="0.8" />
+  </g>
+  <!-- Orbit Path Link A -->
+  <path d="M 155 290 Q 200 270 248 260" fill="none" stroke="#ff8c00" stroke-width="2.5" stroke-dasharray="4 4" opacity="0.6" />
+
+  <!-- Peer B (Upper Right Orbit) -->
+  <g transform="translate(365, 225)">
+    <circle cx="0" cy="0" r="18" fill="#ffa400" opacity="0.35" filter="url(#softGlow)" />
+    <circle cx="0" cy="0" r="11" fill="url(#coreEmber)" />
+    <circle cx="-2" cy="-2" r="3.5" fill="#ffffff" opacity="0.85" />
+  </g>
+  <!-- Orbit Path Link B -->
+  <path d="M 355 232 Q 310 250 264 260" fill="none" stroke="#ffa400" stroke-width="2.5" stroke-dasharray="4 4" opacity="0.6" />
+
+  <!-- Central Beacon Spark / Flame Summit (The Signaling Relay Core) -->
+  <g transform="translate(256, 252)">
+    <circle cx="0" cy="0" r="26" fill="#ff6b35" opacity="0.4" filter="url(#softGlow)" />
+    <path d="M 0 -22 C 12 -8 18 6 12 18 C 6 28 -6 28 -12 18 C -18 6 -12 -8 0 -22 Z" fill="url(#coreEmber)" filter="url(#softGlow)" />
+    <circle cx="0" cy="5" r="7" fill="#fff5d9" />
+    <circle cx="0" cy="4" r="3" fill="#ffffff" />
+  </g>
+</svg>

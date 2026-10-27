@@ -1,0 +1,533 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cinderous:deploy-config:1",
+  "title": "cinderous.config.json",
+  "description": "Cinderous 中繼的部署設定（SDK ADR 0050）：所有選擇的單一真實來源；秘密只以 { \"$env\": \"NAME\" } 引用。\n\nDeployment settings for a Cinderous relay (SDK ADR 0050): the single source of truth for every choice; secrets are referenced as { \"$env\": \"NAME\" } only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "configVersion",
+    "target"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "給編輯器用的 JSON Schema 位置。\n\nJSON Schema location for editors."
+    },
+    "configVersion": {
+      "const": 1,
+      "description": "設定檔格式的版號（目前是 1）。\n\nConfig file format version (currently 1)."
+    },
+    "sdk": {
+      "type": "string",
+      "maxLength": 64,
+      "description": "產生這份設定的 SDK 版號（relay build 會寫入）。\n\nSDK version that produced this config (written by relay build)."
+    },
+    "target": {
+      "type": "string",
+      "enum": [
+        "cloudflare",
+        "cloudflare-api",
+        "docker",
+        "fly",
+        "home-tunnel"
+      ],
+      "description": "部署目標：cloudflare（wrangler）、cloudflare-api（REST，外掛用）、docker、fly、home-tunnel（家中主機＋Cloudflare Tunnel）。\n\nDeployment target: cloudflare (wrangler), cloudflare-api (REST, for plugins), docker, fly, home-tunnel (home server + Cloudflare Tunnel)."
+    },
+    "service": {
+      "type": "string",
+      "enum": [
+        "relay",
+        "push-gateway"
+      ],
+      "default": "relay",
+      "description": "部署哪個服務：relay（Cinderous 中繼，預設）或 push-gateway（App 開發者的參考推播閘道；Workers 目標＝Workers 版，docker／fly／home-tunnel＝Node 版；兩版的 iOS 都能直連 APNs）。\n\nWhich service to deploy: relay (the Cinderous relay, default) or push-gateway (the app developer's reference push gateway; Workers targets = Workers edition, docker / fly / home-tunnel = Node edition; both can reach APNs directly for iOS)."
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+      "default": "cinderous-relay",
+      "description": "Worker／容器／Fly app 名稱：小寫英數與連字號、不以連字號開頭、最長 63 字。\n\nWorker / container / Fly app name: lowercase letters, digits and hyphens, not starting with a hyphen, at most 63 characters."
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "persist": {
+          "type": "boolean",
+          "default": false,
+          "description": "以 SQLite 保存離線留言（掛 volume）；預設純記憶體，重啟即清空。\n\nKeep offline messages in SQLite on a volume; default is memory-only (cleared on restart)."
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "default": 8080,
+          "description": "docker：對外的埠。\n\ndocker: host port."
+        },
+        "trustProxy": {
+          "type": "boolean",
+          "default": false,
+          "description": "信任前面代理的 X-Forwarded-For（TRUST_PROXY=1）。docker 只有在反向代理後方才開；fly 與 home-tunnel 一定開。\n\nTrust X-Forwarded-For from a proxy in front (TRUST_PROXY=1). For docker only behind a reverse proxy; always on for fly and home-tunnel."
+        }
+      }
+    },
+    "cloudflare": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            },
+            {
+              "$ref": "#/$defs/secretRef"
+            }
+          ],
+          "description": "Cloudflare Account ID（32 字元 hex；不是秘密）。有多個帳號時務必給：wrangler 會沿用上次登入的帳號。\n\nCloudflare Account ID (32 hex characters; not a secret). Set it when you have several accounts: wrangler reuses the last one you logged into."
+        },
+        "compatibilityDate": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "default": "2026-09-01",
+          "description": "Workers 的 compatibility_date（YYYY-MM-DD）。記在設定檔裡，不隨 CLI 升級改變。\n\nWorkers compatibility_date (YYYY-MM-DD). Recorded in the config so it does not change with CLI upgrades."
+        },
+        "workersDevSubdomain": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+          "description": "workers.dev 子網域（帳號的那一段）。REST 路徑在帳號還沒有子網域時用它註冊；部署說明用它寫出完整網址。\n\nworkers.dev subdomain (the account part). The REST path registers it when the account has none; the deploy guide uses it to spell out the full URL."
+        }
+      }
+    },
+    "fly": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "region": {
+          "type": "string",
+          "pattern": "^[a-z]{3}$",
+          "default": "nrt",
+          "description": "Fly 區域代碼（例如 nrt、sin、iad）。\n\nFly region code (e.g. nrt, sin, iad)."
+        }
+      }
+    },
+    "tunnel": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hostname": {
+          "type": "string",
+          "pattern": "^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$",
+          "description": "對外的主機名稱（例如 relay.example.com，要在你放到 Cloudflare 的網域下）。客戶端連 wss://<這個名稱>。\n\nPublic hostname (e.g. relay.example.com, under a domain on Cloudflare). Clients connect to wss://<this name>."
+        },
+        "cloudflaredImage": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._/-]*(:[A-Za-z0-9._-]+)?(@sha256:[0-9a-f]{64})?$",
+          "default": "cloudflare/cloudflared:latest",
+          "description": "cloudflared 映像。要可重現就釘版本或 digest（例如 cloudflare/cloudflared:2026.9.0）。\n\ncloudflared image. Pin a version or digest for reproducible deployments (e.g. cloudflare/cloudflared:2026.9.0)."
+        }
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cloudflareApiToken": {
+          "$ref": "#/$defs/secretRef",
+          "description": "Cloudflare API Token 的環境變數名稱。沒給讀 CLOUDFLARE_API_TOKEN；都沒有就交給 wrangler 自己的登入（wrangler login）。\n\nEnvironment variable holding the Cloudflare API token. Defaults to CLOUDFLARE_API_TOKEN; without one, wrangler's own login (wrangler login) is used."
+        },
+        "flyApiToken": {
+          "$ref": "#/$defs/secretRef",
+          "description": "Fly API Token 的環境變數名稱。沒給讀 FLY_API_TOKEN；都沒有就交給 flyctl 自己的登入（fly auth login）。\n\nEnvironment variable holding the Fly API token. Defaults to FLY_API_TOKEN; without one, flyctl's own login (fly auth login) is used."
+        },
+        "tunnelToken": {
+          "$ref": "#/$defs/secretRef",
+          "description": "Cloudflare Tunnel Token 的環境變數名稱（cloudflared 用；寫在部署包的 .env，不要提交）。\n\nEnvironment variable holding the Cloudflare Tunnel token (used by cloudflared; put it in the package's .env and never commit it)."
+        },
+        "pushGatewayKey": {
+          "$ref": "#/$defs/secretRef",
+          "description": "推播閘道私鑰的環境變數名稱（cinderous iot push-keygen 產生）。換掉它＝所有 App 的 token 封包作廢，要重新登記。\n\nEnvironment variable holding the push gateway's private key (generate with cinderous iot push-keygen). Rotating it invalidates every app's token envelope; apps must re-register."
+        },
+        "fcmServiceAccount": {
+          "$ref": "#/$defs/secretRef",
+          "description": "Firebase 服務帳號 JSON 的環境變數名稱（整份 JSON 一行）。Android 或 iOS 經 FCM 時必填。\n\nEnvironment variable holding the Firebase service account JSON (the whole JSON on one line). Required for Android or iOS via FCM."
+        },
+        "apnsKey": {
+          "$ref": "#/$defs/secretRef",
+          "description": "APNs .p8 金鑰內容的環境變數名稱（換行寫成 \\n）。直連 APNs（pushGateway.ios=apns，Workers 版與 Node 版）時必填；Workers 版也可以把 .p8 檔直接導入 wrangler secret。\n\nEnvironment variable holding the APNs .p8 key contents (newlines written as \\n). Required for direct APNs (pushGateway.ios=apns, Workers and Node editions); on Workers you can also pipe the .p8 file straight into wrangler secret."
+        }
+      }
+    },
+    "pushGateway": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "android": {
+          "type": "boolean",
+          "default": true,
+          "description": "Android：經 FCM 送高優先的空資料訊息（需要 Firebase 服務帳號）。關掉時 Android App 請改用 UnifiedPush（不需要推播閘道）。\n\nAndroid: high-priority empty data messages via FCM (needs a Firebase service account). When off, Android apps should use UnifiedPush instead (no push gateway needed)."
+        },
+        "ios": {
+          "type": "string",
+          "enum": [
+            "apns",
+            "fcm",
+            "off"
+          ],
+          "default": "apns",
+          "description": "iOS：apns＝直連 APNs（預設，v0.48.0 起；Workers 版與 Node 版都可以，不經 Google，要 APNs 金鑰）；fcm＝經 Firebase 轉給 APNs（已棄用：Google 也看得到 iOS 喚醒的時間點）；off＝不支援 iOS（只要 Android 時用它，不需要 Apple 金鑰）。\n\niOS: apns = talk to APNs directly (the default since v0.48.0; both the Workers and Node editions, no Google, needs an APNs key); fcm = through Firebase to APNs (deprecated: Google also sees when iOS devices are woken); off = no iOS (use it for Android-only deployments; no Apple key needed)."
+        },
+        "iosLocKey": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{0,63}$",
+          "default": "CINDER_WAKE",
+          "description": "iOS 通知的在地化鍵（大寫英數與底線）：推播裡沒有任何文字，App 的 Localizable.strings 提供「有新動態」之類的通用字樣；NSE 解密後改寫。\n\nLocalization key for the iOS alert (uppercase letters, digits, underscores): the push carries no text; the app's Localizable.strings supplies a generic phrase, which the NSE rewrites after decrypting."
+        },
+        "apnsTopic": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+$",
+          "description": "直連 APNs：App 的 bundle id（apns-topic）。\n\nDirect APNs: the app's bundle id (apns-topic)."
+        },
+        "apnsKeyId": {
+          "type": "string",
+          "pattern": "^[A-Z0-9]{10}$",
+          "description": "直連 APNs：.p8 金鑰的 Key ID（10 字元；不是秘密）。\n\nDirect APNs: the Key ID of the .p8 key (10 characters; not a secret)."
+        },
+        "apnsTeamId": {
+          "type": "string",
+          "pattern": "^[A-Z0-9]{10}$",
+          "description": "直連 APNs：Apple Developer 的 Team ID（10 字元）。\n\nDirect APNs: the Apple Developer Team ID (10 characters)."
+        },
+        "apnsEnvironment": {
+          "type": "string",
+          "enum": [
+            "production",
+            "sandbox"
+          ],
+          "default": "production",
+          "description": "直連 APNs：production（App Store／TestFlight）或 sandbox（Xcode 直接安裝的開發版）。\n\nDirect APNs: production (App Store / TestFlight) or sandbox (development builds installed from Xcode)."
+        },
+        "tokenPerHour": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600,
+          "default": 60,
+          "description": "每個推播 token 每小時最多送幾次（裁示 7，預設 60）。所有送出端（設備、IoT 閘道、中繼）合計。\n\nMaximum wakes per push token per hour (ruling 7, default 60), across all senders (devices, IoT gateways, relays)."
+        },
+        "tokenPerMinute": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60,
+          "default": 6,
+          "description": "每個推播 token 每分鐘最多送幾次（預設 6＝即時模式的上限；縱深防禦，送出端本來就會合併與節流）。\n\nMaximum wakes per push token per minute (default 6 = the instant-mode limit; defence in depth, senders already coalesce and throttle)."
+        },
+        "maxSkewSec": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 3600,
+          "default": 300,
+          "description": "喚醒請求的時間戳最多與推播閘道差幾秒（防重放的時間窗；設備要有 NTP）。\n\nMaximum clock difference (seconds) between a wake request's timestamp and the gateway (the replay window; devices need NTP)."
+        },
+        "maxRegistrationDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30,
+          "default": 30,
+          "description": "token 封包最長能活幾天（ADR-0272：30 天；App 啟動時續期）。超過的封包一律拒絕。\n\nMaximum lifetime of a token envelope in days (ADR-0272: 30 days; apps renew on launch). Longer envelopes are refused."
+        }
+      }
+    },
+    "site": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowedPubkeys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "白名單：只有這些公鑰（npub 或 64 字元 hex）能寫入。沒給＝開放中繼，任何人都能用你的額度。寫錯任何一筆就拒絕部署。\n\nAllowlist: only these public keys (npub or 64-character hex) may write. Empty means an open relay that anyone can use on your quota. Any malformed entry stops the deployment."
+        },
+        "privateLane": {
+          "$ref": "#/$defs/secretRef",
+          "description": "私人路徑（SDK ADR 0051）：開放寫入＋不可猜的隨機路徑。值是至少 26 字的隨機車道 id（例如 `openssl rand -hex 16`），只能寫 { \"$env\": \"NAME\" }。中繼設 APP_LANES＝它、LANES_ONLY=1（Cloudflare 開檔案時 FILE_LANES＝它），只接受 wss://<host>/app/<id>；白名單變成選用。🔴 這個網址等同密碼，外洩就換一個重新部署。\n\nPrivate path (SDK ADR 0051): open writes behind an unguessable random path. The value is a random lane id of at least 26 characters (e.g. `openssl rand -hex 16`), written only as { \"$env\": \"NAME\" }. The relay gets APP_LANES = it and LANES_ONLY=1 (plus FILE_LANES = it on Cloudflare with files on) and accepts only wss://<host>/app/<id>; the allowlist becomes optional. 🔴 The URL is a password: if it leaks, deploy again with a new one."
+        },
+        "readOnlyLanes": {
+          "$ref": "#/$defs/secretRef",
+          "description": "唯讀寬限期（SDK ADR 0052）：換了私人路徑之後，舊路徑到期前只能讀（其他裝置從那裡收到搬家通知），到期後與認不得的路徑相同。值是 `<舊車道 id>@<到期 unix 秒>`（逗號分隔、最多 8 條、最長 30 天），只能寫 { \"$env\": \"NAME\" }（舊的 id 也是秘密）。過期的項目自動略過；一鍵部署（REST）的「換新路徑」會自動算出並保留線上還沒到期的。\n\nRead-only grace period (SDK ADR 0052): after the private path changes, the old path stays readable (other devices pick up the move notice there) but rejects writes until it expires, then behaves like an unknown path. The value is `<old lane id>@<expiry unix seconds>` (comma-separated, at most 8, at most 30 days), written only as { \"$env\": \"NAME\" } (the old id is a secret too). Expired entries are skipped; the one-click (REST) “new private path” computes it and keeps the live ones that have not expired."
+        },
+        "relayName": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "NIP-11 站名。沒給用 SDK 的中立名稱。\n\nNIP-11 relay name. Defaults to the SDK's neutral name."
+        },
+        "relayDescription": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "NIP-11 描述。\n\nNIP-11 description."
+        },
+        "relayContact": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "NIP-11 聯絡方式（mailto:、網址或 Nostr）。\n\nNIP-11 contact (mailto:, a URL or Nostr)."
+        },
+        "relayPubkey": {
+          "type": "string",
+          "description": "NIP-11 營運者公鑰（npub 或 hex，寫入 hex）。\n\nNIP-11 operator public key (npub or hex; stored as hex)."
+        },
+        "donations": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "githubSponsors": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "buyMeACoffee": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "liberapay": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "lightning": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          "description": "贊助管道（githubSponsors、buyMeACoffee、liberapay、lightning；每項 ≤ 200 字）。全部沒給＝不顯示贊助入口。\n\nDonation links (githubSponsors, buyMeACoffee, liberapay, lightning; ≤ 200 characters each). None means no donation card."
+        },
+        "relaySoftwareUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://",
+          "maxLength": 200,
+          "description": "NIP-11 software：這座站跑的程式的原始碼網址（https）。沒給＝SDK 的 repo。改過中繼程式再對外服務的人，依 AGPL §13 要指向修改後的原始碼。\n\nNIP-11 software: the source code URL of the program this relay runs (https). Defaults to the SDK repository. If you modified the relay and offer it to others, AGPL §13 requires pointing this at your modified source."
+        },
+        "maxTtlDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 365,
+          "default": 7,
+          "description": "離線留言保存上限（天）。\n\nOffline message retention cap (days)."
+        },
+        "maxConnectionsPerPubkey": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 5,
+          "description": "同一把公鑰最多幾條連線。\n\nMaximum connections per public key."
+        },
+        "maxMessagesPerSecondPerIp": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "default": 20,
+          "description": "同一個 IP 每秒最多幾則訊息；超過就斷線。一次推很多事件的客戶端要自己節流。\n\nMaximum messages per second per IP; the connection is closed beyond that. Clients that push many events at once must throttle."
+        },
+        "maxFileMb": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024,
+          "description": "接受檔案塊（kind 1060）：Vault 同步必須開，建議 17。沒有 fileLanes 時是全站開關。開放中繼另外要 openFileRelay。\n\nAccept file chunks (kind 1060): required for vault sync, 17 recommended. Without fileLanes it is a site-wide switch. An open relay additionally needs openFileRelay."
+        },
+        "openFileRelay": {
+          "type": "boolean",
+          "description": "沒有白名單也接受檔案塊（不建議：任何人都能存資料進來，儲存沒有上限）。\n\nAccept file chunks without an allowlist (not recommended: anyone can store data, with no storage limit)."
+        },
+        "appLanes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+          },
+          "maxItems": 32,
+          "description": "已知租戶車道（例如 dochost）：每條一顆 DO。🔴 改名單＝那條車道換一顆 DO，舊資料不會搬過去、回滾也拿不回來。\n\nKnown app lanes (e.g. dochost): one Durable Object each. 🔴 Changing the list moves a lane to a new DO; old data is not moved and a rollback does not bring it back."
+        },
+        "fileLanes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+          },
+          "description": "只在這些車道收檔案塊（須在 appLanes 上，並給 maxFileMb；這時 maxFileMb 是單檔上限）。\n\nAccept file chunks only on these lanes (must be in appLanes and needs maxFileMb, which then becomes the per-file limit)."
+        },
+        "appLanePow": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32,
+          "default": 0,
+          "description": "車道的 NIP-13 PoW 最低難度（0＝不要求）。🔴 開之前確認車道的客戶端會挖礦，否則持久化事件全被拒。\n\nMinimum NIP-13 PoW difficulty on lanes (0 = none). 🔴 Make sure the lane's clients mine first, or all their persistent events are rejected."
+        },
+        "developerDocsUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://",
+          "maxLength": 200,
+          "description": "連線被拒時附上的開發文件網址（https）。\n\nDeveloper docs URL included when a connection is refused (https)."
+        },
+        "doCeilings": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "offlineMib",
+              "addressableMib"
+            ],
+            "properties": {
+              "offlineMib": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1048576
+              },
+              "addressableMib": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1048576
+              }
+            }
+          },
+          "description": "每顆 DO 的容量天花板（MiB）：鍵是 strict／public／lane／file 或單顆 DO 名。帳號總量＝天花板 × DO 數，用 storageBudgetBytes 守。Cloudflare 版每項 1–8192；Node 主機只認 strict，1–1048576（1 TiB）。\n\nPer-DO capacity ceilings (MiB), keyed by strict / public / lane / file or a single DO name. Account total = ceiling × number of DOs; guard it with storageBudgetBytes. Cloudflare: 1–8192 each; Node host: strict only, 1–1048576 (1 TiB)."
+        },
+        "doGuaranteeKib": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 64,
+            "maximum": 16384
+          },
+          "description": "共用 DO 內每位作者／收件人的保底（KiB）。只能設在淘汰制的對象。\n\nGuaranteed share per author / recipient in shared DOs (KiB). Evicting classes only."
+        },
+        "doBorrowPercent": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "description": "溢位帶（天花板之上借用的百分比）；淘汰制要同時設保底。\n\nOverflow band (percent borrowed above the ceiling); evicting classes also need a guarantee."
+        },
+        "doNearFullPercent": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 50,
+            "maximum": 99
+          },
+          "description": "粗分級預警的門檻（%）。\n\nCoarse near-full warning threshold (%)."
+        },
+        "doDropNotices": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "開啟丟棄計數的對象。\n\nTargets with dropped-message counts enabled."
+        },
+        "maxConnections": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000,
+          "description": "全站最多幾條同時連線；沒設＝不限。只有 Node 主機。\n\nMaximum simultaneous connections for the whole relay; unset = unlimited. Node host only."
+        },
+        "maxConnectionsPerIp": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000,
+          "description": "同一個 IP 最多幾條同時連線；沒設＝不限（手機電信與公司網路常共用 IP）。只有 Node 主機。\n\nMaximum simultaneous connections per IP; unset = unlimited (mobile carriers and offices often share an IP). Node host only."
+        },
+        "monthlyTrafficGib": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576,
+          "description": "每月流量預算（GiB）；用完暫停服務到重置日。只算 WebSocket 資料量，建議設成 VPS 方案的九成。只有 Node 主機。\n\nMonthly traffic budget (GiB); service pauses until the reset day once used up. Counts WebSocket data only, so set about 90% of your VPS plan. Node host only."
+        },
+        "trafficResetDay": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 28,
+          "description": "每月幾號 00:00 UTC 歸零（1–28，預設 1）。\n\nDay of month the budget resets at 00:00 UTC (1–28, default 1)."
+        },
+        "trafficCount": {
+          "type": "string",
+          "enum": [
+            "total",
+            "out"
+          ],
+          "description": "流量怎麼算：total（預設，進出合計）或 out（只算出去的）。\n\nWhat counts: total (default, both directions) or out (outbound only)."
+        },
+        "trafficNearFullPercent": {
+          "type": "integer",
+          "minimum": 50,
+          "maximum": 99,
+          "description": "用到幾 % 開始在 OK 帶預警（50–99）。\n\nPercent of the budget at which OK messages start carrying a warning (50–99)."
+        },
+        "ceilingMode": {
+          "type": "string",
+          "enum": [
+            "reject",
+            "evict"
+          ],
+          "description": "滿了之後：reject（預設，拒收）或 evict（淘汰最快到期的）。只有 Node 主機。\n\nWhen full: reject (default) or evict (drop what expires soonest). Node host only."
+        },
+        "storageBudgetBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991,
+          "description": "帳號儲存預算（位元組）：所有可能 DO 的最壞加總超過就拒絕部署。免費方案建議 4,000,000,000（5 GB 的 80%）。\n\nAccount storage budget (bytes): deployment is refused if the worst case across all possible DOs exceeds it. Free plan: 4,000,000,000 (80% of 5 GB) recommended."
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "target": {
+            "const": "home-tunnel"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "then": {
+        "required": [
+          "tunnel",
+          "secrets"
+        ],
+        "properties": {
+          "tunnel": {
+            "required": [
+              "hostname"
+            ]
+          },
+          "secrets": {
+            "required": [
+              "tunnelToken"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "secretRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "$env"
+      ],
+      "properties": {
+        "$env": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        }
+      },
+      "description": "秘密只寫環境變數名稱，值在部署時從環境或 .env 讀。\n\nSecrets reference an environment variable by name; the value is read from the environment or .env at deploy time."
+    }
+  }
+}

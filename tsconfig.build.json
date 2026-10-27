@@ -1,0 +1,29 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "src/relay/worker.ts",
+    "src/relay/iot-home-room.ts",
+    "src/relay/node-relay.ts",
+    "src/relay/iot-node.ts",
+    "src/relay/dev-server.ts",
+    "src/relay/node.ts",
+    "src/cli/**/*.ts",
+    "src/deploy/cloudflare.ts",
+    "src/deploy/common.ts",
+    "src/deploy/container.ts",
+    "src/deploy/docker.ts",
+    "src/deploy/fly.ts",
+    "src/deploy/build.ts",
+    "src/deploy/index.ts"
+  ]
+}

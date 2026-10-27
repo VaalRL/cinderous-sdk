@@ -1,0 +1,43 @@
+import type { NostrEvent } from "./event.js";
+import type { SecretKeyOrSigner } from "./signer.js";
+/** NIP-42 客戶端認證事件的 kind。 */
+export declare const AUTH_KIND = 22242;
+/**
+ * 建構 NIP-42 AUTH 回應事件（客戶端以私鑰簽章）。relay 發 `["AUTH", challenge]` 挑戰後，
+ * 客戶端以此回 `["AUTH", event]`。`relayUrl` 填 `relay` tag、`challenge` 填 `challenge` tag。
+ */
+export declare function buildAuthEvent(challenge: string, relayUrl: string, 
+/** 原始私鑰或 `NostrSigner`（例如 `Identity`；SDK ADR 0023） */
+sk: SecretKeyOrSigner, opts?: {
+    created_at?: number;
+}): NostrEvent;
+/** 取 AUTH 事件的 `challenge` tag 值；無則 undefined。 */
+export declare function authChallengeOf(event: NostrEvent): string | undefined;
+/** 取 AUTH 事件的 `relay` tag 值（客戶端自稱正在對哪一座中繼認證）；無則 undefined。 */
+export declare function authRelayOf(event: NostrEvent): string | undefined;
+/**
+ * 從中繼 URL 取可比對的主機（小寫，含 port）；無法解析回 undefined。
+ * 接受 `wss://`／`ws://`／`https://`／`http://`，也接受省略 scheme 的裸主機。
+ */
+export declare function relayHostOf(url: string | undefined): string | undefined;
+/**
+ * AUTH 事件的 `relay` tag 是否指向本站（NIP-42 規範要求的檢查；ADR-0235 H2）。
+ *
+ * ## 為什麼這個檢查是必要的
+ *
+ * 只比對 `challenge` 相符是**不夠的**。惡意中繼 M 可以：
+ *   1. 自己連上真中繼 R，拿到 R 發的挑戰 C
+ *   2. 把 C 當成「自己的」挑戰丟給連上 M 的受害者
+ *   3. 受害者簽出 AUTH 事件回給 M
+ *   4. M 把該事件原封轉送給 R → **以受害者身分通過 R 的認證**
+ *
+ * 之後 M 就能以受害者身分訂閱其加密收件匣。內容雖仍是密文，但「誰在什麼時候收到幾則訊息」
+ * 已經是完整的流量分析輸入——而 Gift Wrap 的全部意義就是不讓任何人取得這個。
+ *
+ * `relay` tag 綁死了「這張簽名是給誰的」：受害者簽的是 `relay: M`，R 一看主機不是自己就拒收。
+ *
+ * 只比對**主機**（不含 scheme／路徑／尾斜線）：客戶端記的是 `wss://host`，中繼收到的是
+ * `https://host/`，兩者本來就不會逐字相同。
+ */
+export declare function authRelayMatches(event: NostrEvent, expectedHost: string): boolean;
+//# sourceMappingURL=nip42.d.ts.map

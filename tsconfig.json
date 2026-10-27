@@ -1,0 +1,53 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "tests/**/*.ts"
+  ],
+  "exclude": [
+    "src/relay/worker.ts",
+    "src/relay/iot-home-room.ts",
+    "tests/relay/iot-worker.test.ts",
+    "src/relay/node-relay.ts",
+    "src/relay/iot-node.ts",
+    "tests/relay/iot-node.test.ts",
+    "src/relay/dev-server.ts",
+    "tests/relay/worker.test.ts",
+    "tests/relay/node-host.test.ts",
+    "src/relay/node.ts",
+    "src/cli/**/*.ts",
+    "src/deploy/cloudflare.ts",
+    "src/deploy/common.ts",
+    "src/deploy/container.ts",
+    "src/deploy/docker.ts",
+    "src/deploy/fly.ts",
+    "src/deploy/build.ts",
+    "src/deploy/index.ts",
+    "tests/cli/**/*.ts",
+    "tests/deploy/**/*.ts",
+    "tests/peer/peer-relay.integration.test.ts",
+    "tests/call/call-relay.integration.test.ts",
+    "tests/relay/turn-contract.test.ts",
+    "tests/relay/lanes-only.test.ts",
+    "tests/relay/lanes-only-node.test.ts"
+  ]
+}

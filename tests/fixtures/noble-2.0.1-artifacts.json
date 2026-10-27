@@ -1,0 +1,113 @@
+{
+  "_meta": {
+    "note": "SDK v0.28.0 產出；由 tests/fixtures/gen-noble-2.0.1-artifacts.mjs 產生，SDK ADR 0034",
+    "versions": {
+      "@noble/curves": {
+        "sdk": "2.0.1",
+        "nostrTools": "deduped"
+      },
+      "@noble/hashes": {
+        "sdk": "2.0.1",
+        "nostrTools": "deduped"
+      },
+      "@noble/ciphers": {
+        "sdk": "2.4.0",
+        "nostrTools": "2.1.1"
+      },
+      "@scure/base": {
+        "sdk": "2.0.0",
+        "nostrTools": "deduped"
+      }
+    }
+  },
+  "keys": {
+    "sk1": "7f7ff03d123792d6ac594bfa67bf6d0c0ab55b6b1fdb6249303fe861f1ccba9a",
+    "sk2": "c15d739894c81a2fcfd3a2df85a0d2c0dbc47a280d092799f144d73d7ae78add",
+    "pk1": "17162c921dc4d2518f9a101db33695df1afb56ab82f5ff3e5da6eec3ca5cd917",
+    "pk2": "d41b22899549e1f3d335a31002cfd382174006e166d3e658e3a5eecdb6463573",
+    "sdkPk1": "17162c921dc4d2518f9a101db33695df1afb56ab82f5ff3e5da6eec3ca5cd917"
+  },
+  "npub1": "npub1zutzeysacnf9rru6zqwmxd54mud0k44tst6l70ja5mhv8jjumytsd2x7nu",
+  "nsec1": "nsec10allq0gjx7fddtzef0ax00mdps9t2kmtrldkyjfs8l5xruwvh2dq0lhhkp",
+  "sdkNpub1": "npub1zutzeysacnf9rru6zqwmxd54mud0k44tst6l70ja5mhv8jjumytsd2x7nu",
+  "sdkNsec1": "nsec10allq0gjx7fddtzef0ax00mdps9t2kmtrldkyjfs8l5xruwvh2dq0lhhkp",
+  "nprofile": "nprofile1qythwumn8ghj7un9d3shjtn90psk6urvv5hxxmmdqyn8wumn8ghj7cmfdejx2u3dwfjkccte9ejhsctdwpkx2tnhdaexketjwvhxgetkqy0hwumn8ghj7ctwda6xsetj9eex2mrp0yhx27rpd4cxcefwdaexwqpqzutzeysacnf9rru6zqwmxd54mud0k44tst6l70ja5mhv8jjumytsjgmyu2",
+  "nevent": "nevent1qvzqqqqqqypzq9ck9jfpm3xj2x8e5yqakvmfthc6ldt2hqh4lul9mfhwc099ekghqythwumn8ghj7un9d3shjtn90psk6urvv5hxxmmdqyn8wumn8ghj7cmfdejx2u3dwfjkccte9ejhsctdwpkx2tnhdaexketjwvhxgetkqy0hwumn8ghj7ctwda6xsetj9eex2mrp0yhx27rpd4cxcefwdaexwqpqxemd3valsv6v6nfnql6kqqnspu0kr52suwmc50jsccazf02u9kescjvs0f",
+  "naddr": "naddr1qvzqqqr4gupzq9ck9jfpm3xj2x8e5yqakvmfthc6ldt2hqh4lul9mfhwc099ekghqythwumn8ghj7un9d3shjtn90psk6urvv5hxxmmdqyn8wumn8ghj7cmfdejx2u3dwfjkccte9ejhsctdwpkx2tnhdaexketjwvhxgetkqy0hwumn8ghj7ctwda6xsetj9eex2mrp0yhx27rpd4cxcefwdaexwqqjvd5kuer9wfhh2ueddehkymr995ergtq3d5a",
+  "ntEvent": {
+    "kind": 1,
+    "created_at": 1790000000,
+    "tags": [
+      [
+        "t",
+        "cinderous"
+      ]
+    ],
+    "content": "noble 2.0.1 → 2.4 相容性 🔥",
+    "pubkey": "17162c921dc4d2518f9a101db33695df1afb56ab82f5ff3e5da6eec3ca5cd917",
+    "id": "3676d8b3bf8334cd4d3307f56002700f1f61d150e3b78a3e50c63a24bd5c2db3",
+    "sig": "5eb42bbf1b2f1b275f85cd5e1301e1a658ba3aeaa6926e9af694006df26797df51c07424f6eea0864ddab8c8b9fe043666177f2e3545d2463458ea0672cb98cf"
+  },
+  "sdkEvent": {
+    "kind": 1,
+    "created_at": 1790000000,
+    "tags": [
+      [
+        "t",
+        "cinderous"
+      ]
+    ],
+    "content": "noble 2.0.1 → 2.4 相容性 🔥",
+    "pubkey": "17162c921dc4d2518f9a101db33695df1afb56ab82f5ff3e5da6eec3ca5cd917",
+    "id": "3676d8b3bf8334cd4d3307f56002700f1f61d150e3b78a3e50c63a24bd5c2db3",
+    "sig": "b94d71d29fc70e5babe86444e12472161eef8761cc5e4736433468e9999cc52d1315449738eff7f11abba875720a82d62e3f605416db901ac71b10742f369c6b"
+  },
+  "deterministic": {
+    "msg": "3676d8b3bf8334cd4d3307f56002700f1f61d150e3b78a3e50c63a24bd5c2db3",
+    "aux": "0707070707070707070707070707070707070707070707070707070707070707",
+    "sig": "49b5d3ccc1b8c2775e82fc76c1b17204e1cc8c50b08831517ea02bc0c2a0a3509453b1dd9a4df435f452bb5ee22565f82bc7257e1e32e01aaff0757e1dd88973"
+  },
+  "ecdh": "02cfbb00ea4b4fba36a59396a766fc61cb684b191f9a9573dc36bee1ef4bda3cc1",
+  "nip44": {
+    "conversationKey": "63bd15d02b154f17b040e80ce12c489c500ce23bc5e64227fa1bbdb277d941bf",
+    "nonce": "b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0",
+    "payload": "ArCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwp35Ws9ve/Kw+Il1inQlBz7O52dcmtNMfKOGZQiZBHutBy5VJEkXlwDowPwm5uFSoTEIh1f6lguDWhG7NEZmqp39Q",
+    "sdkConversationKey": "63bd15d02b154f17b040e80ce12c489c500ce23bc5e64227fa1bbdb277d941bf"
+  },
+  "giftWrap": {
+    "kind": 1059,
+    "content": "Ao/te4YVJeshDz+eDHF711bwd09Ej22HH3hheXnJ3MpQaiWu5kx4Ffb8AyyMEYSpOykFAKOZ9qIOJQsi8NOPd+oJJVa9QZlNDimlmsg5QthomoiUQGScpJUAQpkAc4+QJWpelb3go6zEoL0pgYvfdXWFwRmmVBE0RR1cmdTtnCFBFoZH35XUT5bZq94CBb+HLtTf6vpIlQV5w6cvsF49aOdAoEalh4j0zlXo+nOas75x73aNPWlkZLacFO/yRPlv68Y6wNtaCCLUz7YhEULvAPuI/drStJCH6a1bq71V+gMVTpUgitkURmpHatdMpuZDYNWPf6Fj6uUJndva0CAwTuuFF6iZqSetTMApyYIBE53gn/toqyWp/jzR5x6RB8h1ulusXBJObxsz5MJ4+9+WNbq8tBS6vt5qBAyHYNHhuwPgarKwe27OfT79LkENEx5ey6VF4z1qUGqASEDxnyG16ACVkzkUwdYxTRAOYgY4ICb0Z/FbRf9vGM/AECvhJ1wR/coC9yOtwbQFQR9AVorPXYDTH3tm9l8g9IHqM8OIq/Jt2cyB1KqvdOTne7AW2Ev3gPry3N5astLNgb9XK4sxWg6O2gX2HEthkwREmGxyScxrdAlxFj2UW2s6O1IEfqUWvEhdpVRpqhLCLXU899hvZXUaBbuvq278cTDpoLDO+wbZvyBjo2G51kbuJGpYxG13p76kgU4kEnDjD5wCCWcLOUWHneMmEgRFKYGfmsTnwpRW5WSkP5yE8zdJ6weS/S57qVS5MTjLCEC/hFUVdhWVI7920Dv+2FrHsEGESJKYFJRKsruOkUgtt8pdT+E8OoZJkD90GtJqOPqyh07eFafPFidEhWBdA7kIlGgeOq/jCMClxJyK/QjFWe5jq/RQBAFeaeSP1tb5/njSHf06Qmp7bDIf2qO+4Zyto434ZXztW38QdFk9KayxFwNIDbU7lmD8MG10Rr+MuiYP3eo9bkG1FdgerTP9Y/7kl6+Uw1Z032vha57A9qw2RgHD+aA0MfWDF8Qztuv1k7baqBs0z5IvNB2Wl/A89vpaDGK77z6bMJRAC7W2fHNrJ3gSu3wuJgtWL9gAYEzsmIlhUXNt6TlMTBfxVAwegRX7SRrtjZm+uqXT7VFyk+Yj+S1mVaBRgMxmBFqsWTqBELbvNhmeVmPtWzn667DLsQV1VY7Xt8yozkroqXzuHGbP6AFTAovw2oKtOlyv8XYuvIJ+lVcKR9sraJXORl+BgXsa+9Pi9TcRBxKhtctf6gt9v5RfxSoOVEvzCqHp",
+    "created_at": 1790596859,
+    "tags": [
+      [
+        "p",
+        "d41b22899549e1f3d335a31002cfd382174006e166d3e658e3a5eecdb6463573"
+      ]
+    ],
+    "pubkey": "12bafd44fa4b9cc842cf889edca2cf9345a7070973e619df9f2d29bc19fc6c08",
+    "id": "8cfc57ac3093cf4b65850517b4c69ac8007415291e177ca45016d0cb54e3953d",
+    "sig": "6627106a313a369948c4c02b0f0634f6ec97512dc5bcfe6c18ddf55878317b2e22a25d1ba4b108668c9b9c0ec3c2909a165a23d523a4974e5340ecb0e00a735e"
+  },
+  "sdkWrap": {
+    "kind": 1059,
+    "created_at": 1789899699,
+    "tags": [
+      [
+        "p",
+        "d41b22899549e1f3d335a31002cfd382174006e166d3e658e3a5eecdb6463573"
+      ]
+    ],
+    "content": "Aqq1W/jaK/mInOtC+R17dBJmdNHXGQ6ju8NPwAraklaWylY/HAJ+7DQ8ZL8apWWxwLcFcehq0J7fItqPFgh6FE0dQQbdy6lByPfZNlW6iJf5R3/1hK7hMoRCJ/wJQePoHRAZgZwpwlDTmnAvdt4v52UKzeQazKMTLa5FsnpbbHqGGOrVUYUPxj59keioPoCY7Iz+b1xoxFk2KTcAvGvip1+vxaRwX7Q+yhvZFtMOHSMQVcAOFChlllt9uQLKxiaAnjUEP0zdEp+LJs+QoptYUch8V//E5mA0mOecqTu+SrolK8hYf6ccXopRstRDnWl1gRvKr5YHQRSGzvAZ5IE4c2rz3up9j9v1z5QEKqsRt237bfGL/PQxA+G334EILCZ3OPe9NA5zp+8aoSsjolXZ4X68g6xdky5COYvSwCgo+nlwyWsI3iNgPx2WkRnSEqfZRi10GiZ4B1d8z/W5Oxd4yjglM1c+LZgZ9rzC3EwP0OIX4tmmvZNhhlilrPP+MTwFmGrZLg7PHOc+6wcA9iTEqDGKZk3gsxjfyNKHjRaXtb4ddmDOBmGD9XPXgUt3o1a6x/M8lccT39Lh7Y/lOdy7pU1CCK9gaYcXQ6vw+/pT49RdY5wfy4wD4CR7Pc4KRTvc3jirKaBYIVOwsDiyIz+41n6d4gi+X31x23FIHVs9fsVaoXZ2z+oiZKsAjfZ2Fja3rfYNjdIPYQ+eU3a8WEvRHoeJSA+Cbmks+ViSk2q3wnNu4GgNUr0XMXpf/Pzev2NjJ7/yEcC4ZotXXO2dT5IACMDDjNcbczwJYbWVNZIAKDvkbGcolOSXFYuQ5JGm2mNrkzc2Eq+JKevpHaHrijmXuiTqQ4Evap+yFV+AIveCIriYgWMCIn8Uor9uIuyK26V0rnd2QlqfrP5kIaIDWE4oADNZD54yEBrbz/MaRQgcoAJb4aKI7uHVt5c+4FZks8e6yGIQkt9lvAFawa0jsYo3WP4mrQlALpJcOd07vWW0yvFIaDEXpLiAj6sp9kFAE56QmEUcFn2Is9c0B+3u1qL/U92OqIGj6Koqmru1LM7PgFSMCCwUepcdrYFJltfUT1HyYcC+i98M8SYJ0SdqP2bryHLGmOtrp691oS6NOxRmXZdubc7S9Z5agQ00E5OqraV2njmSd4lzdViWFjdMRnCbwiR5cZBfOF/rFkpEwt1ymBMzt/DTqZKSuGLtkEHzIYnras/lbmbHQO6luguK/3VJdZ4ceSayUUb6AH/56mV7EA3G2jMfeg4wmF2C5l0NRuZAABp9",
+    "pubkey": "2f63418e9e3cb0391c737856666df34a909a79eae326e59bddb9d6bcef5c9797",
+    "id": "f6c94e7f28632218b3c9a181691717054b16aa5f1e71b02e6cf77f21998d4e0a",
+    "sig": "63e0bb47126025b39a6614c043d55a108bd922feca87bfac8528d6ee3c83452086fd18aaf54c07f4e8b6f765ab9236b198f917ca40576e68bb943d7f9fb70084"
+  },
+  "nip49": {
+    "password": "cinderous-密碼",
+    "ncryptsec": "ncryptsec1qgzpgve2rwmfqlu8fuwdppvg95vau6nqjfz8sfnjpk0ze6re3kehv045vtcz83w8f22sy2dyzp0mu92zypgldv04ame969xpej7r0s73ftd8rlkcle4dvusmddmr3hdm30u5swsyhn8me3qjaspk8thy"
+  },
+  "nip06": {
+    "mnemonic": "leader monkey parrot ring guide accident before fence cannon height naive bean",
+    "sk0": "7f7ff03d123792d6ac594bfa67bf6d0c0ab55b6b1fdb6249303fe861f1ccba9a"
+  }
+}

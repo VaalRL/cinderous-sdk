@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": [
+      "ES2022"
+    ],
+    "types": [
+      "@cloudflare/workers-types",
+      "node"
+    ],
+    "noUnusedLocals": false
+  },
+  "include": [
+    "src/relay/worker.ts",
+    "src/relay/iot-home-room.ts",
+    "tests/relay/iot-worker.test.ts",
+    "tests/relay/worker.test.ts",
+    "tests/relay/turn-contract.test.ts",
+    "tests/relay/lanes-only.test.ts"
+  ],
+  "exclude": []
+}
