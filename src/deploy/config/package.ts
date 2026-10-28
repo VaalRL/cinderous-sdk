@@ -7,6 +7,7 @@ import { DEFAULT_COMPATIBILITY_DATE, DEFAULT_WORKER_NAME, RELAY_DO_BINDING, type
 import {
   DEFAULT_DOCKER_PORT,
   DEFAULT_FLY_REGION,
+  composeBindAddress,
   relayEnvironment,
   renderCompose,
   renderDockerfile,
@@ -53,7 +54,7 @@ export interface DeployPackageContext {
   /**
    * SDK 怎麼進到部署包：
    * - `embed`（預設，公開前）：複製到 `sdk/`，以 `file:./sdk` 安裝——由寫檔的一方（CLI）複製，這裡只回報 `copySdk`；
-   * - `spec`：以套件相依安裝，例如 `github:VaalRL/cinderous-sdk#v0.79.0`（公開 repo；不上 npm，SDK ADR 0110）。
+   * - `spec`：以套件相依安裝，例如 `github:VaalRL/cinderous-sdk#v0.80.0`（公開 repo；不上 npm，SDK ADR 0110）。
    */
   sdkSource?: { kind: 'embed' } | { kind: 'spec'; spec: string };
   /** Workers 目標：附預打包的中繼（`src/relay.mjs`），不需要安裝 SDK。需要 `relayWorkerSource`。 */
@@ -112,6 +113,9 @@ export function renderDeployConfigFile(config: DeployConfig, sdkVersion?: string
   for (const key of order) if (withSdk[key] !== undefined) out[key] = withSdk[key];
   return `${JSON.stringify(out, null, 2)}\n`;
 }
+
+/** compose 的發布位址（SDK ADR 0119）：undefined＝不加 */
+const bindOption = (bindAddress: string | undefined): { bindAddress?: string } => (bindAddress !== undefined ? { bindAddress } : {});
 
 /** `.env.example`：這個目標會讀的每一個秘密都列出來，值留空 */
 function renderEnvExample(config: DeployConfig, sdkVersion: string): string {
@@ -340,6 +344,7 @@ export function renderDeployPackage(config: DeployConfig, ctx: DeployPackageCont
           port: config.node?.port ?? DEFAULT_DOCKER_PORT,
           environment,
           header: header('#', v),
+          ...(config.target === 'docker' ? bindOption(composeBindAddress(config.node?.bindAddress, trustProxy)) : {}),
           ...(config.target === 'home-tunnel'
             ? {
                 tunnel: {

@@ -16,7 +16,7 @@ import {
   waitForHealthy,
 } from './common.js';
 import { prepareNodeRelayContext } from './container.js';
-import { DEFAULT_DOCKER_PORT, relayEnvironment, renderCompose } from './render.js';
+import { BIND_ADDRESS_PATTERN, composeBindAddress, DEFAULT_DOCKER_PORT, relayEnvironment, renderCompose, WILDCARD_BIND_ADDRESSES } from './render.js';
 import { privateLaneEndpoint, type RelaySiteOptions } from './shared.js';
 
 // 產生器搬到不碰 Node 的 render.ts（SDK ADR 0050），這裡轉出以維持原本的匯出
@@ -50,6 +50,11 @@ export interface DockerDeployOptions extends RelaySiteOptions {
   persist?: boolean;
   /** 前面有反向代理時設 true */
   trustProxy?: boolean;
+  /**
+   * 只把埠發布在這個 IP（SDK ADR 0119）。沒給時，`trustProxy` 就是 `127.0.0.1`（反向代理在同一台；Docker 發布的埠會繞過 ufw），
+   * 否則所有網卡。Tunnel 模式不發布埠，用不到。
+   */
+  bindAddress?: string;
   /** 家中主機＋Cloudflare Tunnel：給了就不發布埠、強制 `TRUST_PROXY=1`（SDK ADR 0050） */
   tunnel?: DockerTunnelOptions;
   workDir?: string;
@@ -70,6 +75,11 @@ export async function deployDockerRelay(opts: DockerDeployOptions = {}): Promise
   if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error(`埠號不合法：${port}`);
   const tunnel = opts.tunnel;
   if (tunnel && !/^[a-z0-9.-]+$/.test(tunnel.hostname)) throw new Error(`Tunnel 主機名稱不合法：${tunnel.hostname}`);
+  if (opts.bindAddress !== undefined && !BIND_ADDRESS_PATTERN.test(opts.bindAddress)) {
+    throw new Error(`bindAddress 不是 IP 位址：${opts.bindAddress}（例如 127.0.0.1，或 IPv6 的 ::1，不加方括號）`);
+  }
+  const trustProxy = opts.trustProxy === true || tunnel !== undefined;
+  const bind = tunnel ? undefined : composeBindAddress(opts.bindAddress, trustProxy);
   const allowed = allowedPubkeysFrom((opts.allowedPubkeys ?? []).join(','));
   const progress = opts.onProgress ?? (() => {});
 
@@ -79,7 +89,7 @@ export async function deployDockerRelay(opts: DockerDeployOptions = {}): Promise
     ...(allowed ? { allowedPubkeys: allowed } : {}),
     persist: opts.persist === true,
     // Tunnel 模式所有連線都經過 cloudflared：一定要信 X-Forwarded-For，IP 限速才不會把所有人算成同一個來源
-    trustProxy: opts.trustProxy === true || tunnel !== undefined,
+    trustProxy,
   });
   const workDir = opts.workDir ?? join(process.cwd(), '.cinderous', name);
   prepareNodeRelayContext({ workDir, ...(opts.sdkRoot ? { sdkRoot: opts.sdkRoot } : {}), ...(opts.version ? { version: opts.version } : {}) });
@@ -90,6 +100,7 @@ export async function deployDockerRelay(opts: DockerDeployOptions = {}): Promise
       name,
       port,
       environment,
+      ...(bind !== undefined ? { bindAddress: bind } : {}),
       ...(tunnel ? { tunnel: { tokenEnv: tunnel.tokenEnv, ...(tunnel.image !== undefined ? { image: tunnel.image } : {}) } } : {}),
     }),
   );
@@ -102,14 +113,16 @@ export async function deployDockerRelay(opts: DockerDeployOptions = {}): Promise
   const result = await (opts.run ?? defaultRunner)('docker', ['compose', '-f', configPath, '-p', name, 'up', '-d', '--build'], runEnv);
   if (result.code !== 0) throw commandFailure('docker compose', result);
 
-  const httpUrl = tunnel ? `https://${tunnel.hostname}` : `http://localhost:${port}`;
+  // 只發布在某個位址時，健康檢查要打那個位址（localhost 不一定連得到）
+  const local = bind === undefined || WILDCARD_BIND_ADDRESSES.includes(bind) ? 'localhost' : bind.includes(':') ? `[${bind}]` : bind;
+  const httpUrl = tunnel ? `https://${tunnel.hostname}` : `http://${local}:${port}`;
   progress({ step: 'health', message: `檢查 ${httpUrl}/healthz` });
   await waitForHealthy(httpUrl, {
     ...(opts.fetch ? { fetch: opts.fetch } : {}),
     ...(opts.healthRetries !== undefined ? { retries: opts.healthRetries } : {}),
     ...(opts.healthDelayMs !== undefined ? { delayMs: opts.healthDelayMs } : {}),
   });
-  const base = tunnel ? `wss://${tunnel.hostname}` : `ws://localhost:${port}`;
+  const base = tunnel ? `wss://${tunnel.hostname}` : `ws://${local}:${port}`;
   // 私人路徑（SDK ADR 0051）：給客戶端的是含秘密路徑的完整網址；進度訊息只印主機
   const relayEndpoint = opts.privateLane !== undefined ? privateLaneEndpoint(base, opts.privateLane) : base;
   const shown = `${base}${opts.privateLane !== undefined ? '（私人路徑）' : ''}`;

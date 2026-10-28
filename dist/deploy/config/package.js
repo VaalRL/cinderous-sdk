@@ -3,7 +3,7 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 import { DEFAULT_COMPATIBILITY_DATE, DEFAULT_WORKER_NAME, RELAY_DO_BINDING } from '../shared.js';
-import { DEFAULT_DOCKER_PORT, DEFAULT_FLY_REGION, relayEnvironment, renderCompose, renderDockerfile, renderDockerignore, renderFlyToml, renderServerEntry, renderWranglerToml, } from '../render.js';
+import { DEFAULT_DOCKER_PORT, DEFAULT_FLY_REGION, composeBindAddress, relayEnvironment, renderCompose, renderDockerfile, renderDockerignore, renderFlyToml, renderServerEntry, renderWranglerToml, } from '../render.js';
 import { DEPLOY_GUIDE_FILES, DEPLOY_GUIDE_LOCALES, renderDeployGuide, SDK_SOURCE_REPO, secretEnvName } from './guide.js';
 import { assertDeployConfig } from './validate.js';
 import { renderPushGatewayEnvLines, renderPushGatewayFiles } from './push-package.js';
@@ -63,6 +63,8 @@ export function renderDeployConfigFile(config, sdkVersion) {
             out[key] = withSdk[key];
     return `${JSON.stringify(out, null, 2)}\n`;
 }
+/** compose 的發布位址（SDK ADR 0119）：undefined＝不加 */
+const bindOption = (bindAddress) => (bindAddress !== undefined ? { bindAddress } : {});
 /** `.env.example`：這個目標會讀的每一個秘密都列出來，值留空 */
 function renderEnvExample(config, sdkVersion) {
     const lines = [...header('#', sdkVersion), '#', '# 複製成 .env 再填值；.env 已在 .gitignore，不要提交。Copy to .env and fill in; .env is git-ignored — never commit it.', ''];
@@ -261,6 +263,7 @@ export function renderDeployPackage(config, ctx) {
                 port: config.node?.port ?? DEFAULT_DOCKER_PORT,
                 environment,
                 header: header('#', v),
+                ...(config.target === 'docker' ? bindOption(composeBindAddress(config.node?.bindAddress, trustProxy)) : {}),
                 ...(config.target === 'home-tunnel'
                     ? {
                         tunnel: {

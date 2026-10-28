@@ -30,6 +30,7 @@ npx cinderous relay deploy --config deploy/cinderous.config.json
 | `node.persist` | `--persist` | — |
 | `node.port` | `--port` | — |
 | `node.trustProxy` | — | — |
+| `node.bindAddress` | — | — |
 | `cloudflare.accountId` | `--account-id` | — |
 | `cloudflare.compatibilityDate` | `--compatibility-date` | — |
 | `cloudflare.workersDevSubdomain` | — | — |
@@ -485,6 +486,15 @@ docker：對外的埠。
 - 服務：`relay`
 
 ⚠️ **危險選項**：`cinderous init` 要打出選項名稱才會開，部署說明也會把它列進安全檢查清單。開之前先讀完上面的說明。
+
+### `node.bindAddress`
+
+docker：只把埠發布在這個 IP（例如 127.0.0.1，或 IPv6 的 ::1，不加方括號）。沒給時，開了 trustProxy 就是 127.0.0.1（反向代理在同一台），否則所有網卡。🔴 Docker 發布的埠會繞過 ufw；開了 trustProxy 又對所有網卡發布，直接連埠的人能偽造自己的 IP。
+
+- 型別：字串
+- 格式：`^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}|(?=[0-9A-Fa-f:]{2,39}$)[0-9A-Fa-f]*:[0-9A-Fa-f:]*)$`
+- 部署目標：`docker`
+- 服務：`relay`
 
 ### `cloudflare.accountId`
 

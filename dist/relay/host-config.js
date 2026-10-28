@@ -869,6 +869,36 @@ export function maxConnectionsFrom(raw) {
 export function maxConnectionsPerIpFrom(raw) {
     return positiveIntFrom(raw);
 }
+/** `TRUST_PROXY` 最多信任幾層代理 */
+export const TRUST_PROXY_MAX_HOPS = 10;
+/**
+ * `TRUST_PROXY`（SDK ADR 0013、0119）：前面有幾層信任的反向代理。`1`＝一層（Caddy、nginx、Fly 的邊緣、cloudflared）；
+ * `2`–`10`＝幾層（例如 Cloudflare 橘色雲＋自己的 nginx）。沒設、`0`、壞值＝不信任 `X-Forwarded-For`——
+ * 直接對外時那個標頭任何人都能偽造。
+ */
+export function trustedProxyHopsFrom(raw) {
+    if (raw === undefined || !/^\d+$/.test(raw))
+        return 0;
+    const hops = Number(raw);
+    return hops >= 1 && hops <= TRUST_PROXY_MAX_HOPS ? hops : 0;
+}
+/**
+ * 連線的真正來源（SDK ADR 0119）：信任 `hops` 層代理時，取 `X-Forwarded-For` **從右邊數**第 `hops` 段。
+ * 會「附加」的代理（nginx 的 `$proxy_add_x_forwarded_for`、Cloudflare、Fly）把客戶端自己帶的值留在左邊，
+ * 只有最右邊那幾段是信任的代理寫的——取第一段的話，客戶端在前面加一段就能換一個 IP、躲過每個 IP 的上限。
+ * 段數比層數少：取最左邊（每一段都是信任的代理寫的）。沒有標頭或是空的：用連線的來源位址。
+ */
+export function clientIpFrom(forwardedFor, remoteAddress, hops) {
+    if (hops <= 0 || forwardedFor === undefined)
+        return remoteAddress;
+    const parts = forwardedFor
+        .split(',')
+        .map((part) => part.trim())
+        .filter((part) => part !== '');
+    if (parts.length === 0)
+        return remoteAddress;
+    return parts[Math.max(0, parts.length - hops)];
+}
 /** SDK 自己的工具（`cinderous relay start`／`relay deploy`）預設套用的 PRD 3.3 數值。 */
 export const PRD_MAX_CONNECTIONS_PER_PUBKEY = 5;
 export const PRD_MAX_MESSAGES_PER_SECOND_PER_IP = 20;

@@ -1,6 +1,7 @@
 // 設定檔的收集式驗證（SDK ADR 0050 §3）：一次列出所有問題、不丟例外。
 // 型別檢查由描述表推出；站台參數交給 `collectRelaySiteIssues`（與四條部署路徑同一份規則，訊息逐字相同）；
 // 另外加上設定檔層級的規則（目標與宿主、Tunnel、版本相容、秘密）。
+import { WILDCARD_BIND_ADDRESSES } from '../render.js';
 import { collectRelaySiteIssues, type DeployIssue, IssueList, type RelaySiteOptions } from '../shared.js';
 import { DEFAULT_PUSH_GATEWAY_IOS, DEPLOY_OPTION_SPECS, type DeployOptionSpec, specAppliesTo } from './specs.js';
 import { ENV_NAME_PATTERN, findSecretLiterals, siteWithPlaceholders } from './secrets.js';
@@ -99,6 +100,11 @@ export const DEPLOY_AFFECTING_CHANGES: readonly { version: string; adr: string; 
     adr: '0118',
     'zh-TW': 'TURN 可以從設定檔設定（site.turnKeyId、site.turnTtlSeconds，Token 是 secrets.turnApiToken，部署時以 Worker secret 上傳）；沒設時行為不變。🔴 TURN 流量由 Cloudflare Realtime 另外計費',
     en: 'TURN can be set in the config (site.turnKeyId, site.turnTtlSeconds; the token is secrets.turnApiToken and is uploaded as a Worker secret); unchanged when unset. 🔴 TURN traffic is billed separately by Cloudflare Realtime',
+  },  {
+    version: '0.80.0',
+    adr: '0119',
+    'zh-TW': 'Node 中繼取 X-Forwarded-For 改為從右邊數（TRUST_PROXY=<層數>；原本取第一段，客戶端可以偽造）；docker 開了 node.trustProxy 時 compose 只發布在 127.0.0.1（反向代理在別台要設 node.bindAddress）；新增 HOST／relay start --host',
+    en: 'The Node relay now reads X-Forwarded-For from the right (TRUST_PROXY=<hops>; it used the first entry, which clients can forge); with node.trustProxy, the docker compose file publishes on 127.0.0.1 only (set node.bindAddress if the reverse proxy is on another host); new HOST / relay start --host',
   },
 ];
 
@@ -393,6 +399,18 @@ export function validateDeployConfig(input: unknown, opts: ValidateDeployConfigO
         'trust-proxy-required',
         `${target} 的連線一定經過代理（${target === 'fly' ? 'Fly 的邊緣' : 'Cloudflare Tunnel'}）：node.trustProxy 不能是 false，否則 IP 限速會把所有人算成同一個來源`,
         `${target} connections always come through a proxy (${target === 'fly' ? 'the Fly edge' : 'Cloudflare Tunnel'}): node.trustProxy cannot be false, or IP rate limits would count everyone as one source`,
+      );
+    }
+  }
+  // 發布位址（SDK ADR 0119）：信任 X-Forwarded-For 又對所有網卡發布＝直接連埠的人能偽造 IP
+  if (target === 'docker' && isPlainObject(config.node) && config.node.trustProxy === true) {
+    const bind = config.node.bindAddress;
+    if (typeof bind === 'string' && WILDCARD_BIND_ADDRESSES.includes(bind)) {
+      issues.warn(
+        'node.bindAddress',
+        'public-bind-trust-proxy',
+        `node.bindAddress 是 ${bind}（所有網卡）又開了 node.trustProxy：直接連 ${bind} 的人可以自己帶 X-Forwarded-For 假裝成任何 IP，躲過每個 IP 的上限；Docker 發布的埠也會繞過 ufw。反向代理在同一台就拿掉 bindAddress（會用 127.0.0.1）`,
+        `node.bindAddress is ${bind} (all interfaces) while node.trustProxy is on: anyone connecting directly can send their own X-Forwarded-For and pose as any IP, dodging per-IP limits; ports published by Docker also bypass ufw. If the reverse proxy is on the same host, remove bindAddress (127.0.0.1 is used)`,
       );
     }
   }

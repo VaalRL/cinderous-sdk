@@ -1,10 +1,10 @@
 # 在自己的 VPS 上架 Cinderous 中繼 / Self-host a Cinderous relay on a VPS
 
-> 對應 [SDK ADR 0109](../adr/0109-vps-self-host-guide.md)。旗標、環境變數與預設值以原始碼為準（`src/cli/commands.ts`、`src/relay/node-relay.ts`、`src/deploy/render.ts`、`schema/cinderous.config.schema.json`）；改了那些地方請同步這份文件。
+> 對應 [SDK ADR 0109](../adr/0109-vps-self-host-guide.md)、[0119](../adr/0119-node-relay-proxy-hardening.md)。旗標、環境變數與預設值以原始碼為準（`src/cli/commands.ts`、`src/relay/node-relay.ts`、`src/deploy/render.ts`、`schema/cinderous.config.schema.json`）；改了那些地方請同步這份文件。
 >
 > 🔴 **尚未在真的 VPS 上從頭到尾跑過。** 已在本機驗證：範例設定通過 `config validate`、`relay build` 的產出、Node 直跑時 `/healthz`、NIP-11、SQLite 與 NIP-42 認證（ADR 0109）。沒驗證：`docker compose up`、Caddy、ufw、systemd。第一次照做時請把結果回報，好補上實測。
 >
-> Matches [SDK ADR 0109](../adr/0109-vps-self-host-guide.md). Flags, variables and defaults follow the source; update this page when they change. 🔴 **Not yet run end to end on a real VPS.** Verified locally: the sample config, the `relay build` output, and the Node path (`/healthz`, NIP-11, SQLite, NIP-42). Not verified: `docker compose up`, Caddy, ufw, systemd.
+> Matches [SDK ADR 0109](../adr/0109-vps-self-host-guide.md) and [0119](../adr/0119-node-relay-proxy-hardening.md). Flags, variables and defaults follow the source; update this page when they change. 🔴 **Not yet run end to end on a real VPS.** Verified locally: the sample config, the `relay build` output, and the Node path (`/healthz`, NIP-11, SQLite, NIP-42). Not verified: `docker compose up`, Caddy, ufw, systemd.
 
 - [繁體中文](#繁體中文)
 - [English](#english)
@@ -34,7 +34,7 @@
 
 新增一筆 `A`（與 `AAAA`，若 VPS 有 IPv6）記錄：`relay.example.com` → VPS 的 IP。
 
-- DNS 在 Cloudflare 時請設成 **DNS only（灰色雲）**。經 Cloudflare 代理（橘色雲）時，中繼看到的「客戶端 IP」可以被偽造，每個 IP 的限速就沒有用（見[已知限制](#已知限制)）。
+- DNS 在 Cloudflare 時請設成 **DNS only（灰色雲）**。經 Cloudflare 代理（橘色雲）時，Caddy 看到的來源是 Cloudflare 的機器，每個 IP 的限速會把很多人算成同一個來源（見[已知限制](#已知限制)）。
 
 ### 步驟 2：在開發機產生部署包
 
@@ -69,7 +69,7 @@
 | `doCeilings.strict` | 離線留言／可尋址事件各最多幾 MiB。依硬碟大小設，最多各 1 TiB；沒設是各 128 MiB。滿了預設拒收（`ceilingMode: "reject"`），可改 `"evict"` 淘汰最快到期的。 |
 | `maxConnections` | 全站同時連線上限，依記憶體設；沒設＝不限。 |
 | `maxFileMb` | 要做 Vault 同步（CinderSync、Cinder Coffice）就設 17；只傳訊息可以拿掉。需要白名單。 |
-| `trustProxy` | 前面有 Caddy 才設 `true`。 |
+| `trustProxy` | 前面有 Caddy 才設 `true`。設了之後，`docker-compose.yml` 只把埠發布在 `127.0.0.1`（見步驟 3）。 |
 
 檢查並產生部署包：
 
@@ -80,29 +80,22 @@ npx cinderous relay build --config relay-vps/cinderous.config.json --out relay-v
 
 `relay-vps/deploy/` 裡會有 `Dockerfile`、`docker-compose.yml`、`server.mjs`、`package.json`、`sdk/`（SDK 本身）、`README-DEPLOY.md`、`.env.example` 等（13 個檔案另含 `sdk/`）。
 
-### 步驟 3：讓中繼只聽本機（重要）
+### 步驟 3：確認中繼只聽本機（重要）
 
-打開 `relay-vps/deploy/docker-compose.yml`，把
-
-```yaml
-    ports:
-      - "8080:8080"
-```
-
-改成
+設了 `trustProxy: true` 時，產生的 `relay-vps/deploy/docker-compose.yml` 已經只發布在本機（SDK v0.80.0 起，ADR 0119）：
 
 ```yaml
     ports:
       - "127.0.0.1:8080:8080"
 ```
 
-為什麼：
+打開確認一下。看到的是 `"8080:8080"`（較舊的 SDK 產生的），請改成上面那樣，或升級 SDK 重新 `relay build`。為什麼重要：
 
-- 沒改的話，`8080` 對整個網際網路開放，別人可以繞過 Caddy、不經 TLS 直接連；
+- 對所有網卡發布的話，`8080` 對整個網際網路開放，別人可以繞過 Caddy、不經 TLS 直接連；
 - 而且 **Docker 發布的埠會繞過 ufw**，防火牆擋不住；
 - 又因為設了 `trustProxy`，直接連的人可以自己帶 `X-Forwarded-For` 假裝成任何 IP，躲過每個 IP 的限速。
 
-手改過的檔案，之後重新 `relay build` 不會被覆寫（除非加 `--force`），所以改一次就好。
+Caddy 在另一台機器時，用 `node.bindAddress` 指定要發布的內網 IP（例如 `"bindAddress": "10.0.0.5"`）。`config validate` 看到 `trustProxy` 又設 `"0.0.0.0"` 會提醒。
 
 ### 步驟 4：VPS 上安裝 Docker、防火牆
 
@@ -129,7 +122,7 @@ scp -r relay-vps/deploy you@vps:/opt/cinderous-relay
 # 在 VPS
 cd /opt/cinderous-relay
 docker compose up -d --build
-docker compose logs -f relay       # 看到 Cinderous node-relay：ws://0.0.0.0:8080（sqlite…）就是起來了
+docker compose logs -f relay       # 看到 Cinderous node-relay：ws://0.0.0.0:8080（sqlite…）就是起來了（容器裡聽所有位址，對外只發布在 127.0.0.1）
 curl http://127.0.0.1:8080/healthz # 應該回 ok
 ```
 
@@ -153,9 +146,9 @@ relay.example.com {
 sudo systemctl reload caddy
 ```
 
-Caddy 會自動申請並續期 Let's Encrypt 憑證，WebSocket 不需要額外設定，而且會**覆寫**客戶端自己帶的 `X-Forwarded-For`（中繼取第一段當客戶端 IP）。
+Caddy 會自動申請並續期 Let's Encrypt 憑證，WebSocket 不需要額外設定，而且會**覆寫**客戶端自己帶的 `X-Forwarded-For`。
 
-已經在用 nginx 的話，用這段，**`X-Forwarded-For` 一定要設成 `$remote_addr`**（不要用 `$proxy_add_x_forwarded_for`：那會保留客戶端自己帶的值，中繼取第一段就會被騙）：
+中繼取 `X-Forwarded-For` **最右邊**那段當客戶端 IP（`TRUST_PROXY=1`，一層代理；SDK ADR 0119），所以會「附加」的代理也安全：客戶端自己帶的值留在左邊，換不到新的 IP。已經在用 nginx 的話，用這段（`$remote_addr` 最單純；`$proxy_add_x_forwarded_for` 也可以）：
 
 ```nginx
 server {
@@ -194,12 +187,15 @@ sudo mkdir -p /var/lib/cinderous-relay && sudo chown cinderous: /var/lib/cindero
 cd /opt/cinderous-relay && sudo npm install --omit=dev --no-audit --no-fund
 ```
 
-把 `docker-compose.yml` 裡 `environment:` 底下的每一行抄成 `/etc/cinderous-relay.env`（`KEY=value`，去掉引號，一行一個；`PERSIST=1`、`TRUST_PROXY=1` 已經在裡面），然後把 `DB_PATH` 改成 VPS 上的路徑、再加上埠：
+把 `docker-compose.yml` 裡 `environment:` 底下的每一行抄成 `/etc/cinderous-relay.env`（`KEY=value`，去掉引號，一行一個；`PERSIST=1`、`TRUST_PROXY=1` 已經在裡面），然後把 `DB_PATH` 改成 VPS 上的路徑、再加上埠與監聽位址：
 
 ```
 DB_PATH=/var/lib/cinderous-relay/relay.db
 PORT=8080
+HOST=127.0.0.1
 ```
+
+`HOST=127.0.0.1`：只有同一台的 Caddy 連得到（SDK ADR 0119）。
 
 `/etc/systemd/system/cinderous-relay.service`：
 
@@ -228,13 +224,13 @@ sudo systemctl daemon-reload && sudo systemctl enable --now cinderous-relay
 journalctl -u cinderous-relay -f
 ```
 
-🔴 Node 直跑時中繼聽**所有網卡**（`0.0.0.0`，沒有只聽本機的選項），一定要靠 ufw 擋住 8080（上面的 ufw 設定沒開 8080，所以是擋住的）。Docker 那條路線則是第 3 步的 `127.0.0.1:`。
+🔴 沒設 `HOST` 時，Node 直跑的中繼聽**所有網卡**（`0.0.0.0`），只剩 ufw 擋著 8080。請保留 `HOST=127.0.0.1`；ufw 照樣不開 8080，多一層保護。Docker 那條路線則是第 3 步的 `127.0.0.1:`。
 
 ### 日常維護
 
 | 要做的事 | 怎麼做 |
 |---|---|
-| 升級 SDK | 開發機拉新版 SDK → 重新 `relay build`（手改過的 `docker-compose.yml` 不會被覆寫）→ 複製到 VPS → `docker compose up -d --build`。保存模式升級不會清掉離線留言。 |
+| 升級 SDK | 開發機拉新版 SDK → `cinderous config migrate`（列出中間影響部署的變更）→ 重新 `relay build`（手改過的檔案沒加 `--force` 不會被覆寫）→ 複製到 VPS → `docker compose up -d --build`。保存模式升級不會清掉離線留言。 |
 | 改白名單或上限 | 改 `cinderous.config.json` → 重新 `relay build` → 同上。白名單寫錯任何一筆，中繼會拒絕啟動，不會默默變成開放中繼。 |
 | 備份 | 離線留言最多保存 `maxTtlDays` 天、而且是密文，通常不需要備份；要的話停掉容器後複製 volume `relay-data`。 |
 | 看流量 | NIP-11 的 `cinder_traffic.used_percent`；用到 `trafficNearFullPercent` 起，送出的 `OK` 會帶 `warning: near-full:`。 |
@@ -243,10 +239,10 @@ journalctl -u cinderous-relay -f
 ### 已知限制
 
 - **沒有在真的 VPS 上跑過**（見頁首）。
-- 產生的 `docker-compose.yml` 對所有網卡發布埠，要照第 3 步手改（ADR 0109〈後續〉）。
+- 沒開 `trustProxy`、也沒設 `node.bindAddress` 時，產生的 `docker-compose.yml` 照舊對所有網卡發布（給區網直連的樹莓派）。VPS 上一定要開 `trustProxy`，前面放 Caddy。
 - Docker 映像還沒發布（之後的名稱是 `ghcr.io/vaalrl/cinderous-relay-lite`，SDK ADR 0112）；目前都是在 VPS 上自己建（`--build`）。
 - Node 主機沒有車道（`appLanes`、`fileLanes` 只有 Cloudflare 版）。
-- 經 Cloudflare 代理（橘色雲）時，中繼取 `X-Forwarded-For` 的第一段，而 Cloudflare 會保留客戶端自己帶的值，所以每個 IP 的限速可以被繞過；白名單仍然有效（寫入要認證）。請用 DNS only。
+- 經 Cloudflare 代理（橘色雲）時，Caddy 預設不信任 Cloudflare 帶來的 `X-Forwarded-For`，中繼看到的會是 Cloudflare 的 IP，每個 IP 的限速把很多人算成同一個來源。要用橘色雲，得在 Caddy 設 `trusted_proxies`（Cloudflare 的 IP 範圍）並設 `TRUST_PROXY=2`（兩層代理）；沒驗證過，建議用 DNS only。白名單照樣有效（寫入要認證）。
 - 純記憶體模式（`persist: false`）重啟就清空，每月流量的用量也會歸零；VPS 上建議一律 `persist: true`。
 
 ---
@@ -272,7 +268,7 @@ The relay stores encrypted offline messages and file chunks until they expire (7
 
 ### Step 1: DNS
 
-Add an `A` record (and `AAAA` if the VPS has IPv6): `relay.example.com` → the VPS IP. On Cloudflare DNS, use **DNS only (grey cloud)**: behind the orange-cloud proxy the client IP the relay sees can be forged and per-IP rate limits stop working (see [Known limitations](#known-limitations)).
+Add an `A` record (and `AAAA` if the VPS has IPv6): `relay.example.com` → the VPS IP. On Cloudflare DNS, use **DNS only (grey cloud)**: behind the orange-cloud proxy Caddy sees Cloudflare's machines as the source, so per-IP rate limits lump many people together (see [Known limitations](#known-limitations)).
 
 ### Step 2: Build the deploy package on your workstation
 
@@ -285,16 +281,16 @@ Create `relay-vps/cinderous.config.json` with the same JSON as in the Chinese se
 | `doCeilings.strict` | MiB for offline messages / addressable events, up to 1 TiB each; default 128 each. Full means reject (`ceilingMode: "reject"`), or `"evict"` to drop what expires soonest. |
 | `maxConnections` | Whole-relay connection cap, sized to RAM; unset means unlimited. |
 | `maxFileMb` | 17 for Vault sync (CinderSync, Cinder Coffice); drop it for messaging only. Needs the allowlist. |
-| `trustProxy` | `true` only with Caddy in front. |
+| `trustProxy` | `true` only with Caddy in front. With it, `docker-compose.yml` publishes the port on `127.0.0.1` only (step 3). |
 
 ```bash
 npx cinderous config validate --config relay-vps/cinderous.config.json
 npx cinderous relay build --config relay-vps/cinderous.config.json --out relay-vps/deploy
 ```
 
-### Step 3: Listen on localhost only (important)
+### Step 3: Check it listens on localhost only (important)
 
-In `relay-vps/deploy/docker-compose.yml`, change `- "8080:8080"` to `- "127.0.0.1:8080:8080"`. Otherwise port 8080 is open to the internet, **Docker-published ports bypass ufw**, and since `trustProxy` is on, anyone connecting directly can send their own `X-Forwarded-For` and dodge per-IP limits. Hand-edited files are not overwritten by later `relay build` runs (without `--force`).
+With `trustProxy: true`, the generated `relay-vps/deploy/docker-compose.yml` already publishes on localhost only (from SDK v0.80.0, ADR 0119): `- "127.0.0.1:8080:8080"`. Check it. If you see `- "8080:8080"` (made by an older SDK), change it or upgrade the SDK and rebuild. Otherwise port 8080 is open to the internet, **Docker-published ports bypass ufw**, and since `trustProxy` is on, anyone connecting directly can send their own `X-Forwarded-For` and dodge per-IP limits. If Caddy runs on another machine, set `node.bindAddress` to the private IP to publish on (e.g. `"bindAddress": "10.0.0.5"`); `config validate` warns about `trustProxy` with `"0.0.0.0"`.
 
 ### Step 4: Docker and the firewall on the VPS
 
@@ -332,7 +328,7 @@ relay.example.com {
 }
 ```
 
-Then `sudo systemctl reload caddy`. Caddy obtains and renews Let's Encrypt certificates, proxies WebSockets as is, and **replaces** a client-supplied `X-Forwarded-For` (the relay uses its first entry). With nginx, use the block from the Chinese section and set **`proxy_set_header X-Forwarded-For $remote_addr;`**. Do not use `$proxy_add_x_forwarded_for`, which keeps the client's own value in first place.
+Then `sudo systemctl reload caddy`. Caddy obtains and renews Let's Encrypt certificates, proxies WebSockets as is, and **replaces** a client-supplied `X-Forwarded-For`. The relay takes the **rightmost** `X-Forwarded-For` entry as the client IP (`TRUST_PROXY=1`, one proxy; SDK ADR 0119), so appending proxies are safe too: whatever the client sent stays on the left. With nginx, use the block from the Chinese section; `proxy_set_header X-Forwarded-For $remote_addr;` is simplest, `$proxy_add_x_forwarded_for` also works.
 
 ### Step 7: Check
 
@@ -345,11 +341,11 @@ Put `wss://relay.example.com` in your app's relay field. Non-allowlisted keys ar
 
 ### Without Docker: systemd
 
-The same package runs on Node directly (Node **22.13+**; older 22.x needs `--experimental-sqlite`, included below). Create a `cinderous` system user and `/var/lib/cinderous-relay`, run `npm install --omit=dev` in `/opt/cinderous-relay`, and copy every `environment:` entry from `docker-compose.yml` into `/etc/cinderous-relay.env`, (`KEY=value`, no quotes; `PERSIST=1` and `TRUST_PROXY=1` are already there), then change `DB_PATH` to `/var/lib/cinderous-relay/relay.db` and add `PORT=8080`. Use the unit file from the Chinese section (`ExecStart=/usr/bin/node --experimental-sqlite server.mjs`, `EnvironmentFile=/etc/cinderous-relay.env`). 🔴 Run directly, the relay listens on **all interfaces** (`0.0.0.0`, no bind option), so keep 8080 closed in ufw.
+The same package runs on Node directly (Node **22.13+**; older 22.x needs `--experimental-sqlite`, included below). Create a `cinderous` system user and `/var/lib/cinderous-relay`, run `npm install --omit=dev` in `/opt/cinderous-relay`, and copy every `environment:` entry from `docker-compose.yml` into `/etc/cinderous-relay.env`, (`KEY=value`, no quotes; `PERSIST=1` and `TRUST_PROXY=1` are already there), then change `DB_PATH` to `/var/lib/cinderous-relay/relay.db` and add `PORT=8080` and `HOST=127.0.0.1` (only Caddy on the same host can reach it; SDK ADR 0119). Use the unit file from the Chinese section (`ExecStart=/usr/bin/node --experimental-sqlite server.mjs`, `EnvironmentFile=/etc/cinderous-relay.env`). 🔴 Without `HOST`, the relay listens on **all interfaces** (`0.0.0.0`) and only ufw stands in front of 8080; keep `HOST=127.0.0.1` and keep 8080 closed in ufw as well.
 
 ### Maintenance
 
-- **Upgrade**: pull the new SDK, re-run `relay build`, copy, `docker compose up -d --build`. Persisted messages survive.
+- **Upgrade**: pull the new SDK, run `cinderous config migrate` (lists the changes in between), re-run `relay build`, copy, `docker compose up -d --build`. Persisted messages survive.
 - **Change the allowlist or limits**: edit the config and do the same. A malformed allowlist entry stops the relay instead of opening it.
 - **Backup**: usually unnecessary (ciphertext, kept at most `maxTtlDays`). Otherwise stop the container and copy the `relay-data` volume.
 - **Traffic**: NIP-11 `cinder_traffic.used_percent`; from `trafficNearFullPercent` on, `OK` carries `warning: near-full:`.
@@ -358,8 +354,8 @@ The same package runs on Node directly (Node **22.13+**; older 22.x needs `--exp
 ### Known limitations
 
 - Not yet run on a real VPS.
-- The generated `docker-compose.yml` publishes on all interfaces; edit it as in step 3 (ADR 0109, follow-up).
+- Without `trustProxy` or `node.bindAddress`, the generated `docker-compose.yml` still publishes on all interfaces (for a Raspberry Pi reached directly on the LAN). On a VPS, always turn on `trustProxy` with Caddy in front.
 - No Docker image is published yet (it will be `ghcr.io/vaalrl/cinderous-relay-lite`, SDK ADR 0112); for now you build it on the VPS.
 - No lanes on the Node host (`appLanes` / `fileLanes` are Cloudflare-only).
-- Behind Cloudflare's orange-cloud proxy, the relay's first `X-Forwarded-For` entry can be forged, so per-IP limits can be bypassed. The allowlist still holds (writes require AUTH). Use DNS only.
+- Behind Cloudflare's orange-cloud proxy, Caddy does not trust the `X-Forwarded-For` Cloudflare sends by default, so the relay sees Cloudflare's IPs and per-IP limits lump many people together. Using the orange cloud needs Caddy's `trusted_proxies` (Cloudflare's ranges) plus `TRUST_PROXY=2` (two proxies); this is untested, so use DNS only. The allowlist still holds (writes require AUTH).
 - Memory-only mode (`persist: false`) loses everything on restart, including this month's traffic count. Use `persist: true` on a VPS.

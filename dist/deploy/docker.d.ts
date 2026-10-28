@@ -28,6 +28,11 @@ export interface DockerDeployOptions extends RelaySiteOptions {
     persist?: boolean;
     /** 前面有反向代理時設 true */
     trustProxy?: boolean;
+    /**
+     * 只把埠發布在這個 IP（SDK ADR 0119）。沒給時，`trustProxy` 就是 `127.0.0.1`（反向代理在同一台；Docker 發布的埠會繞過 ufw），
+     * 否則所有網卡。Tunnel 模式不發布埠，用不到。
+     */
+    bindAddress?: string;
     /** 家中主機＋Cloudflare Tunnel：給了就不發布埠、強制 `TRUST_PROXY=1`（SDK ADR 0050） */
     tunnel?: DockerTunnelOptions;
     workDir?: string;

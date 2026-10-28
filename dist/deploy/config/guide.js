@@ -2,7 +2,7 @@
 // Cloudflare 的 Token 步驟直接取自 `CLOUDFLARE_TOKEN_SETUP_GUIDE`（ADR 0022），不另外抄一份。
 import { CLOUDFLARE_TOKEN_SETUP_GUIDE } from '../cloudflare-api/guide.js';
 import { DEFAULT_COMPATIBILITY_DATE, DEFAULT_WORKER_NAME, RELAY_SITE_LIMITS } from '../shared.js';
-import { CONTAINER_PORT, DEFAULT_CLOUDFLARED_IMAGE, DEFAULT_DOCKER_PORT, DEFAULT_FLY_REGION, FLY_VOLUME_NAME } from '../render.js';
+import { composeBindAddress, CONTAINER_PORT, DEFAULT_CLOUDFLARED_IMAGE, DEFAULT_DOCKER_PORT, DEFAULT_FLY_REGION, FLY_VOLUME_NAME, WILDCARD_BIND_ADDRESSES } from '../render.js';
 import { dangerousChoices, DEPLOY_OPTION_SPECS } from './specs.js';
 import { renderPushGatewayGuide } from './push-guide.js';
 import { hostOfTarget, isSecretRef, serviceOfConfig } from './types.js';
@@ -79,6 +79,8 @@ export function renderDeployGuide(config, locale, ctx) {
     const readOnlyEnv = isSecretRef(site.readOnlyLanes) ? site.readOnlyLanes.$env : undefined;
     // TURN（SDK ADR 0118）：Key ID 在 [vars]，Token 是 Worker secret、值在 .env
     const turnEnv = worker && site.turnKeyId !== undefined ? secretEnvName(config, 'turnApiToken') : undefined;
+    // docker 的發布位址（SDK ADR 0119）：trustProxy 時沒指定就只發布在 127.0.0.1
+    const dockerBind = target === 'docker' ? composeBindAddress(config.node?.bindAddress, config.node?.trustProxy === true) : undefined;
     const out = [];
     const h2 = (title) => out.push('', `## ${title}`, '');
     const code = (lang, ...lines) => out.push(`\`\`\`${lang}`, ...lines, '```');
@@ -210,6 +212,10 @@ export function renderDeployGuide(config, locale, ctx) {
         code('bash', 'docker compose up -d --build', target === 'home-tunnel' ? t('docker compose logs -f cloudflared   # 看到 "Registered tunnel connection" 就通了', 'docker compose logs -f cloudflared   # "Registered tunnel connection" means it is up') : 'docker compose ps');
         if (target === 'docker') {
             out.push('', t(`中繼在 \`ws://localhost:${config.node?.port ?? DEFAULT_DOCKER_PORT}\`。對外公開要在前面放 TLS 反向代理（例如 Caddy），客戶端才連得到 \`wss://\`；放了代理就在設定檔設 \`node.trustProxy: true\`，IP 限速才看得到真正的來源。`, `The relay listens on \`ws://localhost:${config.node?.port ?? DEFAULT_DOCKER_PORT}\`. To expose it, put a TLS reverse proxy (e.g. Caddy) in front so clients can reach \`wss://\`; then set \`node.trustProxy: true\` in the config so IP rate limits see the real source.`));
+            if (dockerBind !== undefined) {
+                const published = `${dockerBind.includes(':') ? `[${dockerBind}]` : dockerBind}:${config.node?.port ?? DEFAULT_DOCKER_PORT}`;
+                out.push('', t(`compose 只把埠發布在 \`${published}\`${config.node?.bindAddress === undefined ? '（開了 `node.trustProxy`，所以只給同一台的反向代理連；SDK ADR 0119）' : '（`node.bindAddress`）'}。`, `compose publishes the port only on \`${published}\`${config.node?.bindAddress === undefined ? ' (`node.trustProxy` is on, so only a reverse proxy on the same host can reach it; SDK ADR 0119)' : ' (`node.bindAddress`)'}.`));
+            }
         }
         else {
             out.push('', t('relay 容器**不發布任何埠**：只有同一個 compose 網路裡的 cloudflared 連得到它，家裡的路由器不必開埠。`TRUST_PROXY=1` 已設定（連線都經過 Tunnel）。', 'The relay container **publishes no ports**: only cloudflared on the same compose network can reach it, so no router ports need opening. `TRUST_PROXY=1` is set (every connection comes through the tunnel).'));
@@ -306,6 +312,12 @@ export function renderDeployGuide(config, locale, ctx) {
         checks.push(t('- [ ] Cloudflare Token 只有兩項權限、設了很近的到期日，部署完就刪掉。', '- [ ] The Cloudflare token has only the two permissions, a near expiry, and is deleted after deploying.'));
     if (turnEnv !== undefined)
         checks.push(t(`- [ ] TURN 的 Token（\`${turnEnv}\`）只放在 \`.env\`；外洩時到 Cloudflare 重新產生，再設一次 Worker secret。`, `- [ ] The TURN token (\`${turnEnv}\`) lives only in \`.env\`; if it leaks, regenerate it in Cloudflare and set the Worker secret again.`));
+    if (target === 'docker') {
+        const restricted = dockerBind !== undefined && !WILDCARD_BIND_ADDRESSES.includes(dockerBind);
+        checks.push(t('- [ ] Docker 發布的埠會繞過 ufw（它自己改 iptables）：防火牆擋不住，要靠 compose 的發布位址（`node.bindAddress`；開了 `trustProxy` 時預設 127.0.0.1）。' +
+            (restricted ? '從另一台機器 `curl http://<這台的公網 IP>:<埠>/healthz` 應該連不上。' : '目前對所有網卡發布：只適合區網直連；要對外公開請放反向代理、開 `trustProxy`。'), '- [ ] Ports published by Docker bypass ufw (Docker edits iptables itself): the firewall does not block them, so rely on the compose bind address (`node.bindAddress`; 127.0.0.1 by default with `trustProxy`). ' +
+            (restricted ? 'From another machine, `curl http://<this host\'s public IP>:<port>/healthz` should fail.' : 'It is published on all interfaces now: fine on a LAN only; to go public, put a reverse proxy in front and turn on `trustProxy`.')));
+    }
     if (target === 'fly')
         checks.push(t('- [ ] Fly Token 是只能部署這個 app 的 deploy token。', '- [ ] The Fly token is a deploy token scoped to this app.'));
     if (target === 'home-tunnel')

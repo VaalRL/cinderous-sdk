@@ -5,7 +5,7 @@
 import { DEFAULT_COMPATIBILITY_DATE, DEFAULT_WORKER_NAME, RELAY_NAME_PATTERN, RELAY_SITE_LIMITS } from '../shared.js';
 import { LANE_ID_PATTERN } from '../../relay/shard.js';
 import { PRD_MAX_CONNECTIONS_PER_PUBKEY, PRD_MAX_MESSAGES_PER_SECOND_PER_IP } from '../../relay/host-config.js';
-import { DEFAULT_CLOUDFLARED_IMAGE, DEFAULT_DOCKER_PORT, DEFAULT_FLY_REGION } from '../render.js';
+import { BIND_ADDRESS_PATTERN, DEFAULT_CLOUDFLARED_IMAGE, DEFAULT_DOCKER_PORT, DEFAULT_FLY_REGION } from '../render.js';
 import { DEPLOY_SERVICES } from './types.js';
 const limits = RELAY_SITE_LIMITS;
 const CONTAINER_TARGETS = ['docker', 'fly', 'home-tunnel'];
@@ -430,6 +430,18 @@ const TOP_LEVEL_SPECS = [
         description: {
             'zh-TW': '信任前面代理的 X-Forwarded-For（TRUST_PROXY=1）。docker 只有在反向代理後方才開；fly 與 home-tunnel 一定開。',
             en: 'Trust X-Forwarded-For from a proxy in front (TRUST_PROXY=1). For docker only behind a reverse proxy; always on for fly and home-tunnel.',
+        },
+    },
+    {
+        path: 'node.bindAddress',
+        type: 'string',
+        pattern: BIND_ADDRESS_PATTERN,
+        services: ['relay'],
+        targets: ['docker'],
+        group: 'host',
+        description: {
+            'zh-TW': 'docker：只把埠發布在這個 IP（例如 127.0.0.1，或 IPv6 的 ::1，不加方括號）。沒給時，開了 trustProxy 就是 127.0.0.1（反向代理在同一台），否則所有網卡。🔴 Docker 發布的埠會繞過 ufw；開了 trustProxy 又對所有網卡發布，直接連埠的人能偽造自己的 IP。',
+            en: 'docker: publish the port only on this IP (e.g. 127.0.0.1, or ::1 for IPv6 without brackets). When unset: 127.0.0.1 if trustProxy is on (reverse proxy on the same host), otherwise all interfaces. 🔴 Ports published by Docker bypass ufw; with trustProxy on and the port open on all interfaces, anyone connecting directly can fake their IP.',
         },
     },
     {

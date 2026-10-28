@@ -1061,8 +1061,8 @@ exports[`renderDeployPackage：每個目標的檔案（快照） > docker > .cin
     "docker-compose.yml": "d2e05a220d52922539d607f6f8a90d578d09ecd94b96c80e556e20019b3b841f",
     ".env.example": "083f8810e0982d946a14c530a33d722a973324a41173234c877e4ebb3c4201e9",
     ".gitignore": "34776b84a0c377dd9c8a8a18cc25f48147405f9b1c79bdfbe0aa5b90bb44fadb",
-    "README-DEPLOY.md": "b08f8e2fc0774fa7dee9824a625a6360402d843986f89dbd8b568ccc8de293ee",
-    "README-DEPLOY.en.md": "fe03c61aba477f9d423992385b1859f5c4aa82abfde851f8d9607510a0b3c25e",
+    "README-DEPLOY.md": "2e7d847f2224c323c5797d03f174df213ee6c942f95ecbe22bc567b5eb7840fe",
+    "README-DEPLOY.en.md": "ff35667be7d9fdab308f103ada5bbbe086e2e4304871538e5f062f57d4550840",
     "LICENSE": "e582df3d2d34456fe5a06053194810e87786bfa11b9a1b367263b6270a8a8977",
     "SOURCE.md": "eba58dafd5b28e42fe9962ffdc4c781344de8cee0b87d28167ec4041862ecef4"
   },
@@ -1240,6 +1240,7 @@ npx cinderous estimate --devices 3 --collaborators 1
 
 - [ ] The allowlist holds only your devices and collaborators (\`site.allowedPubkeys\`).
 - [ ] \`.env\` is not committed (\`git status\` does not show it); the config holds no tokens (\`cinderous config validate\` checks).
+- [ ] Ports published by Docker bypass ufw (Docker edits iptables itself): the firewall does not block them, so rely on the compose bind address (\`node.bindAddress\`; 127.0.0.1 by default with \`trustProxy\`). It is published on all interfaces now: fine on a LAN only; to go public, put a reverse proxy in front and turn on \`trustProxy\`.
 
 ## 10. License
 
@@ -1370,6 +1371,7 @@ npx cinderous estimate --devices 3 --collaborators 1
 
 - [ ] 白名單只有你自己的裝置與合作者（\`site.allowedPubkeys\`）。
 - [ ] \`.env\` 沒有被提交（\`git status\` 看不到它）；設定檔裡沒有任何 Token（\`cinderous config validate\` 會檢查）。
+- [ ] Docker 發布的埠會繞過 ufw（它自己改 iptables）：防火牆擋不住，要靠 compose 的發布位址（\`node.bindAddress\`；開了 \`trustProxy\` 時預設 127.0.0.1）。目前對所有網卡發布：只適合區網直連；要對外公開請放反向代理、開 \`trustProxy\`。
 
 ## 10. 授權
 

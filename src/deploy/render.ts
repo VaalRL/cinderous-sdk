@@ -19,6 +19,23 @@ export const FLY_VOLUME_NAME = 'relay_data';
 /** 家中主機＋Cloudflare Tunnel 目標預設的 cloudflared 映像（SDK ADR 0050 §5） */
 export const DEFAULT_CLOUDFLARED_IMAGE = 'cloudflare/cloudflared:latest';
 
+/** compose 發布位址的形狀（`node.bindAddress`；SDK ADR 0119）：IPv4 的四段，或只有十六進位與冒號的 IPv6（不加方括號） */
+export const BIND_ADDRESS_PATTERN =
+  /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}|(?=[0-9A-Fa-f:]{2,39}$)[0-9A-Fa-f]*:[0-9A-Fa-f:]*)$/;
+
+/** 對所有網卡發布的位址 */
+export const WILDCARD_BIND_ADDRESSES: readonly string[] = ['0.0.0.0', '::'];
+
+/**
+ * docker 目標的發布位址（SDK ADR 0119）。Docker 發布的埠會繞過 ufw；開了 `trustProxy` 又對所有網卡發布，
+ * 直接連埠的人就能自己帶 `X-Forwarded-For` 假裝成任何 IP——所以 `trustProxy` 時沒指定就只發布在 `127.0.0.1`
+ * （反向代理在同一台）。沒開 `trustProxy`：照舊對所有網卡（區網裡直接用 `ws://` 連的樹莓派）。回 undefined＝不加前綴。
+ */
+export function composeBindAddress(bindAddress: string | undefined, trustProxy: boolean): string | undefined {
+  if (bindAddress !== undefined) return bindAddress;
+  return trustProxy ? '127.0.0.1' : undefined;
+}
+
 /** 產生 wrangler 設定（PRD 5.3.3）。環境變數的值都經過 `relaySiteVars` 驗證。`header` 換掉第一行的註解（部署包用）。 */
 export function renderWranglerToml(
   opts: {
@@ -151,8 +168,11 @@ export function renderCompose(opts: {
   environment: Record<string, string>;
   header?: readonly string[];
   tunnel?: ComposeTunnelOptions;
+  /** 只發布在這個位址（`composeBindAddress` 的結果）；沒給＝所有網卡。Tunnel 模式不發布埠，用不到 */
+  bindAddress?: string;
 }): string {
   const persist = opts.environment.PERSIST === '1';
+  const bind = opts.bindAddress === undefined ? '' : opts.bindAddress.includes(':') ? `[${opts.bindAddress}]:` : `${opts.bindAddress}:`;
   const env = Object.entries(opts.environment).map(([key, value]) => `      ${key}: ${yamlString(value)}`);
   const tunnel = opts.tunnel;
   return [
@@ -163,7 +183,7 @@ export function renderCompose(opts: {
     `    container_name: ${opts.name}`,
     '    restart: unless-stopped',
     // Tunnel 模式不發布埠：只有同一個 compose 網路裡的 cloudflared 連得到（不對區網或網際網路開放）
-    ...(tunnel ? ['    expose:', `      - ${yamlString(String(CONTAINER_PORT))}`] : ['    ports:', `      - ${yamlString(`${opts.port}:${CONTAINER_PORT}`)}`]),
+    ...(tunnel ? ['    expose:', `      - ${yamlString(String(CONTAINER_PORT))}`] : ['    ports:', `      - ${yamlString(`${bind}${opts.port}:${CONTAINER_PORT}`)}`]),
     '    environment:',
     ...env,
     ...(persist ? ['    volumes:', '      - relay-data:/data'] : []),

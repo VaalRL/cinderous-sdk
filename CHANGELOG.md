@@ -4,6 +4,13 @@ Releases are git tags; install one with `npm install github:VaalRL/cinderous-sdk
 
 每個版本是一個 git tag，安裝方式是 `npm install github:VaalRL/cinderous-sdk#vX.Y.Z`。每一版列出那一版的改動（取自 commit 紀錄）；每項改動的理由寫在它引用的 ADR 裡（[docs/adr/](docs/adr/README.md)）。
 
+## v0.80.0 — 2026-10-28
+
+- fix(relay)!: Node 中繼取 `X-Forwarded-For` 改為從右邊數第 `TRUST_PROXY` 段（`TRUST_PROXY=<層數>`，1–10；新增 `clientIpFrom`、`trustedProxyHopsFrom`）——原本取第一段，nginx 的 `$proxy_add_x_forwarded_for`、Cloudflare、Fly 後方客戶端能偽造 IP 躲過每個 IP 的上限（ADR 0119）
+- feat(relay,cli): `HOST` 環境變數與 `relay start --host`：只聽某個位址；沒設照舊所有位址（ADR 0119）
+- feat(deploy)!: docker 目標新增 `node.bindAddress`；開了 `node.trustProxy` 沒指定時，compose 只發布在 `127.0.0.1`（Docker 發布的埠會繞過 ufw）；`0.0.0.0`／`::`＋`trustProxy` 警告；部署說明的安全檢查清單補「Docker 會繞過 ufw」（ADR 0119）
+- docs(guides): VPS 自架指南改成不必手改 compose、systemd 加 `HOST=127.0.0.1`、nginx 兩種寫法都安全（ADR 0119）
+
 ## v0.79.0 — 2026-10-28
 
 - feat(deploy): TURN 進站台參數（`turnKeyId`、`turnTtlSeconds`）；Token 是 `RelayWorkerSecrets.turnApiToken`，REST 以 `secret_text` 綁定、wrangler 以 `wrangler secret put`（值走 stdin）上傳；`CommandRunner` 多一個可選的 `input`；部署包與說明列出 Token、寫明 TURN 另外計費（ADR 0118）

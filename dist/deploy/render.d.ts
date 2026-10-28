@@ -11,6 +11,16 @@ export declare const DEFAULT_FLY_REGION = "nrt";
 export declare const FLY_VOLUME_NAME = "relay_data";
 /** 家中主機＋Cloudflare Tunnel 目標預設的 cloudflared 映像（SDK ADR 0050 §5） */
 export declare const DEFAULT_CLOUDFLARED_IMAGE = "cloudflare/cloudflared:latest";
+/** compose 發布位址的形狀（`node.bindAddress`；SDK ADR 0119）：IPv4 的四段，或只有十六進位與冒號的 IPv6（不加方括號） */
+export declare const BIND_ADDRESS_PATTERN: RegExp;
+/** 對所有網卡發布的位址 */
+export declare const WILDCARD_BIND_ADDRESSES: readonly string[];
+/**
+ * docker 目標的發布位址（SDK ADR 0119）。Docker 發布的埠會繞過 ufw；開了 `trustProxy` 又對所有網卡發布，
+ * 直接連埠的人就能自己帶 `X-Forwarded-For` 假裝成任何 IP——所以 `trustProxy` 時沒指定就只發布在 `127.0.0.1`
+ * （反向代理在同一台）。沒開 `trustProxy`：照舊對所有網卡（區網裡直接用 `ws://` 連的樹莓派）。回 undefined＝不加前綴。
+ */
+export declare function composeBindAddress(bindAddress: string | undefined, trustProxy: boolean): string | undefined;
 /** 產生 wrangler 設定（PRD 5.3.3）。環境變數的值都經過 `relaySiteVars` 驗證。`header` 換掉第一行的註解（部署包用）。 */
 export declare function renderWranglerToml(opts: {
     name: string;
@@ -62,6 +72,8 @@ export declare function renderCompose(opts: {
     environment: Record<string, string>;
     header?: readonly string[];
     tunnel?: ComposeTunnelOptions;
+    /** 只發布在這個位址（`composeBindAddress` 的結果）；沒給＝所有網卡。Tunnel 模式不發布埠，用不到 */
+    bindAddress?: string;
 }): string;
 export declare function renderFlyToml(opts: {
     name: string;

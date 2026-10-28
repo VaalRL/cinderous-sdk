@@ -26,6 +26,8 @@ import {
   readOnlyLanesFrom,
   inboxAckGraceFor,
   storeOptions,
+  clientIpFrom,
+  trustedProxyHopsFrom,
 } from "./host-config.js";
 import { MessageStore } from "./message-store.js";
 import { buildRelayInfo, NIP11_HEADERS, wantsRelayInfo } from "./nip11.js";
@@ -88,6 +90,8 @@ export interface NodeRelayOptions {
  */
 export function startNodeRelay(env: NodeRelayEnv = process.env, opts: NodeRelayOptions = {}): NodeRelayHandle {
   const port = Number(env.PORT ?? 8787);
+  // 監聽位址（SDK ADR 0119）：沒設＝所有位址（與之前相同）；反向代理在同一台時設 127.0.0.1，直接連埠的人連不進來
+  const host = env.HOST === undefined || env.HOST.trim() === "" ? undefined : env.HOST.trim();
   const dbPath = opts.memory ? undefined : (env.DB_PATH ?? "cinder-relay.db");
   const requireAuth = env.REQUIRE_AUTH !== "0"; // 預設開 NIP-42 認證；設 REQUIRE_AUTH=0 可關
   // 白名單（SDK ADR 0008）：寫錯任何一筆就在這裡丟例外、不開站——不會默默變成開放中繼。
@@ -134,8 +138,8 @@ export function startNodeRelay(env: NodeRelayEnv = process.env, opts: NodeRelayO
   if (maxConnections !== undefined) coreOptions.maxConnectionsPerPubkey = maxConnections;
   const perIp = messagesPerSecondPerIpFrom(env.MAX_MESSAGES_PER_SECOND_PER_IP);
   if (perIp !== undefined) coreOptions.maxMessagesPerSecondPerIp = perIp;
-  // 反向代理後方才信 X-Forwarded-For（TRUST_PROXY=1）；直連時那個標頭任何人都能偽造
-  const trustProxy = env.TRUST_PROXY === "1";
+  // 反向代理後方才信 X-Forwarded-For（TRUST_PROXY=<層數>）；直連時那個標頭任何人都能偽造。從右邊數（SDK ADR 0119）
+  const proxyHops = trustedProxyHopsFrom(env.TRUST_PROXY);
   const rate = eventsPerMinuteFrom(env.MAX_EVENTS_PER_MINUTE);
   if (rate === undefined) delete coreOptions.maxEventsPerMinute;
   else coreOptions.maxEventsPerMinute = rate;
@@ -320,8 +324,8 @@ export function startNodeRelay(env: NodeRelayEnv = process.env, opts: NodeRelayO
       ws.close(UPGRADE_REJECT_CLOSE_CODE, reason);
       return;
     }
-    const forwarded = trustProxy ? String(req.headers["x-forwarded-for"] ?? "").split(",")[0]?.trim() : "";
-    const ip = forwarded || req.socket.remoteAddress || undefined;
+    const forwardedFor = req.headers["x-forwarded-for"];
+    const ip = clientIpFrom(Array.isArray(forwardedFor) ? forwardedFor.join(",") : forwardedFor, req.socket.remoteAddress, proxyHops) || undefined;
     // 本月流量用完（SDK ADR 0101）：新連線也收到說明、以 1013 關閉
     if (meter?.snapshot().exhausted) {
       const { notice, reason } = trafficQuotaRejection(meter.snapshot().resetsAt);
@@ -388,15 +392,18 @@ export function startNodeRelay(env: NodeRelayEnv = process.env, opts: NodeRelayO
 
   const ready = new Promise<number>((resolve, reject) => {
     httpServer.once("error", reject);
-    httpServer.listen(port, () => {
+    const onListening = () => {
       httpServer.off("error", reject);
       const address = httpServer.address();
       const actual = typeof address === "object" && address !== null ? address.port : port;
       const storage = dbPath === undefined ? "純記憶體" : `DB=${dbPath}`;
       const writers = allowed ? `, 白名單 ${allowed.length} 人` : "";
-      console.log(`Cinderous node-relay：ws://0.0.0.0:${actual}（${storage}, requireAuth=${requireAuth}${writers}）`);
+      const shown = host === undefined ? "0.0.0.0" : host.includes(":") ? `[${host}]` : host;
+      console.log(`Cinderous node-relay：ws://${shown}:${actual}（${storage}, requireAuth=${requireAuth}${writers}）`);
       resolve(actual);
-    });
+    };
+    if (host === undefined) httpServer.listen(port, onListening);
+    else httpServer.listen(port, host, onListening);
   });
 
   return {

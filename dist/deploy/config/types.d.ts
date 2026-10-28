@@ -103,6 +103,8 @@ export interface DeployConfig {
         persist?: boolean;
         port?: number;
         trustProxy?: boolean;
+        /** docker：只發布在這個位址（SDK ADR 0119）；沒給時 `trustProxy` 就是 `127.0.0.1`，否則所有網卡 */
+        bindAddress?: string;
     };
     cloudflare?: {
         /** Account ID 不是秘密，可以直接寫；也可以用 `$env` 引用 */

@@ -90,6 +90,12 @@ describe('parseRelayStartArgs', () => {
     expect(parseRelayStartArgs(['--persist', '--db-path', '/data/r.db'], {}).env.DB_PATH).toBe('/data/r.db');
   });
 
+  it('--host → HOST（只聽這個位址，SDK ADR 0119）；沒給就不設（照舊聽所有位址）', () => {
+    expect(parseRelayStartArgs(['--host', '127.0.0.1'], {}).env.HOST).toBe('127.0.0.1');
+    expect(parseRelayStartArgs([], {}).env.HOST).toBeUndefined();
+    expect(parseRelayStartArgs([], { HOST: '::1' }).env.HOST).toBe('::1');
+  });
+
   it('沒給的旗標沿用既有環境變數（Docker 以 -e 設定的照樣生效）', () => {
     expect(parseRelayStartArgs([], { ALLOWED_PUBKEYS: 'npub1x', PORT: '8080' }).env).toMatchObject({ ALLOWED_PUBKEYS: 'npub1x', PORT: '8080' });
   });

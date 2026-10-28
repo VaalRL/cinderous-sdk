@@ -88,6 +88,7 @@ export const USAGE = `用法：cinderous <指令> [選項]
 
   cinderous relay start    在這台機器起一座中繼（預設純記憶體）
       --port, -p <埠>             預設 8787（或環境變數 PORT）
+      --host <位址>               只聽這個位址（例如 127.0.0.1，反向代理在同一台時；或環境變數 HOST）；預設所有位址
       --persist                   改用 SQLite 保存離線留言，重啟不會清空
       --db-path <路徑>            搭配 --persist，預設 cinderous-relay.db
       --allowed-pubkeys, -k <名單> 只讓這些人寫入（逗號分隔的 npub 或 hex）
@@ -128,7 +129,7 @@ export const USAGE = `用法：cinderous <指令> [選項]
       --config, -c <檔>           預設 cinderous.config.json
       --out, -o <目錄>            預設設定檔所在的資料夾
       --self-contained            Workers：附預打包的中繼（src/relay.mjs），不需要安裝 SDK
-      --sdk-spec <相依>           SDK 改以套件相依安裝（例如 github:VaalRL/cinderous-sdk#v0.79.0），不內嵌 sdk/
+      --sdk-spec <相依>           SDK 改以套件相依安裝（例如 github:VaalRL/cinderous-sdk#v0.80.0），不內嵌 sdk/
       --force                     覆寫被手改過、或不是 relay build 產生的檔案
 
   cinderous init           逐題產生設定檔 cinderous.config.json（SDK ADR 0117）；危險選項要打字確認才會開
@@ -242,6 +243,7 @@ export function parseRelayStartArgs(argv: string[], baseEnv: NodeRelayEnv): { en
     strict: true,
     options: {
       port: { type: 'string', short: 'p' },
+      host: { type: 'string' },
       persist: { type: 'boolean' },
       'db-path': { type: 'string' },
       'allowed-pubkeys': { type: 'string', short: 'k' },
@@ -258,6 +260,7 @@ export function parseRelayStartArgs(argv: string[], baseEnv: NodeRelayEnv): { en
     ...baseEnv,
   };
   if (values.port !== undefined) env.PORT = String(positiveInt('--port', values.port, 8787));
+  if (values.host !== undefined) env.HOST = values.host;
   if (values['allowed-pubkeys'] !== undefined) env.ALLOWED_PUBKEYS = values['allowed-pubkeys'];
   if (values['no-auth']) env.REQUIRE_AUTH = '0';
   if (values.name !== undefined) env.RELAY_NAME = values.name;
@@ -303,6 +306,7 @@ interface DeployArgs {
   port?: number;
   persist: boolean;
   trustProxy?: boolean;
+  bindAddress?: string;
   tunnel?: DockerTunnelOptions;
   /** Worker secret：Cloudflare TURN 的 API Token（SDK ADR 0118） */
   turnApiToken?: string;
@@ -448,6 +452,7 @@ function deployArgsFromConfig(config: DeployConfig, env: NodeRelayEnv, overrides
   if (config.target === 'docker') {
     if (config.node?.port !== undefined) args.port = config.node.port;
     if (config.node?.trustProxy === true) args.trustProxy = true;
+    if (config.node?.bindAddress !== undefined) args.bindAddress = config.node.bindAddress;
   }
   if (config.target === 'home-tunnel') {
     const tokenEnv = secretEnvName(config, 'tunnelToken');
@@ -486,6 +491,7 @@ async function deployWith(args: DeployArgs, deps: CliDeps): Promise<{ configPath
         persist: args.persist,
         ...(args.port !== undefined ? { port: args.port } : {}),
         ...(args.trustProxy ? { trustProxy: true } : {}),
+        ...(args.bindAddress !== undefined ? { bindAddress: args.bindAddress } : {}),
         ...(args.tunnel ? { tunnel: args.tunnel } : {}),
       });
     case 'fly':

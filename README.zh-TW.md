@@ -639,7 +639,7 @@ this.registerEvent(this.app.vault.on('rename', (f, old) => sync.notifyLocalChang
 - **Vault 名單上的裝置能力宣告**（v0.30，ADR 0035）：`membership.declareCapabilities()` 在名單上加一筆裝置自己簽的 `{ sdk, maxRelayFileBytes }`（可再帶未來的旗標）；`membership.minCapability()` 回傳所有有效成員都支援的下限，沒有宣告的成員（≤ v0.29）一律當成舊版 16.5 MB。每次名單變動時呼叫 `coordinator.setMemberCapabilities(membership.minCapability())`——經中繼的單檔門檻變成 min(中繼上限, 成員)——之後才把 `setRelayLimits` 調過 16.5 MB。沒有 `caps` 的舊名單照收；舊版裝置略過並丟掉這一欄，不影響收斂。每台只能簽自己的能力；誇大的後果只是別台送它收不下的檔案。
 - **內容相同的檔案不再產生衝突副本**（v0.30，ADR 0035）：兩個不同的檔案搶同一個路徑、而**內容雜湊相同**時（最常見的是新裝置帶著已經有的筆記加入），協調器把輸的那個收斂進留下的那個（確定性的刪除版本、磁碟那一份改記在留下的名下、不動磁碟），不再改名成衝突副本。內容不同仍照舊產生副本。與 ≤ v0.29 的裝置混用時也收斂到同一個檔案。
 
-安裝：從公開的 GitHub repo 以 git 相依安裝，釘住 tag：`npm install github:VaalRL/cinderous-sdk#v0.79.0`（[ADR 0110](docs/adr/0110-public-github-repo-not-npm.md)）。
+安裝：從公開的 GitHub repo 以 git 相依安裝，釘住 tag：`npm install github:VaalRL/cinderous-sdk#v0.80.0`（[ADR 0110](docs/adr/0110-public-github-repo-not-npm.md)）。
 
 > ⚠ **沒有發布到 npm。** npm 上的 `@cinderous` 範圍是不相關的帳號，npm 上任何 `@cinderous/*` 套件都**不是我們發布的**。一律用 GitHub 網址加 tag，並保留 lockfile；不要寫成 `"@cinderous/client": "^0.76.1"` 這種版號範圍，npm 會去 registry 找。
 
@@ -749,6 +749,8 @@ npx cinderous relay start --persist --db-path /data/relay.db
 ```
 白名單寫錯任何一筆，中繼會拒絕啟動，不會默默變成開放中繼。
 白名單外的人認證後立刻以 4003 斷線；預設每把公鑰最多 5 條連線、每個 IP 每秒最多 20 則訊息（`MAX_CONNECTIONS_PER_PUBKEY`、`MAX_MESSAGES_PER_SECOND_PER_IP` 可調；反向代理後方請設 `TRUST_PROXY=1`）。
+
+**反向代理後方（SDK ADR 0119）。** `TRUST_PROXY=<n>` 信任 `n` 層代理（Caddy、nginx、Fly、cloudflared 都是 `1`），取 `X-Forwarded-For` **從右邊數**第 `n` 段，客戶端在前面自己加一段也換不到新的 IP。`HOST=127.0.0.1`（或 `relay start --host 127.0.0.1`）只聽那個位址；沒設＝所有位址，與之前相同。Docker：開了 `node.trustProxy` 時，產生的 `docker-compose.yml` 只把埠發布在 `127.0.0.1`（Docker 發布的埠會繞過 ufw）；要發布在別處就設 `node.bindAddress`。見 [VPS 自架指南](docs/guides/self-host-vps.md)。
 Docker 映像還沒發布，之後的名稱是 `ghcr.io/vaalrl/cinderous-relay-lite`。
 
 **在 VPS 上對外提供 `wss://`**（網域、Caddy 自動 HTTPS、只聽本機、防火牆、systemd、日常維護）：照 **[docs/guides/self-host-vps.md](docs/guides/self-host-vps.md)**（[ADR 0109](docs/adr/0109-vps-self-host-guide.md)）。

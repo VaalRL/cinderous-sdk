@@ -1,5 +1,5 @@
 /** 打包這份 Worker 時的 SDK 版號；部署時預設寫進 NIP-11 `version`。 */
-export declare const relayWorkerSdkVersion = "0.79.0";
+export declare const relayWorkerSdkVersion = "0.80.0";
 /** 打包好的 Worker（`relayWorkerSource`）UTF-8 位元組的 SHA-256（十六進位）：部署時才下載 Worker 的外掛拿它比對 */
 export declare const relayWorkerSha256 = "834d02ed73c9c02f05b7805644d0fd87d2e6546b789c3a7e2e0952296bac55b3";
 //# sourceMappingURL=relay-worker-info.d.ts.map

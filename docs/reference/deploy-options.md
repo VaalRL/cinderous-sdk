@@ -30,6 +30,7 @@ npx cinderous relay deploy --config deploy/cinderous.config.json
 | `node.persist` | `--persist` | — |
 | `node.port` | `--port` | — |
 | `node.trustProxy` | — | — |
+| `node.bindAddress` | — | — |
 | `cloudflare.accountId` | `--account-id` | — |
 | `cloudflare.compatibilityDate` | `--compatibility-date` | — |
 | `cloudflare.workersDevSubdomain` | — | — |
@@ -485,6 +486,15 @@ Trust X-Forwarded-For from a proxy in front (TRUST_PROXY=1). For docker only beh
 - Service: `relay`
 
 ⚠️ **Dangerous**: `cinderous init` turns it on only after you type the option name, and the deploy guide lists it in the security checklist. Read the description above first.
+
+### `node.bindAddress`
+
+docker: publish the port only on this IP (e.g. 127.0.0.1, or ::1 for IPv6 without brackets). When unset: 127.0.0.1 if trustProxy is on (reverse proxy on the same host), otherwise all interfaces. 🔴 Ports published by Docker bypass ufw; with trustProxy on and the port open on all interfaces, anyone connecting directly can fake their IP.
+
+- Type: string
+- Format: `^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}|(?=[0-9A-Fa-f:]{2,39}$)[0-9A-Fa-f]*:[0-9A-Fa-f:]*)$`
+- Targets: `docker`
+- Service: `relay`
 
 ### `cloudflare.accountId`
 

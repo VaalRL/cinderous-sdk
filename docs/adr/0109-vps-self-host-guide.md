@@ -67,7 +67,10 @@
     - WebSocket 收到 `AUTH`，認證前的查詢回 `CLOSED auth-required`。
   - **沒跑**（這台機器沒有這些工具，也沒有 VPS）：`docker compose up`、Caddy、ufw、systemd、真的 VPS。指南頁首寫明了。
 
-## 後續（未做，要使用者決定）
+## 後續（已做：SDK ADR 0119，2026-10-28）
+
+下面三項都在 [ADR 0119](0119-node-relay-proxy-hardening.md) 做了：`trustProxy` 時 compose 預設只發布在 `127.0.0.1`、可用 `node.bindAddress` 指定；`HOST`／`relay start --host`；`X-Forwarded-For` 從右邊數、`TRUST_PROXY=<層數>`。指南已同步。
+
 
 - **`node.bindAddress`**（或「`trustProxy: true` 時預設只發布在 `127.0.0.1`」）：不要再產生「對外開放、又信任 `X-Forwarded-For`」的 compose。產生的 `README-DEPLOY.md` 安全檢查清單也要補一條「Docker 會繞過 ufw」。
 - **Node 中繼的監聽位址選項**（例如 `HOST`），讓 systemd 路線不必只靠防火牆。
