@@ -41,8 +41,8 @@ SDK 公開後只有 GitHub 上的 README，沒有可以搜尋、可以瀏覽的�
 
 ## 後續（未做）
 
-- P1：TypeDoc 產生 API 參考，發版時自動更新。
-- P2：從部署參數描述表（`DEPLOY_OPTION_SPECS`）產生部署設定參考頁。
+- ~~P1：TypeDoc 產生 API 參考，發版時自動更新。~~（ADR 0115 已做）
+- ~~P2：從部署參數描述表（`DEPLOY_OPTION_SPECS`）產生部署設定參考頁。~~（ADR 0116 已做）
 - Cinderous 官網的開發者頁與這個網站互相連結。
 
 ## 驗證

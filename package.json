@@ -1,6 +1,6 @@
 {
   "name": "@cinderous/client",
-  "version": "0.77.6",
+  "version": "0.77.7",
   "description": "Cinderous SDK：客戶端（多中繼連線池、NIP-44／NIP-17、封鎖名單、身分、試算器）、共用協定，中繼（核心、Cloudflare Worker、Node 主機），以及 `cinderous` 命令列與一鍵部署",
   "license": "AGPL-3.0-only",
   "repository": {
@@ -108,8 +108,9 @@
     "test": "vitest run",
     "check": "npm run typecheck && npm test && npm run build && git diff --exit-code -- dist src/deploy/cloudflare-api/relay-worker-bundle.ts src/deploy/cloudflare-api/relay-worker-info.ts",
     "build:worker-bundle": "node scripts/build-relay-worker-bundle.mjs",
-    "docs:build": "vitepress build site",
+    "docs:build": "vitepress build site && typedoc --options site/typedoc.config.mjs",
     "docs:dev": "vitepress dev site",
+    "docs:reference": "node scripts/generate-deploy-reference.mjs",
     "measure:inbox-ack": "vitest run -c vitest.measure.config.ts tests/bench/inbox-ack-expiry.measure.ts",
     "measure:relay-budget": "vitest run -c vitest.measure.config.ts tests/bench/relay-budget.measure.ts",
     "measure:duplicate-sends": "vitest run -c vitest.measure.config.ts tests/bench/duplicate-sends.measure.ts"
@@ -137,6 +138,7 @@
     "aedes": "^1.2.0",
     "esbuild": "0.28.2",
     "mqtt": "^5.16.0",
+    "typedoc": "0.28.20",
     "typescript": "^5.9.3",
     "vitepress": "1.6.4",
     "vitest": "^4.1.11"

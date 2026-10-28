@@ -1,0 +1,14 @@
+{
+  "//": "API 參考（SDK ADR 0115）：TypeDoc 讀發佈出去的 dist/*.d.ts；入口點在 site/typedoc.config.mjs",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["dist/**/*.d.ts"]
+}

@@ -116,7 +116,7 @@ export const USAGE = `用法：cinderous <指令> [選項]
       --config, -c <檔>           預設 cinderous.config.json
       --out, -o <目錄>            預設設定檔所在的資料夾
       --self-contained            Workers：附預打包的中繼（src/relay.mjs），不需要安裝 SDK
-      --sdk-spec <相依>           SDK 改以套件相依安裝（例如 github:VaalRL/cinderous-sdk#v0.77.6），不內嵌 sdk/
+      --sdk-spec <相依>           SDK 改以套件相依安裝（例如 github:VaalRL/cinderous-sdk#v0.77.7），不內嵌 sdk/
       --force                     覆寫被手改過、或不是 relay build 產生的檔案
 
   cinderous iot bridge     家中 IoT 橋接器：本地 MQTT broker ↔ relay，端到端加密（SDK ADR 0049；需要 npm install mqtt）

@@ -4,6 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitepress';
 import { PRIVATE_PATHS, REPO_URL, siteMarkdown } from './links.js';
 
+// API 參考（SDK ADR 0115）是 TypeDoc 另外產生的 HTML，不是 VitePress 的頁面：帶 target 才會整頁載入、不經過 VitePress 的路由
+const api = (text: string) => ({ text, link: '/api/', target: '_self' });
+
 const guide = (lang: 'en' | 'zh-TW') => {
   const zh = lang === 'zh-TW';
   return [
@@ -18,6 +21,7 @@ const guide = (lang: 'en' | 'zh-TW') => {
       text: zh ? '自架中繼' : 'Self-host a relay',
       items: [
         { text: zh ? 'VPS 自架指南' : 'VPS guide', link: '/docs/guides/self-host-vps' },
+        { text: zh ? '部署設定參考' : 'Deploy options', link: zh ? '/docs/reference/deploy-options.zh-TW' : '/docs/reference/deploy-options' },
         { text: zh ? 'Cloudflare API token' : 'Cloudflare API token', link: '/docs/guides/cloudflare-api-token' },
         { text: zh ? 'IoT 裝置範例' : 'IoT device example', link: '/examples/iot-device/README' },
       ],
@@ -63,6 +67,7 @@ export default defineConfig({
           { text: 'Self-host', link: '/docs/guides/self-host-vps' },
           { text: 'ADR', link: '/docs/adr/README' },
           { text: 'Changelog', link: '/CHANGELOG' },
+          api('API'),
         ],
         sidebar: guide('en'),
       },
@@ -77,6 +82,7 @@ export default defineConfig({
           { text: '自架', link: '/docs/guides/self-host-vps' },
           { text: 'ADR', link: '/docs/adr/README' },
           { text: '版本紀錄', link: '/CHANGELOG' },
+          api('API 參考'),
         ],
         sidebar: guide('zh-TW'),
       },

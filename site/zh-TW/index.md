@@ -16,6 +16,10 @@ hero:
       text: 自架中繼
       link: /docs/guides/self-host-vps
     - theme: alt
+      text: API 參考
+      link: /api/
+      target: _self
+    - theme: alt
       text: GitHub
       link: https://github.com/VaalRL/cinderous-sdk
 features:

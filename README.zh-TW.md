@@ -497,6 +497,7 @@ this.registerEvent(this.app.vault.on('rename', (f, old) => sync.notifyLocalChang
     "secrets": { "tunnelToken": { "$env": "TUNNEL_TOKEN" } }
   }
   ```
+  每個欄位與它的旗標、環境變數：[部署設定參考](docs/reference/deploy-options.zh-TW.md)（從 `DEPLOY_OPTION_SPECS` 產生，[ADR 0116](docs/adr/0116-deploy-options-reference.md)）。
 - **IoT 遠端控制：共用協定 `@cinderous/client/iot` 與家中橋接器 `@cinderous/client/iot/bridge`**（v0.39，[ADR 0049](docs/adr/0049-iot-relay-modes.md) P0＝路線 A）：定位是「遠端低頻控制＋最新狀態」。家中橋接器連本地 MQTT broker（Tasmota、Zigbee2MQTT、Home Assistant…）與**任一** relay，在家做端到端加密，中繼只看到密文與盲化標籤。家庭秘密（32 bytes）以 HKDF 衍生 `homeKey`／`homePub`（所有 IoT 內容的 NIP-44 收件者，一則只加密一次）、`topicKey`（topic 以 HMAC 盲化成 22 字元）與 `homeTag`；固定測試向量在 `tests/iot/keys.test.ts`。kind：25170 操作、25171 ack、25172 即時狀態、25173 查詢（要求設備立刻回報）、31170 retained（以設備打包）、31171 閘道心跳。`IotClient`：`command()`（QoS 1 逾時以指數退避重送、每次重新簽章、同一個 msgId；`confirmed` 給標了 `confirm` 的 topic）、`query()`（閘道節流或逾時時以 retained 回覆）、`subscribeState()`（MQTT 樣式 `+`／`#`）、`getRetained()`／`listDevices()`（不打擾設備）、`watchGateway()`（心跳過期＝離線）、`myRole()`／`getAcl()`／`updateAcl()`；**只採信閘道簽的狀態類事件**，事件預算預設與同一身分共用 `sharedRelayEventBudget`。`IotGateway`（三條路線共用的一份）：依**簽章者公鑰**授權——viewer 可查詢、operator 可操作、owner 另可經保留 topic `$sys/acl` 改名單；可依設備（`light-*`）與 topic（MQTT 樣式）細分，topic 規則可設 `minRole` 與 `confirm`；名單**只以閘道本地為準**（不放進 ADR 0028 可合併的名單），不能移除最後一位 owner。時間窗與 msgId 去重（命中重送同樣的 ack）、NIP-40 指令存活（預設 30 秒，最多 300 秒）、不做中繼代發遺囑（設備自己的 LWT 以對照表轉成狀態）。mqtt.js 是**選用 peer 相依**（`npm install mqtt`；沒裝時錯誤訊息會告訴你），`./iot` 與主入口都不帶任何 MQTT 程式（守門測試）。命令列：`cinderous iot bridge --config iot-bridge.json`、`cinderous iot acl list|add|remove`（owner 用）、`cinderous iot keygen`、`cinderous iot build`（橋接器的 Docker 建置內容：Dockerfile、compose.yaml、.env.example、sdk/）。⚠ 自架 Node 中繼的嚴格平面每個作者每個 kind 只能有 5 個可尋址位址：名單佔 1 顆 31170，所以單一閘道在自架站上最多 4 台設備的 retained（官方錨點車道 16／64；放寬給閘道公鑰在 P1）。Docker 映像本機尚未實際建置過。
   ```bash
   npm install mqtt
@@ -638,7 +639,7 @@ this.registerEvent(this.app.vault.on('rename', (f, old) => sync.notifyLocalChang
 - **Vault 名單上的裝置能力宣告**（v0.30，ADR 0035）：`membership.declareCapabilities()` 在名單上加一筆裝置自己簽的 `{ sdk, maxRelayFileBytes }`（可再帶未來的旗標）；`membership.minCapability()` 回傳所有有效成員都支援的下限，沒有宣告的成員（≤ v0.29）一律當成舊版 16.5 MB。每次名單變動時呼叫 `coordinator.setMemberCapabilities(membership.minCapability())`——經中繼的單檔門檻變成 min(中繼上限, 成員)——之後才把 `setRelayLimits` 調過 16.5 MB。沒有 `caps` 的舊名單照收；舊版裝置略過並丟掉這一欄，不影響收斂。每台只能簽自己的能力；誇大的後果只是別台送它收不下的檔案。
 - **內容相同的檔案不再產生衝突副本**（v0.30，ADR 0035）：兩個不同的檔案搶同一個路徑、而**內容雜湊相同**時（最常見的是新裝置帶著已經有的筆記加入），協調器把輸的那個收斂進留下的那個（確定性的刪除版本、磁碟那一份改記在留下的名下、不動磁碟），不再改名成衝突副本。內容不同仍照舊產生副本。與 ≤ v0.29 的裝置混用時也收斂到同一個檔案。
 
-安裝：從公開的 GitHub repo 以 git 相依安裝，釘住 tag：`npm install github:VaalRL/cinderous-sdk#v0.77.6`（[ADR 0110](docs/adr/0110-public-github-repo-not-npm.md)）。
+安裝：從公開的 GitHub repo 以 git 相依安裝，釘住 tag：`npm install github:VaalRL/cinderous-sdk#v0.77.7`（[ADR 0110](docs/adr/0110-public-github-repo-not-npm.md)）。
 
 > ⚠ **沒有發布到 npm。** npm 上的 `@cinderous` 範圍是不相關的帳號，npm 上任何 `@cinderous/*` 套件都**不是我們發布的**。一律用 GitHub 網址加 tag，並保留 lockfile；不要寫成 `"@cinderous/client": "^0.76.1"` 這種版號範圍，npm 會去 registry 找。
 

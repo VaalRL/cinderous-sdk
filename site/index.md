@@ -16,6 +16,10 @@ hero:
       text: Self-host a relay
       link: /docs/guides/self-host-vps
     - theme: alt
+      text: API reference
+      link: /api/
+      target: _self
+    - theme: alt
       text: GitHub
       link: https://github.com/VaalRL/cinderous-sdk
 features:
