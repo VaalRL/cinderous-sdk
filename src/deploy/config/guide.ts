@@ -3,7 +3,7 @@
 import { CLOUDFLARE_TOKEN_SETUP_GUIDE, type TokenGuideLocale, type TokenGuideStepId } from '../cloudflare-api/guide.js';
 import { DEFAULT_COMPATIBILITY_DATE, DEFAULT_WORKER_NAME, RELAY_SITE_LIMITS } from '../shared.js';
 import { CONTAINER_PORT, DEFAULT_CLOUDFLARED_IMAGE, DEFAULT_DOCKER_PORT, DEFAULT_FLY_REGION, FLY_VOLUME_NAME } from '../render.js';
-import { DEPLOY_OPTION_SPECS } from './specs.js';
+import { dangerousChoices, DEPLOY_OPTION_SPECS } from './specs.js';
 import { renderPushGatewayGuide } from './push-guide.js';
 import { type DeployConfig, type DeploySecrets, type DeployTarget, hostOfTarget, isSecretRef, serviceOfConfig } from './types.js';
 
@@ -452,9 +452,8 @@ export function renderDeployGuide(config: DeployConfig, locale: DeployGuideLocal
   if (worker) checks.push(t('- [ ] Cloudflare Token 只有兩項權限、設了很近的到期日，部署完就刪掉。', '- [ ] The Cloudflare token has only the two permissions, a near expiry, and is deleted after deploying.'));
   if (target === 'fly') checks.push(t('- [ ] Fly Token 是只能部署這個 app 的 deploy token。', '- [ ] The Fly token is a deploy token scoped to this app.'));
   if (target === 'home-tunnel') checks.push(t('- [ ] Tunnel Token 只放在 `.env`；外洩時到 Cloudflare 重新產生（舊的立即失效）。', '- [ ] The tunnel token lives only in `.env`; if it leaks, rotate it in Cloudflare (the old one stops working).'));
-  if (target === 'docker') checks.push(t('- [ ] `node.trustProxy` 只在反向代理後方才開（直接對外時 X-Forwarded-For 任何人都能偽造）。', '- [ ] `node.trustProxy` is on only behind a reverse proxy (when exposed directly, anyone can forge X-Forwarded-For).'));
-  if (site.openFileRelay === true) checks.push(t('- [ ] 🔴 `openFileRelay`：沒有白名單也收檔案塊，儲存沒有上限。', '- [ ] 🔴 `openFileRelay`: file chunks are accepted without an allowlist, with no storage limit.'));
-  if ((site.appLanePow ?? 0) > 0) checks.push(t('- [ ] 🔴 `appLanePow` > 0：車道的客戶端都會挖礦嗎？', '- [ ] 🔴 `appLanePow` > 0: do all lane clients mine?'));
+  // 開了的危險選項（描述表的 `dangerous`，SDK ADR 0117）：說明直接用描述表的，不另外抄一份
+  for (const spec of dangerousChoices(config)) checks.push(`- [ ] 🔴 \`${spec.path}\`${t('：', ': ')}${spec.description[locale]}`);
   out.push(...checks);
 
   // 10. 授權

@@ -1,5 +1,5 @@
 import { type RelaySiteOptions } from '../shared.js';
-import { type DeployService, type DeployTarget, type RelayHost } from './types.js';
+import { type DeployConfig, type DeployService, type DeployTarget, type RelayHost } from './types.js';
 /** 值的型別（決定驗證、JSON Schema 與表單元件） */
 export type DeployOptionType = 'string' | 'integer' | 'boolean' | 'enum' | 'string-list' | 'pubkey' | 'pubkey-list' | 'https-url' | 'secret-ref' | 'string-or-secret-ref' | 'record';
 /** 精靈的題組（P1 `cinderous init` 依它分組；只有 `basic`、`access`、`vault` 會在不進「進階」時詢問） */
@@ -82,4 +82,10 @@ export declare const SITE_OPTION_KEYS: readonly (keyof RelaySiteOptions)[];
 export declare function deployOptionSpec(path: string): DeployOptionSpec | undefined;
 /** 這個目標適用嗎（站台參數另看宿主） */
 export declare function specAppliesTo(spec: DeployOptionSpec, target: DeployTarget, host: RelayHost): boolean;
+/** 這個值是不是「開了危險選項」：布林 true、數字大於預設、清單不是空的；目標強制的值不算 */
+export declare function isDangerousValue(spec: DeployOptionSpec, value: unknown, target: DeployTarget): boolean;
+/** 設定裡開了哪些危險選項（部署說明的安全檢查清單、精靈的確認都看它） */
+export declare function dangerousChoices(config: DeployConfig): DeployOptionSpec[];
+/** 開危險選項要打的字：欄位名稱的最後一段（`site.openFileRelay` → `openFileRelay`） */
+export declare function dangerConfirmWord(spec: DeployOptionSpec): string;
 //# sourceMappingURL=specs.d.ts.map

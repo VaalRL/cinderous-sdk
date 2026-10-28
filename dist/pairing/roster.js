@@ -44,7 +44,7 @@ export const ROSTER_MAX_EPOCH = 2 ** 31;
  */
 export const LEGACY_MAX_RELAY_FILE_BYTES = 360 * 48_000;
 /** 這一版 SDK 的版本號（`package.json` 的 version；測試釘住兩者一致） */
-export const SDK_VERSION = '0.77.8';
+export const SDK_VERSION = '0.78.0';
 /**
  * 這一版 SDK 的裝置能力（SDK ADR 0035 §G9）：
  * - `sdk`：SDK 版本；

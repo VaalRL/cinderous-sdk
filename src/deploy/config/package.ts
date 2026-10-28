@@ -53,7 +53,7 @@ export interface DeployPackageContext {
   /**
    * SDK 怎麼進到部署包：
    * - `embed`（預設，公開前）：複製到 `sdk/`，以 `file:./sdk` 安裝——由寫檔的一方（CLI）複製，這裡只回報 `copySdk`；
-   * - `spec`：以套件相依安裝，例如 `github:VaalRL/cinderous-sdk#v0.77.8`（公開 repo；不上 npm，SDK ADR 0110）。
+   * - `spec`：以套件相依安裝，例如 `github:VaalRL/cinderous-sdk#v0.78.0`（公開 repo；不上 npm，SDK ADR 0110）。
    */
   sdkSource?: { kind: 'embed' } | { kind: 'spec'; spec: string };
   /** Workers 目標：附預打包的中繼（`src/relay.mjs`），不需要安裝 SDK。需要 `relayWorkerSource`。 */
@@ -104,11 +104,11 @@ function header(prefix: string, sdkVersion: string): string[] {
   ];
 }
 
-/** 設定檔依固定的鍵順序寫出（同一份設定 → 同一份文字），並記下產生它的 SDK 版號 */
-function normalizedConfig(config: DeployConfig, sdkVersion: string): string {
+/** 設定檔依固定的鍵順序寫出（同一份設定 → 同一份文字），並記下產生它的 SDK 版號（`relay build` 與 `cinderous init` 共用） */
+export function renderDeployConfigFile(config: DeployConfig, sdkVersion?: string): string {
   const order = ['$schema', 'configVersion', 'sdk', 'target', 'service', 'name', 'site', 'node', 'cloudflare', 'fly', 'tunnel', 'pushGateway', 'secrets'] as const;
   const out: Record<string, unknown> = {};
-  const withSdk: Record<string, unknown> = { ...config, sdk: sdkVersion };
+  const withSdk: Record<string, unknown> = sdkVersion !== undefined ? { ...config, sdk: sdkVersion } : { ...config };
   for (const key of order) if (withSdk[key] !== undefined) out[key] = withSdk[key];
   return `${JSON.stringify(out, null, 2)}\n`;
 }
@@ -269,7 +269,7 @@ export function renderDeployPackage(config: DeployConfig, ctx: DeployPackageCont
   const files: DeployPackageFile[] = [];
   const add = (path: string, content: string, license: DeployPackageLicense = 'MIT-0') => files.push({ path, content, license });
 
-  add(DEPLOY_CONFIG_FILE, normalizedConfig(config, v));
+  add(DEPLOY_CONFIG_FILE, renderDeployConfigFile(config, v));
   if (push) {
     for (const file of renderPushGatewayFiles(config, { sdkVersion: v, embedSdk: embed, dependency, header: (prefix) => header(prefix, v), packageJson: (w) => packageJson(config, dependency, w) })) {
       add(file.path, file.content);

@@ -23,12 +23,15 @@ export {
   serviceOfConfig,
 } from './types.js';
 export {
+  dangerConfirmWord,
+  dangerousChoices,
   DEPLOY_OPTION_SPECS,
   PUSH_GATEWAY_LIMIT_SPECS,
   type DeployOptionGroup,
   type DeployOptionSpec,
   type DeployOptionType,
   deployOptionSpec,
+  isDangerousValue,
   SITE_OPTION_KEYS,
   specAppliesTo,
 } from './specs.js';
@@ -73,6 +76,7 @@ export {
   modifiedGeneratedFiles,
   privateLaneEnvName,
   readOnlyLanesEnvName,
+  renderDeployConfigFile,
   renderDeployPackage,
 } from './package.js';
 export {
@@ -84,6 +88,16 @@ export {
   renderPushGatewayFiles,
 } from './push-package.js';
 export { renderPushGatewayGuide } from './push-guide.js';
+export {
+  type InitWizardOptions,
+  type InitWizardResult,
+  parseWizardAnswer,
+  runInitWizard,
+  type WizardAnswer,
+  type WizardIo,
+  WIZARD_MAX_TRIES,
+  wizardQuestions,
+} from './wizard.js';
 export {
   collectRelaySiteIssues,
   type DeployIssue,

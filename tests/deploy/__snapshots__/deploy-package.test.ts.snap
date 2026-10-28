@@ -13,8 +13,8 @@ exports[`renderDeployPackage：每個目標的檔案（快照） > cloudflare > 
     ".dev.vars.example": "0d83024a415ada0d3eb715b3a109f8877ede0dbef80a02eb3d6b0775b614dc38",
     ".env.example": "5bafa639ef4f17df8c8a7c798c31143f80ef756335cab08b4615c94d11a21acf",
     ".gitignore": "34776b84a0c377dd9c8a8a18cc25f48147405f9b1c79bdfbe0aa5b90bb44fadb",
-    "README-DEPLOY.md": "45cd05678e7ae0623662125170de4decae2a0e639f4942e24867ba0b03b6f495",
-    "README-DEPLOY.en.md": "9c0931cc706002f649494f50ae31f789413e95598d94a24903bde77f0d9257dd",
+    "README-DEPLOY.md": "9c631141002faf080e898b417ea0c480b0a25d3bb7886395159559819b793b43",
+    "README-DEPLOY.en.md": "eb94d28157a2aa36e2b4d6c06cc37c8a97088192c771e5e6859c06c3f4f9edf2",
     "LICENSE": "e582df3d2d34456fe5a06053194810e87786bfa11b9a1b367263b6270a8a8977",
     "SOURCE.md": "2c8b2a76e1a0028164e4554b0355809f224f5b257b954c7ead8c3ff969b52d60"
   },
@@ -192,6 +192,7 @@ npx cinderous estimate --devices 3 --collaborators 1
 - [ ] The allowlist holds only your devices and collaborators (\`site.allowedPubkeys\`).
 - [ ] \`.env\` is not committed (\`git status\` does not show it); the config holds no tokens (\`cinderous config validate\` checks).
 - [ ] The Cloudflare token has only the two permissions, a near expiry, and is deleted after deploying.
+- [ ] 🔴 \`site.appLanes\`: Known app lanes (e.g. dochost): one Durable Object each. 🔴 Changing the list moves a lane to a new DO; old data is not moved and a rollback does not bring it back.
 
 ## 10. License
 
@@ -343,6 +344,7 @@ npx cinderous estimate --devices 3 --collaborators 1
 - [ ] 白名單只有你自己的裝置與合作者（\`site.allowedPubkeys\`）。
 - [ ] \`.env\` 沒有被提交（\`git status\` 看不到它）；設定檔裡沒有任何 Token（\`cinderous config validate\` 會檢查）。
 - [ ] Cloudflare Token 只有兩項權限、設了很近的到期日，部署完就刪掉。
+- [ ] 🔴 \`site.appLanes\`：已知租戶車道（例如 dochost）：每條一顆 DO。🔴 改名單＝那條車道換一顆 DO，舊資料不會搬過去、回滾也拿不回來。
 
 ## 10. 授權
 
@@ -1059,8 +1061,8 @@ exports[`renderDeployPackage：每個目標的檔案（快照） > docker > .cin
     "docker-compose.yml": "d2e05a220d52922539d607f6f8a90d578d09ecd94b96c80e556e20019b3b841f",
     ".env.example": "083f8810e0982d946a14c530a33d722a973324a41173234c877e4ebb3c4201e9",
     ".gitignore": "34776b84a0c377dd9c8a8a18cc25f48147405f9b1c79bdfbe0aa5b90bb44fadb",
-    "README-DEPLOY.md": "33f38dc73a723074be727526f20598b34b44651dcac1558cf02a355cfcf0e21c",
-    "README-DEPLOY.en.md": "df9b7272fe03ad2c95578e0506c86166931bf7ac6e0b1f971c8440a7dc9eb993",
+    "README-DEPLOY.md": "b08f8e2fc0774fa7dee9824a625a6360402d843986f89dbd8b568ccc8de293ee",
+    "README-DEPLOY.en.md": "fe03c61aba477f9d423992385b1859f5c4aa82abfde851f8d9607510a0b3c25e",
     "LICENSE": "e582df3d2d34456fe5a06053194810e87786bfa11b9a1b367263b6270a8a8977",
     "SOURCE.md": "eba58dafd5b28e42fe9962ffdc4c781344de8cee0b87d28167ec4041862ecef4"
   },
@@ -1238,7 +1240,6 @@ npx cinderous estimate --devices 3 --collaborators 1
 
 - [ ] The allowlist holds only your devices and collaborators (\`site.allowedPubkeys\`).
 - [ ] \`.env\` is not committed (\`git status\` does not show it); the config holds no tokens (\`cinderous config validate\` checks).
-- [ ] \`node.trustProxy\` is on only behind a reverse proxy (when exposed directly, anyone can forge X-Forwarded-For).
 
 ## 10. License
 
@@ -1369,7 +1370,6 @@ npx cinderous estimate --devices 3 --collaborators 1
 
 - [ ] 白名單只有你自己的裝置與合作者（\`site.allowedPubkeys\`）。
 - [ ] \`.env\` 沒有被提交（\`git status\` 看不到它）；設定檔裡沒有任何 Token（\`cinderous config validate\` 會檢查）。
-- [ ] \`node.trustProxy\` 只在反向代理後方才開（直接對外時 X-Forwarded-For 任何人都能偽造）。
 
 ## 10. 授權
 

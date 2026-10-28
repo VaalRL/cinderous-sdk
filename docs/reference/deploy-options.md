@@ -7,6 +7,7 @@
 Every option of `cinderous.config.json`, the file that holds all choices for one deployment ([ADR 0050](../adr/0050-deploy-configurator.md)). The same rules are in the JSON Schema, [`schema/cinderous.config.schema.json`](../../schema/cinderous.config.schema.json), exported as `@cinderous/client/config.schema.json`.
 
 ```sh
+npx cinderous init
 npx cinderous config validate cinderous.config.json
 npx cinderous relay build --config cinderous.config.json --out deploy/
 npx cinderous relay deploy --config deploy/cinderous.config.json
@@ -169,7 +170,7 @@ Accept file chunks without an allowlist (not recommended: anyone can store data,
 - Flag: `--open-file-relay`
 - Service: `relay`
 
-⚠️ **Dangerous**: read the description above before you turn it on.
+⚠️ **Dangerous**: `cinderous init` turns it on only after you type the option name, and the deploy guide lists it in the security checklist. Read the description above first.
 
 ## NIP-11 relay information
 
@@ -335,7 +336,7 @@ Known app lanes (e.g. dochost): one Durable Object each. 🔴 Changing the list 
 - Relay host: Cloudflare (Worker)
 - Service: `relay`
 
-⚠️ **Dangerous**: read the description above before you turn it on.
+⚠️ **Dangerous**: `cinderous init` turns it on only after you type the option name, and the deploy guide lists it in the security checklist. Read the description above first.
 
 ### `site.fileLanes`
 
@@ -359,7 +360,7 @@ Minimum NIP-13 PoW difficulty on lanes (0 = none). 🔴 Make sure the lane's cli
 - Relay host: Cloudflare (Worker)
 - Service: `relay`
 
-⚠️ **Dangerous**: read the description above before you turn it on.
+⚠️ **Dangerous**: `cinderous init` turns it on only after you type the option name, and the deploy guide lists it in the security checklist. Read the description above first.
 
 ## Storage capacity
 
@@ -451,7 +452,7 @@ Trust X-Forwarded-For from a proxy in front (TRUST_PROXY=1). For docker only beh
 - Targets: `docker`, `fly`, `home-tunnel`
 - Service: `relay`
 
-⚠️ **Dangerous**: read the description above before you turn it on.
+⚠️ **Dangerous**: `cinderous init` turns it on only after you type the option name, and the deploy guide lists it in the security checklist. Read the description above first.
 
 ### `cloudflare.accountId`
 

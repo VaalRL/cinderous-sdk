@@ -21,6 +21,7 @@
 2. **產出提交進 repo**：`docs/reference/deploy-options.md`（英文）與 `deploy-options.zh-TW.md`。GitHub 上直接可讀，網站把它們當一般頁面（ADR 0113），放進側欄「自架中繼」。
 3. **不會過時**：`tests/site/deploy-reference.test.ts` 拿 `src` 的描述表比對已提交的兩個檔案；改了描述表沒重新產生（`npm run docs:reference`，讀 `dist`）就失敗——與 `dist` 的做法相同。
 4. **危險標記照實寫**：`dangerous` 目前沒有程式在用（精靈的打字確認、部署說明的檢查清單都還沒做），頁面只寫「開之前先讀完說明」。
+   - 補充（2026-10-28，SDK ADR 0117）：精靈的打字確認與部署說明的檢查清單都做了，頁面改寫成「`cinderous init` 要打出選項名稱才會開，部署說明也會把它列進安全檢查清單」；開頭的指令多了 `cinderous init`。
 
 ## Consequences
 

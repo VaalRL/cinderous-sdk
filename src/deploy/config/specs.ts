@@ -6,7 +6,7 @@ import { DEFAULT_COMPATIBILITY_DATE, DEFAULT_WORKER_NAME, RELAY_NAME_PATTERN, RE
 import { LANE_ID_PATTERN } from '../../relay/shard.js';
 import { PRD_MAX_CONNECTIONS_PER_PUBKEY, PRD_MAX_MESSAGES_PER_SECOND_PER_IP } from '../../relay/host-config.js';
 import { DEFAULT_CLOUDFLARED_IMAGE, DEFAULT_DOCKER_PORT, DEFAULT_FLY_REGION } from '../render.js';
-import { DEPLOY_SERVICES, type DeployService, type DeployTarget, type RelayHost } from './types.js';
+import { type DeployConfig, DEPLOY_SERVICES, type DeployService, type DeployTarget, type RelayHost } from './types.js';
 
 /** 值的型別（決定驗證、JSON Schema 與表單元件） */
 export type DeployOptionType =
@@ -793,4 +793,38 @@ export function specAppliesTo(spec: DeployOptionSpec, target: DeployTarget, host
   if (spec.targets && !spec.targets.includes(target)) return false;
   if (spec.hosts && !spec.hosts.includes(host)) return false;
   return true;
+}
+
+/**
+ * 目標強制的值不算危險選擇：fly 與 home-tunnel 的連線一定經過代理，`node.trustProxy` 一定要開（`validateDeployConfig` 擋 false）。
+ */
+const FORCED_ON: Readonly<Record<string, readonly DeployTarget[]>> = { 'node.trustProxy': ['fly', 'home-tunnel'] };
+
+function valueAt(config: unknown, path: string): unknown {
+  let node: unknown = config;
+  for (const part of path.split('.')) {
+    if (typeof node !== 'object' || node === null || Array.isArray(node)) return undefined;
+    node = (node as Record<string, unknown>)[part];
+  }
+  return node;
+}
+
+/** 這個值是不是「開了危險選項」：布林 true、數字大於預設、清單不是空的；目標強制的值不算 */
+export function isDangerousValue(spec: DeployOptionSpec, value: unknown, target: DeployTarget): boolean {
+  if (spec.dangerous !== true || value === undefined) return false;
+  if (FORCED_ON[spec.path]?.includes(target) === true) return false;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value > (typeof spec.default === 'number' ? spec.default : 0);
+  if (Array.isArray(value)) return value.length > 0;
+  return true;
+}
+
+/** 設定裡開了哪些危險選項（部署說明的安全檢查清單、精靈的確認都看它） */
+export function dangerousChoices(config: DeployConfig): DeployOptionSpec[] {
+  return DEPLOY_OPTION_SPECS.filter((spec) => isDangerousValue(spec, valueAt(config, spec.path), config.target));
+}
+
+/** 開危險選項要打的字：欄位名稱的最後一段（`site.openFileRelay` → `openFileRelay`） */
+export function dangerConfirmWord(spec: DeployOptionSpec): string {
+  return spec.path.slice(spec.path.lastIndexOf('.') + 1);
 }

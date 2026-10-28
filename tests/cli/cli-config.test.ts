@@ -252,6 +252,74 @@ describe('config validate／schema', () => {
   });
 });
 
+describe('init 精靈（SDK ADR 0117）', () => {
+  /** 依欄位回答（問題開頭是欄位路徑）；危險選項的確認題另外排隊 */
+  const prompter = (answers: Record<string, string[]>, confirms: string[] = []) => async (question: string) => {
+    if (question.startsWith('要開的話')) return confirms.shift() ?? '';
+    return answers[question.split('（')[0]!]?.shift() ?? '';
+  };
+  const OUT = resolve(CWD, 'cinderous.config.json');
+
+  it('問完寫出設定檔（固定鍵順序、記下 SDK 版號），提示下一步', async () => {
+    const h = harness({}, { prompt: prompter({ target: ['docker'], 'site.allowedPubkeys': [alice] }) });
+    expect(await runCli(['init'], h.deps)).toBe(0);
+    expect(JSON.parse(h.written[OUT]!)).toEqual({ configVersion: 1, sdk: '0.38.0', target: 'docker', site: { allowedPubkeys: [alice] } });
+    expect(h.out.at(-1)).toContain('relay build --config');
+    // 寫出的檔案本身就通過 config validate
+    const v = harness({ [OUT]: h.written[OUT]! });
+    expect(await runCli(['config', 'validate'], v.deps)).toBe(0);
+  });
+
+  it('🔴 危險選項打錯確認字＝不開，也不會寫進設定檔', async () => {
+    const h = harness({}, { prompt: prompter({ 'site.allowedPubkeys': [alice], 'site.openFileRelay': ['y'] }, ['y']) });
+    expect(await runCli(['init', '-p', 'cloudflare', '-o', 'x.json'], h.deps)).toBe(0);
+    expect(JSON.parse(h.written[resolve(CWD, 'x.json')]!).site).toEqual({ allowedPubkeys: [alice] });
+  });
+
+  it('--yes：不詢問、全部預設；開放中繼的提醒印在 stderr', async () => {
+    const h = harness();
+    expect(await runCli(['init', '--yes', '--provider', 'fly'], h.deps)).toBe(0);
+    expect(JSON.parse(h.written[OUT]!)).toEqual({ configVersion: 1, sdk: '0.38.0', target: 'fly' });
+    expect(h.err.some((line) => line.startsWith('⚠ site.allowedPubkeys'))).toBe(true);
+  });
+
+  it('--yes 沒有 --provider、不認得的目標或語言：用法錯誤', async () => {
+    expect(await runCli(['init', '--yes'], harness().deps)).toBe(2);
+    expect(await runCli(['init', '--yes', '-p', 'heroku'], harness().deps)).toBe(2);
+    expect(await runCli(['init', '--yes', '-p', 'fly', '--locale', 'ja'], harness().deps)).toBe(2);
+  });
+
+  it('設定檔已經存在：不覆寫（--force 才覆寫）', async () => {
+    const existing = configFile({ configVersion: 1, target: 'docker' });
+    const h = harness(existing);
+    expect(await runCli(['init', '--yes', '-p', 'fly'], h.deps)).toBe(1);
+    expect(h.written).toEqual({});
+    const forced = harness(existing);
+    expect(await runCli(['init', '--yes', '-p', 'fly', '--force'], forced.deps)).toBe(0);
+    expect(JSON.parse(forced.written[OUT]!).target).toBe('fly');
+  });
+
+  it('必填題（home-tunnel 的 tunnel.hostname）在 --yes 下答不出來：停止、不寫檔', async () => {
+    const h = harness();
+    expect(await runCli(['init', '--yes', '-p', 'home-tunnel'], h.deps)).toBe(1);
+    expect(h.err.join('\n')).toContain('tunnel.hostname');
+    expect(h.written).toEqual({});
+  });
+
+  it('不能互動的環境（沒有 prompt）又沒加 --yes：說明怎麼做', async () => {
+    const h = harness();
+    expect(await runCli(['init', '-p', 'fly'], h.deps)).toBe(1);
+    expect(h.err.join('\n')).toContain('--yes');
+  });
+
+  it('英文：訊息是英文', async () => {
+    const h = harness();
+    expect(await runCli(['init', '--yes', '-p', 'fly', '--locale', 'en'], h.deps)).toBe(0);
+    expect(h.out[0]).toMatch(/^Creating cinderous\.config\.json/);
+    expect(h.out.at(-1)).toMatch(/^Next: /);
+  });
+});
+
 describe('parseDotEnv', () => {
   it('KEY=VALUE、註解、export、成對引號', () => {
     expect(parseDotEnv('# c\nA=1\nexport B = "two words"\nC=\'x\'\n bad line\nD=\n')).toEqual({ A: '1', B: 'two words', C: 'x', D: '' });

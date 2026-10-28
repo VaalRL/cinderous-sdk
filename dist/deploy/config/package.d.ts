@@ -21,7 +21,7 @@ export interface DeployPackageContext {
     /**
      * SDK 怎麼進到部署包：
      * - `embed`（預設，公開前）：複製到 `sdk/`，以 `file:./sdk` 安裝——由寫檔的一方（CLI）複製，這裡只回報 `copySdk`；
-     * - `spec`：以套件相依安裝，例如 `github:VaalRL/cinderous-sdk#v0.77.8`（公開 repo；不上 npm，SDK ADR 0110）。
+     * - `spec`：以套件相依安裝，例如 `github:VaalRL/cinderous-sdk#v0.78.0`（公開 repo；不上 npm，SDK ADR 0110）。
      */
     sdkSource?: {
         kind: 'embed';
@@ -47,6 +47,8 @@ export interface DeployPackage {
     /** 寫檔的一方要另外把 SDK（`dist` 與執行用的 package.json）複製到 `sdk/` */
     copySdk: boolean;
 }
+/** 設定檔依固定的鍵順序寫出（同一份設定 → 同一份文字），並記下產生它的 SDK 版號（`relay build` 與 `cinderous init` 共用） */
+export declare function renderDeployConfigFile(config: DeployConfig, sdkVersion?: string): string;
 /**
  * 產生部署包（SDK ADR 0050 §5）。先驗證設定（有錯就丟例外，列出全部錯誤）；回傳的內容不含絕對路徑與秘密值，
  * 同一份設定與 ctx → 同一組檔案（逐位元組相同），可以提交、可以 diff。

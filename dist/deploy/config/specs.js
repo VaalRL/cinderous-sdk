@@ -726,4 +726,39 @@ export function specAppliesTo(spec, target, host) {
         return false;
     return true;
 }
+/**
+ * 目標強制的值不算危險選擇：fly 與 home-tunnel 的連線一定經過代理，`node.trustProxy` 一定要開（`validateDeployConfig` 擋 false）。
+ */
+const FORCED_ON = { 'node.trustProxy': ['fly', 'home-tunnel'] };
+function valueAt(config, path) {
+    let node = config;
+    for (const part of path.split('.')) {
+        if (typeof node !== 'object' || node === null || Array.isArray(node))
+            return undefined;
+        node = node[part];
+    }
+    return node;
+}
+/** 這個值是不是「開了危險選項」：布林 true、數字大於預設、清單不是空的；目標強制的值不算 */
+export function isDangerousValue(spec, value, target) {
+    if (spec.dangerous !== true || value === undefined)
+        return false;
+    if (FORCED_ON[spec.path]?.includes(target) === true)
+        return false;
+    if (typeof value === 'boolean')
+        return value;
+    if (typeof value === 'number')
+        return value > (typeof spec.default === 'number' ? spec.default : 0);
+    if (Array.isArray(value))
+        return value.length > 0;
+    return true;
+}
+/** 設定裡開了哪些危險選項（部署說明的安全檢查清單、精靈的確認都看它） */
+export function dangerousChoices(config) {
+    return DEPLOY_OPTION_SPECS.filter((spec) => isDangerousValue(spec, valueAt(config, spec.path), config.target));
+}
+/** 開危險選項要打的字：欄位名稱的最後一段（`site.openFileRelay` → `openFileRelay`） */
+export function dangerConfirmWord(spec) {
+    return spec.path.slice(spec.path.lastIndexOf('.') + 1);
+}
 //# sourceMappingURL=specs.js.map

@@ -2,7 +2,7 @@
 // 這個檔只解讀旗標、把工作交出去；起中繼、部署、讀寫檔都經由 `CliDeps`，測試換成替身。
 import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { renderDeployConfigJsonSchema, resolveSecret, resolveSiteSecrets, resolveStringOrSecret, secretEnvName, serviceOfConfig, siteWithPlaceholders, validateDeployConfig, } from '../deploy/config/index.js';
+import { DEPLOY_TARGETS, renderDeployConfigFile, renderDeployConfigJsonSchema, runInitWizard, resolveSecret, resolveSiteSecrets, resolveStringOrSecret, secretEnvName, serviceOfConfig, siteWithPlaceholders, validateDeployConfig, } from '../deploy/config/index.js';
 import { estimateResourceConsumption, formatEstimationReport, } from '../estimator.js';
 import { Identity } from '../identity.js';
 import { iotPubkeyOf, IOT_ROLES } from '../iot/acl.js';
@@ -54,8 +54,16 @@ export const USAGE = `用法：cinderous <指令> [選項]
       --config, -c <檔>           預設 cinderous.config.json
       --out, -o <目錄>            預設設定檔所在的資料夾
       --self-contained            Workers：附預打包的中繼（src/relay.mjs），不需要安裝 SDK
-      --sdk-spec <相依>           SDK 改以套件相依安裝（例如 github:VaalRL/cinderous-sdk#v0.77.8），不內嵌 sdk/
+      --sdk-spec <相依>           SDK 改以套件相依安裝（例如 github:VaalRL/cinderous-sdk#v0.78.0），不內嵌 sdk/
       --force                     覆寫被手改過、或不是 relay build 產生的檔案
+
+  cinderous init           逐題產生設定檔 cinderous.config.json（SDK ADR 0117）；危險選項要打字確認才會開
+      --out, -o <檔>              預設 cinderous.config.json
+      --provider, -p <目標>       cloudflare、cloudflare-api、docker、fly、home-tunnel；沒給就問
+      --advanced                  也問進階題組（NIP-11、上限、車道、容量、宿主、秘密）
+      --yes, -y                   不詢問、全部用預設值（要搭配 --provider；危險選項一律不開）
+      --force                     覆寫已經存在的設定檔
+      --locale <zh-TW|en>         題目與說明的語言，預設 zh-TW
 
   cinderous iot bridge     家中 IoT 橋接器：本地 MQTT broker ↔ relay，端到端加密（SDK ADR 0049；需要 npm install mqtt）
       --config, -c <檔>           預設 iot-bridge.json（秘密只寫 { "$env": "NAME" }；設定檔旁邊的 .env 會被讀）
@@ -548,6 +556,57 @@ async function relayBuild(argv, deps) {
         return 1;
     }
 }
+/** `cinderous init`（SDK ADR 0117）：逐題問完寫出設定檔；還有錯誤也照寫（之後改檔再 config validate），但回 1 */
+async function init(argv, deps) {
+    const { values, positionals } = parseArgs({
+        args: argv,
+        strict: true,
+        allowPositionals: true,
+        options: {
+            out: { type: 'string', short: 'o' },
+            provider: { type: 'string', short: 'p' },
+            advanced: { type: 'boolean', default: false },
+            yes: { type: 'boolean', short: 'y', default: false },
+            force: { type: 'boolean', default: false },
+            locale: { type: 'string' },
+        },
+    });
+    if (positionals.length > 0)
+        throw new UsageError(`init 不吃位置參數，收到：${positionals.join(' ')}`);
+    const target = values.provider === undefined ? undefined : oneOf('--provider', values.provider, DEPLOY_TARGETS, 'cloudflare');
+    const locale = oneOf('--locale', values.locale, ['zh-TW', 'en'], 'zh-TW');
+    if (values.yes && target === undefined)
+        throw new UsageError('init --yes 要搭配 --provider（不詢問就沒辦法選目標）');
+    const path = resolve(deps.cwd, values.out ?? 'cinderous.config.json');
+    if (!values.force && deps.readFile?.(path) !== undefined) {
+        deps.stderr(`${path} 已經存在；要覆寫請加 --force`);
+        return 1;
+    }
+    const ask = values.yes ? async () => '' : deps.prompt;
+    if (ask === undefined) {
+        deps.stderr('這個環境不能互動：加 --yes --provider <目標> 全部用預設值');
+        return 1;
+    }
+    let result;
+    try {
+        result = await runInitWizard({ ask, say: (line) => deps.stdout(line) }, { locale, advanced: values.advanced, ...(target !== undefined ? { target } : {}), ...(deps.sdkVersion !== undefined ? { sdkVersion: deps.sdkVersion } : {}) });
+    }
+    catch (error) {
+        deps.stderr(error instanceof Error ? error.message : String(error));
+        return 1;
+    }
+    deps.writeFile(path, renderDeployConfigFile(result.config, deps.sdkVersion));
+    for (const issue of result.issues)
+        deps.stderr(`${issue.severity === 'error' ? '✖' : '⚠'} ${issue.path === '' ? '' : `${issue.path}：`}${issue.message[locale]}`);
+    const zh = locale === 'zh-TW';
+    deps.stdout(zh ? `已寫出 ${path}` : `Wrote ${path}`);
+    if (result.issues.some((issue) => issue.severity === 'error')) {
+        deps.stdout(zh ? '還有錯誤：改好設定檔後跑 cinderous config validate。' : 'There are still errors: fix the file, then run cinderous config validate.');
+        return 1;
+    }
+    deps.stdout(zh ? `下一步：cinderous relay build --config ${path} --out deploy/` : `Next: cinderous relay build --config ${path} --out deploy/`);
+    return 0;
+}
 function configCommand(sub, argv, deps) {
     if (sub === 'schema') {
         if (argv.length > 0)
@@ -570,7 +629,7 @@ function configCommand(sub, argv, deps) {
         deps.stdout(validation.issues.length === 0 ? `設定檔沒有問題：${configPath}` : `設定檔可以用（有 ${validation.issues.length} 則提醒）：${configPath}`);
         return 0;
     }
-    // init 精靈與 migrate 在 P1（SDK ADR 0050）
+    // migrate 在 ADR 0050 P1，還沒做；精靈是 `cinderous init`（SDK ADR 0117）
     throw new UsageError(`不認得的指令：config ${sub ?? ''}（可用：config validate、config schema）`);
 }
 // ── IoT（SDK ADR 0049 P0）─────────────────────────────────────────────
@@ -814,6 +873,8 @@ export async function runCli(argv, deps) {
             return await relayDeploy(rest, deps);
         if (command === 'relay' && sub === 'build')
             return await relayBuild(rest, deps);
+        if (command === 'init')
+            return await init(argv.slice(1), deps);
         if (command === 'config')
             return configCommand(sub, rest, deps);
         if (command === 'iot')

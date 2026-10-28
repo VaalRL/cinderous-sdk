@@ -25,7 +25,7 @@ export interface BuildRelayPackageOptions {
   outDir: string;
   /** Workers：附預打包的中繼（`src/relay.mjs`），不需要安裝 SDK */
   selfContained?: boolean;
-  /** SDK 改以套件相依安裝（例如 `github:VaalRL/cinderous-sdk#v0.77.8`），不內嵌 `sdk/` */
+  /** SDK 改以套件相依安裝（例如 `github:VaalRL/cinderous-sdk#v0.78.0`），不內嵌 `sdk/` */
   sdkSpec?: string;
   /** 覆寫被手改過、或不是 relay build 產生的檔案 */
   force?: boolean;

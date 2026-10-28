@@ -7,6 +7,7 @@
 `cinderous.config.json` 的每一個欄位。這個檔案記下一次部署的所有選擇（[ADR 0050](../adr/0050-deploy-configurator.md)）；同樣的規則也寫在 JSON Schema [`schema/cinderous.config.schema.json`](../../schema/cinderous.config.schema.json)（匯出為 `@cinderous/client/config.schema.json`）。
 
 ```sh
+npx cinderous init
 npx cinderous config validate cinderous.config.json
 npx cinderous relay build --config cinderous.config.json --out deploy/
 npx cinderous relay deploy --config deploy/cinderous.config.json
@@ -169,7 +170,7 @@ Worker／容器／Fly app 名稱：小寫英數與連字號、不以連字號開
 - 旗標：`--open-file-relay`
 - 服務：`relay`
 
-⚠️ **危險選項**：開之前先讀完上面的說明。
+⚠️ **危險選項**：`cinderous init` 要打出選項名稱才會開，部署說明也會把它列進安全檢查清單。開之前先讀完上面的說明。
 
 ## NIP-11 站台資訊
 
@@ -335,7 +336,7 @@ NIP-11 software：這座站跑的程式的原始碼網址（https）。沒給＝
 - 中繼宿主：Cloudflare（Worker）
 - 服務：`relay`
 
-⚠️ **危險選項**：開之前先讀完上面的說明。
+⚠️ **危險選項**：`cinderous init` 要打出選項名稱才會開，部署說明也會把它列進安全檢查清單。開之前先讀完上面的說明。
 
 ### `site.fileLanes`
 
@@ -359,7 +360,7 @@ NIP-11 software：這座站跑的程式的原始碼網址（https）。沒給＝
 - 中繼宿主：Cloudflare（Worker）
 - 服務：`relay`
 
-⚠️ **危險選項**：開之前先讀完上面的說明。
+⚠️ **危險選項**：`cinderous init` 要打出選項名稱才會開，部署說明也會把它列進安全檢查清單。開之前先讀完上面的說明。
 
 ## 儲存容量
 
@@ -451,7 +452,7 @@ docker：對外的埠。
 - 部署目標：`docker`, `fly`, `home-tunnel`
 - 服務：`relay`
 
-⚠️ **危險選項**：開之前先讀完上面的說明。
+⚠️ **危險選項**：`cinderous init` 要打出選項名稱才會開，部署說明也會把它列進安全檢查清單。開之前先讀完上面的說明。
 
 ### `cloudflare.accountId`
 
