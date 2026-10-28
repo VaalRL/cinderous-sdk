@@ -150,6 +150,9 @@ export const WORKER_ONLY_SITE_OPTIONS = [
     'developerDocsUrl',
     // 容量設定 Node 主機也支援了（SDK ADR 0099，只認 `strict`）；帳號儲存預算仍是 Cloudflare 帳號的概念
     'storageBudgetBytes',
+    // TURN 換發端點只在 Worker（Cinderous ADR-0243）
+    'turnKeyId',
+    'turnTtlSeconds',
 ];
 /** 只有 Node 主機會讀的選項（SDK ADR 0099）。 */
 export const NODE_ONLY_SITE_OPTIONS = [
@@ -194,6 +197,9 @@ export const RELAY_SITE_LIMITS = {
     /** 溢位帶（%）：1–50。中繼接受到 100，一鍵部署收緊（最壞儲存量乘上 1 + r） */
     doBorrowPercent: { min: 1, max: 50 },
     doNearFullPercent: { min: 50, max: 99 },
+    /** TURN Key ID 的長度上限；短期憑證秒數（SDK ADR 0118） */
+    turnKeyId: 64,
+    turnTtlSeconds: { min: 60, max: 172_800 },
 };
 /** 收集問題的小工具；`throwFirst` 讓「有錯就丟第一個」的舊介面沿用同一份規則。 */
 export class IssueList {
@@ -474,6 +480,28 @@ function siteVarsInto(issues, opts, host, vars) {
     const software = httpsUrlIn(issues, 'relaySoftwareUrl', opts.relaySoftwareUrl, limits.relaySoftwareUrl);
     if (software !== undefined)
         vars.RELAY_SOFTWARE_URL = software;
+    turnIn(issues, opts, vars);
+}
+/** TURN（SDK ADR 0118）：Key ID 與憑證秒數寫成 Worker 變數；Token 是秘密，不在這裡 */
+function turnIn(issues, opts, vars) {
+    const keyId = textIn(issues, 'turnKeyId', opts.turnKeyId, RELAY_SITE_LIMITS.turnKeyId);
+    if (keyId !== undefined) {
+        if (!/^[A-Za-z0-9_-]+$/.test(keyId)) {
+            issues.error('turnKeyId', 'pattern', 'turnKeyId 只能有英數、底線與連字號（Cloudflare 儀表板上 TURN 金鑰的 Key ID）', 'turnKeyId may contain only letters, digits, underscores and hyphens (the TURN key ID from the Cloudflare dashboard)');
+        }
+        else {
+            vars.TURN_KEY_ID = keyId;
+        }
+    }
+    if (opts.turnTtlSeconds === undefined)
+        return;
+    const ttl = intIn(issues, 'turnTtlSeconds', opts.turnTtlSeconds, RELAY_SITE_LIMITS.turnTtlSeconds);
+    if (opts.turnKeyId === undefined) {
+        issues.error('turnTtlSeconds', 'ttl-without-turn', 'turnTtlSeconds 要搭配 turnKeyId（沒有 TURN 就沒有憑證要換發）', 'turnTtlSeconds needs turnKeyId (without TURN there are no credentials to issue)');
+    }
+    else if (ttl !== undefined) {
+        vars.TURN_TTL_SECONDS = ttl;
+    }
 }
 /**
  * 唯讀寬限期（SDK ADR 0052）：驗證並寫出 `READONLY_LANES`。過期的略過；🔴 訊息絕不回顯車道 id（它曾經是秘密）。
@@ -667,6 +695,20 @@ function nodeCapacityIn(issues, env) {
  */
 export function relayWorkerVars(opts = {}) {
     return relaySiteVars(opts, 'worker');
+}
+/**
+ * 秘密 → Worker secret 的名稱與值。有 TURN 的 Token 卻沒有 `turnKeyId` 就丟例外（Worker 不會用它；多半是設定漏了）。
+ * 🔴 例外訊息只有欄位名稱，不含值。
+ */
+export function relayWorkerSecrets(opts) {
+    const out = {};
+    if (opts.turnApiToken !== undefined && opts.turnApiToken !== '') {
+        if (opts.turnKeyId === undefined || opts.turnKeyId === '') {
+            throw new Error('有 TURN 的 API Token（turnApiToken）卻沒有 turnKeyId：Worker 要兩個都有才換發 TURN 憑證，請在站台參數加上 turnKeyId');
+        }
+        out.TURN_API_TOKEN = opts.turnApiToken;
+    }
+    return out;
 }
 /** `compatibility_date` 的形狀（YYYY-MM-DD）；寫錯的日期 Cloudflare 會在上傳時才拒絕，這裡先擋。 */
 export function assertCompatibilityDate(date) {

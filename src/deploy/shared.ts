@@ -377,6 +377,14 @@ export interface RelaySiteOptions extends RelayFileOptions {
    * Cloudflare 免費方案建議 `ACCOUNT_STORAGE_BUDGET_BYTES`（5 GB 的 80%）。沒給＝不檢查（中繼的預設天花板本身就超過免費額度，見 ADR 0039）。
    */
   storageBudgetBytes?: number;
+  /**
+   * Cloudflare TURN 的 Key ID（`TURN_KEY_ID`；Cinderous ADR-0243，SDK ADR 0118）：給了，`GET /turn` 就向 Cloudflare 換發短期 TURN 憑證給客戶端。
+   * 要搭配 TURN 的 API Token——它是秘密，不在這裡：REST 部署用 `workerSecrets.TURN_API_TOKEN`（`secret_text`），wrangler 用 `wrangler secret put`。
+   * 沒有 Token 時 `/turn` 回 204、客戶端退回純 STUN。🔴 TURN 流量由 Cloudflare Realtime 另外計費。只有 Cloudflare 版。
+   */
+  turnKeyId?: string;
+  /** 短期 TURN 憑證的有效秒數（`TURN_TTL_SECONDS`，60–172800，中繼預設 86400）。要有 `turnKeyId`。只有 Cloudflare 版。 */
+  turnTtlSeconds?: number;
 }
 
 /** 只有 Cloudflare 版中繼會讀的選項（Node 主機沒有車道、也不讀文件網址）。 */
@@ -387,6 +395,9 @@ export const WORKER_ONLY_SITE_OPTIONS = [
   'developerDocsUrl',
   // 容量設定 Node 主機也支援了（SDK ADR 0099，只認 `strict`）；帳號儲存預算仍是 Cloudflare 帳號的概念
   'storageBudgetBytes',
+  // TURN 換發端點只在 Worker（Cinderous ADR-0243）
+  'turnKeyId',
+  'turnTtlSeconds',
 ] as const;
 
 /** 只有 Node 主機會讀的選項（SDK ADR 0099）。 */
@@ -433,6 +444,9 @@ export const RELAY_SITE_LIMITS = {
   /** 溢位帶（%）：1–50。中繼接受到 100，一鍵部署收緊（最壞儲存量乘上 1 + r） */
   doBorrowPercent: { min: 1, max: 50 },
   doNearFullPercent: { min: 50, max: 99 },
+  /** TURN Key ID 的長度上限；短期憑證秒數（SDK ADR 0118） */
+  turnKeyId: 64,
+  turnTtlSeconds: { min: 60, max: 172_800 },
 } as const;
 
 /** 驗證問題的嚴重度：`error` 會讓部署被拒，`warning` 只提醒（SDK ADR 0050 §3）。 */
@@ -760,6 +774,26 @@ function siteVarsInto(issues: IssueList, opts: RelaySiteOptions, host: 'worker' 
   if (docs !== undefined) vars.DEVELOPER_DOCS_URL = docs;
   const software = httpsUrlIn(issues, 'relaySoftwareUrl', opts.relaySoftwareUrl, limits.relaySoftwareUrl);
   if (software !== undefined) vars.RELAY_SOFTWARE_URL = software;
+  turnIn(issues, opts, vars);
+}
+
+/** TURN（SDK ADR 0118）：Key ID 與憑證秒數寫成 Worker 變數；Token 是秘密，不在這裡 */
+function turnIn(issues: IssueList, opts: RelaySiteOptions, vars: Record<string, string>): void {
+  const keyId = textIn(issues, 'turnKeyId', opts.turnKeyId, RELAY_SITE_LIMITS.turnKeyId);
+  if (keyId !== undefined) {
+    if (!/^[A-Za-z0-9_-]+$/.test(keyId)) {
+      issues.error('turnKeyId', 'pattern', 'turnKeyId 只能有英數、底線與連字號（Cloudflare 儀表板上 TURN 金鑰的 Key ID）', 'turnKeyId may contain only letters, digits, underscores and hyphens (the TURN key ID from the Cloudflare dashboard)');
+    } else {
+      vars.TURN_KEY_ID = keyId;
+    }
+  }
+  if (opts.turnTtlSeconds === undefined) return;
+  const ttl = intIn(issues, 'turnTtlSeconds', opts.turnTtlSeconds, RELAY_SITE_LIMITS.turnTtlSeconds);
+  if (opts.turnKeyId === undefined) {
+    issues.error('turnTtlSeconds', 'ttl-without-turn', 'turnTtlSeconds 要搭配 turnKeyId（沒有 TURN 就沒有憑證要換發）', 'turnTtlSeconds needs turnKeyId (without TURN there are no credentials to issue)');
+  } else if (ttl !== undefined) {
+    vars.TURN_TTL_SECONDS = ttl;
+  }
 }
 
 /**
@@ -1004,6 +1038,30 @@ function nodeCapacityIn(issues: IssueList, env: Record<string, string>): void {
  */
 export function relayWorkerVars(opts: RelaySiteOptions = {}): Record<string, string> {
   return relaySiteVars(opts, 'worker');
+}
+
+/**
+ * 中繼 Worker 的秘密（SDK ADR 0118）：不進 `vars`、不寫進任何檔案，部署時以 Worker secret 上傳
+ * （REST 是 `secret_text` 綁定，wrangler 是 `wrangler secret put`）。沒給＝沿用線上已經有的 secret。
+ */
+export interface RelayWorkerSecrets {
+  /** Cloudflare TURN 金鑰的 API Token → Worker secret `TURN_API_TOKEN`。要搭配 `turnKeyId`。 */
+  turnApiToken?: string;
+}
+
+/**
+ * 秘密 → Worker secret 的名稱與值。有 TURN 的 Token 卻沒有 `turnKeyId` 就丟例外（Worker 不會用它；多半是設定漏了）。
+ * 🔴 例外訊息只有欄位名稱，不含值。
+ */
+export function relayWorkerSecrets(opts: RelayWorkerSecrets & Pick<RelaySiteOptions, 'turnKeyId'>): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (opts.turnApiToken !== undefined && opts.turnApiToken !== '') {
+    if (opts.turnKeyId === undefined || opts.turnKeyId === '') {
+      throw new Error('有 TURN 的 API Token（turnApiToken）卻沒有 turnKeyId：Worker 要兩個都有才換發 TURN 憑證，請在站台參數加上 turnKeyId');
+    }
+    out.TURN_API_TOKEN = opts.turnApiToken;
+  }
+  return out;
 }
 
 /** `compatibility_date` 的形狀（YYYY-MM-DD）；寫錯的日期 Cloudflare 會在上傳時才拒絕，這裡先擋。 */

@@ -250,9 +250,17 @@ export interface RelaySiteOptions extends RelayFileOptions {
      * Cloudflare 免費方案建議 `ACCOUNT_STORAGE_BUDGET_BYTES`（5 GB 的 80%）。沒給＝不檢查（中繼的預設天花板本身就超過免費額度，見 ADR 0039）。
      */
     storageBudgetBytes?: number;
+    /**
+     * Cloudflare TURN 的 Key ID（`TURN_KEY_ID`；Cinderous ADR-0243，SDK ADR 0118）：給了，`GET /turn` 就向 Cloudflare 換發短期 TURN 憑證給客戶端。
+     * 要搭配 TURN 的 API Token——它是秘密，不在這裡：REST 部署用 `workerSecrets.TURN_API_TOKEN`（`secret_text`），wrangler 用 `wrangler secret put`。
+     * 沒有 Token 時 `/turn` 回 204、客戶端退回純 STUN。🔴 TURN 流量由 Cloudflare Realtime 另外計費。只有 Cloudflare 版。
+     */
+    turnKeyId?: string;
+    /** 短期 TURN 憑證的有效秒數（`TURN_TTL_SECONDS`，60–172800，中繼預設 86400）。要有 `turnKeyId`。只有 Cloudflare 版。 */
+    turnTtlSeconds?: number;
 }
 /** 只有 Cloudflare 版中繼會讀的選項（Node 主機沒有車道、也不讀文件網址）。 */
-export declare const WORKER_ONLY_SITE_OPTIONS: readonly ["appLanes", "fileLanes", "appLanePow", "developerDocsUrl", "storageBudgetBytes"];
+export declare const WORKER_ONLY_SITE_OPTIONS: readonly ["appLanes", "fileLanes", "appLanePow", "developerDocsUrl", "storageBudgetBytes", "turnKeyId", "turnTtlSeconds"];
 /** 只有 Node 主機會讀的選項（SDK ADR 0099）。 */
 export declare const NODE_ONLY_SITE_OPTIONS: readonly ["ceilingMode", "maxConnections", "maxConnectionsPerIp", "monthlyTrafficGib", "trafficResetDay", "trafficCount", "trafficNearFullPercent"];
 /** 一鍵部署開放的數值範圍（SDK ADR 0037）。 */
@@ -333,6 +341,12 @@ export declare const RELAY_SITE_LIMITS: {
         readonly min: 50;
         readonly max: 99;
     };
+    /** TURN Key ID 的長度上限；短期憑證秒數（SDK ADR 0118） */
+    readonly turnKeyId: 64;
+    readonly turnTtlSeconds: {
+        readonly min: 60;
+        readonly max: 172800;
+    };
 };
 /** 驗證問題的嚴重度：`error` 會讓部署被拒，`warning` 只提醒（SDK ADR 0050 §3）。 */
 export type DeployIssueSeverity = 'error' | 'warning';
@@ -388,6 +402,19 @@ export declare function collectRelaySiteIssues(opts: RelaySiteOptions, host: 'wo
  * - 已知租戶與其他參數（ADR 0036、0037）：見 {@link RelaySiteOptions}。
  */
 export declare function relayWorkerVars(opts?: RelaySiteOptions): Record<string, string>;
+/**
+ * 中繼 Worker 的秘密（SDK ADR 0118）：不進 `vars`、不寫進任何檔案，部署時以 Worker secret 上傳
+ * （REST 是 `secret_text` 綁定，wrangler 是 `wrangler secret put`）。沒給＝沿用線上已經有的 secret。
+ */
+export interface RelayWorkerSecrets {
+    /** Cloudflare TURN 金鑰的 API Token → Worker secret `TURN_API_TOKEN`。要搭配 `turnKeyId`。 */
+    turnApiToken?: string;
+}
+/**
+ * 秘密 → Worker secret 的名稱與值。有 TURN 的 Token 卻沒有 `turnKeyId` 就丟例外（Worker 不會用它；多半是設定漏了）。
+ * 🔴 例外訊息只有欄位名稱，不含值。
+ */
+export declare function relayWorkerSecrets(opts: RelayWorkerSecrets & Pick<RelaySiteOptions, 'turnKeyId'>): Record<string, string>;
 /** `compatibility_date` 的形狀（YYYY-MM-DD）；寫錯的日期 Cloudflare 會在上傳時才拒絕，這裡先擋。 */
 export declare function assertCompatibilityDate(date: string): void;
 /** `assertCompatibilityDate` 的雙語問題版本（SDK ADR 0055）；合法回 null */

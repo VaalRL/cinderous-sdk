@@ -77,6 +77,8 @@ export function renderDeployGuide(config, locale, ctx) {
     const lanePath = privateEnv !== undefined ? `/app/<${privateEnv}>` : '';
     // 唯讀寬限期（SDK ADR 0052）：值也在 .env
     const readOnlyEnv = isSecretRef(site.readOnlyLanes) ? site.readOnlyLanes.$env : undefined;
+    // TURN（SDK ADR 0118）：Key ID 在 [vars]，Token 是 Worker secret、值在 .env
+    const turnEnv = worker && site.turnKeyId !== undefined ? secretEnvName(config, 'turnApiToken') : undefined;
     const out = [];
     const h2 = (title) => out.push('', `## ${title}`, '');
     const code = (lang, ...lines) => out.push(`\`\`\`${lang}`, ...lines, '```');
@@ -172,14 +174,16 @@ export function renderDeployGuide(config, locale, ctx) {
         if (tokenEnv !== 'CLOUDFLARE_API_TOKEN') {
             out.push('', t(`wrangler 只讀 \`CLOUDFLARE_API_TOKEN\`：自己用 wrangler 部署前先 \`export CLOUDFLARE_API_TOKEN="$${tokenEnv}"\`（\`cinderous relay deploy --config\` 會自己對應）。`, `wrangler only reads \`CLOUDFLARE_API_TOKEN\`: before deploying with wrangler yourself, \`export CLOUDFLARE_API_TOKEN="$${tokenEnv}"\` (\`cinderous relay deploy --config\` maps it for you).`));
         }
-        out.push('', t('這座中繼在執行期沒有秘密（TURN 等需要秘密的選項在後續版本才開放），`.dev.vars.example` 只是給 `wrangler dev` 的範本。', 'The relay has no runtime secrets (options that need one, such as TURN, come in a later version); `.dev.vars.example` is only a template for `wrangler dev`.'));
+        out.push('', turnEnv !== undefined
+            ? t(`**TURN**（SDK ADR 0118）：把 Cloudflare TURN 金鑰的 API Token 放進 \`.env\` 的 \`${turnEnv}=\` 後面；部署時它以 Worker secret \`TURN_API_TOKEN\` 上傳，不寫進 \`wrangler.toml\`。本機 \`wrangler dev\` 要用就照 \`.dev.vars.example\` 建一份 \`.dev.vars\`。`, `**TURN** (SDK ADR 0118): put the API token of the Cloudflare TURN key after \`${turnEnv}=\` in \`.env\`; deploying uploads it as the Worker secret \`TURN_API_TOKEN\`, never into \`wrangler.toml\`. For local \`wrangler dev\`, create \`.dev.vars\` from \`.dev.vars.example\`.`)
+            : t('這座中繼在執行期沒有秘密（沒有設 `site.turnKeyId`），`.dev.vars.example` 只是給 `wrangler dev` 的範本。', 'The relay has no runtime secrets (no `site.turnKeyId`); `.dev.vars.example` is only a template for `wrangler dev`.'));
     }
     // 4. 部署
     h2(t('4. 部署', '4. Deploy'));
     const loadEnv = t('set -a; . ./.env; set +a   # 把 .env 載入這個 shell（PowerShell：逐一 $env:NAME = "…"）', 'set -a; . ./.env; set +a   # load .env into this shell (PowerShell: $env:NAME = "…" for each)');
     if (worker) {
         if (target === 'cloudflare-api') {
-            out.push(t('`cloudflare-api` 目標給外掛與程式化部署用（`@cinderous/client/deploy/cloudflare-api` 的 `deployCloudflareRelayViaApi`，不需要 Node 與 wrangler）。在終端機可以直接用這個部署包裡的 wrangler 設定，部署出來的是同一座中繼：', 'The `cloudflare-api` target is for plugins and programmatic deployment (`deployCloudflareRelayViaApi` in `@cinderous/client/deploy/cloudflare-api`, no Node or wrangler needed). From a terminal you can use this package\'s wrangler config; it deploys the same relay:'), '');
+            out.push(t('`cloudflare-api` 目標走 Cloudflare REST API（外掛用 `@cinderous/client/deploy/cloudflare-api` 的 `deployCloudflareRelayViaApi`，不需要 Node 與 wrangler；終端機用下面的 `relay deploy --config`，同樣走 REST、一定要有 API Token）。也可以用這個部署包裡的 wrangler 設定，部署出來的是同一座中繼：', 'The `cloudflare-api` target uses the Cloudflare REST API (plugins call `deployCloudflareRelayViaApi` in `@cinderous/client/deploy/cloudflare-api`, no Node or wrangler needed; from a terminal, `relay deploy --config` below also uses REST and needs an API token). You can also use this package\'s wrangler config; it deploys the same relay:'), '');
         }
         code('bash', ...(selfContained ? [] : ['npm install']), loadEnv, t('npx wrangler@4 deploy            # 只想先試打包：加 --dry-run', 'npx wrangler@4 deploy            # bundle only, no upload: add --dry-run'));
         out.push('', t('wrangler 會建立 Durable Object、上傳，並印出 `https://…workers.dev` 網址。', 'wrangler creates the Durable Object, uploads, and prints the `https://…workers.dev` URL.'));
@@ -190,6 +194,10 @@ export function renderDeployGuide(config, locale, ctx) {
         if (readOnlyEnv !== undefined) {
             out.push('', t(`換過私人路徑時，把 \`.env\` 裡 \`${readOnlyEnv}\` 的值也設成 secret（SDK ADR 0052）：`, `After changing the private path, set the value of \`${readOnlyEnv}\` from \`.env\` as a secret too (SDK ADR 0052):`), '');
             code('bash', 'npx wrangler@4 secret put READONLY_LANES');
+        }
+        if (turnEnv !== undefined) {
+            out.push('', t(`TURN 的 Token 設成 Worker secret（指令會要你貼上 \`.env\` 裡 \`${turnEnv}\` 的值；之後重新部署會保留，Token 換了才要再設）。\`relay deploy --config\` 會自己做這一步：`, `Set the TURN token as a Worker secret (the command asks you to paste the value of \`${turnEnv}\` from \`.env\`; later redeployments keep it, so set it again only when the token changes). \`relay deploy --config\` does this step for you:`), '');
+            code('bash', 'npx wrangler@4 secret put TURN_API_TOKEN');
         }
     }
     if (target === 'docker' || target === 'home-tunnel') {
@@ -220,7 +228,7 @@ export function renderDeployGuide(config, locale, ctx) {
     out.push('', t('一行指令（裝了 `@cinderous/client` CLI 時；它讀同一份設定、自己對應秘密、部署後做健康檢查）：', 'One command (when the `@cinderous/client` CLI is installed; it reads the same config, maps the secrets and runs the health check):'), '');
     code('bash', 'npx cinderous relay deploy --config cinderous.config.json');
     if (target === 'cloudflare-api') {
-        out.push('', t('（`relay deploy --config` 對 `cloudflare-api` 目標在 P1 才接上；目前請用上面的 wrangler 指令，或把目標改成 `cloudflare`。）', '(`relay deploy --config` supports the `cloudflare-api` target from P1; for now use the wrangler commands above, or switch the target to `cloudflare`.)'));
+        out.push('', t('（`cloudflare-api` 目標走 REST：要有 Cloudflare API Token，不能用 `wrangler login`；沒有 `--dry-run`，要先看設定就看這個部署包。）', '(The `cloudflare-api` target uses REST: it needs a Cloudflare API token, not `wrangler login`; there is no `--dry-run`, so read this package to see the settings first.)'));
     }
     if (target === 'home-tunnel') {
         out.push('', t('（在這台主機上執行；它會用 docker compose 起 relay 與 cloudflared，再打 `https://' + (config.tunnel?.hostname ?? '<hostname>') + '/healthz` 確認。）', '(Run it on this host; it starts relay and cloudflared with docker compose, then checks `https://' + (config.tunnel?.hostname ?? '<hostname>') + '/healthz`.)'));
@@ -274,6 +282,9 @@ export function renderDeployGuide(config, locale, ctx) {
             : t('- 免費方案的 SQLite 儲存全帳號共 5 GB：建議設 `site.storageBudgetBytes`（例如 4000000000），部署前以 `computeCeilingBudget` 檢查最壞加總。', '- The free plan has 5 GB of SQLite storage per account: set `site.storageBudgetBytes` (e.g. 4000000000) so the worst case is checked with `computeCeilingBudget` before deploying.'));
         if (lanes > 0)
             out.push(t(`- 每條 \`appLanes\` 車道是一顆獨立的 DO（目前 ${lanes} 條）。`, `- Each \`appLanes\` lane is its own DO (${lanes} now).`));
+        if (turnEnv !== undefined) {
+            out.push(t('- 🔴 TURN：中繼轉送的通話流量由 Cloudflare Realtime 另外計費，不在 Workers 的免費額度內；以 Cloudflare 的官方價格為準。', '- 🔴 TURN: call traffic relayed over TURN is billed separately by Cloudflare Realtime, outside the Workers free plan; see Cloudflare\'s published prices.'));
+        }
     }
     else if (target === 'fly') {
         out.push(t('- Fly.io：一台常駐的機器（`auto_stop_machines = "off"`，WebSocket 長連線不能停機）' + (persist ? '加一顆 1 GB volume' : '') + '，以 Fly 的官方價格為準。', '- Fly.io: one always-on machine (`auto_stop_machines = "off"`; long-lived WebSockets cannot stop)' + (persist ? ' plus a 1 GB volume' : '') + ', at Fly\'s published prices.'));
@@ -293,6 +304,8 @@ export function renderDeployGuide(config, locale, ctx) {
     ];
     if (worker)
         checks.push(t('- [ ] Cloudflare Token 只有兩項權限、設了很近的到期日，部署完就刪掉。', '- [ ] The Cloudflare token has only the two permissions, a near expiry, and is deleted after deploying.'));
+    if (turnEnv !== undefined)
+        checks.push(t(`- [ ] TURN 的 Token（\`${turnEnv}\`）只放在 \`.env\`；外洩時到 Cloudflare 重新產生，再設一次 Worker secret。`, `- [ ] The TURN token (\`${turnEnv}\`) lives only in \`.env\`; if it leaks, regenerate it in Cloudflare and set the Worker secret again.`));
     if (target === 'fly')
         checks.push(t('- [ ] Fly Token 是只能部署這個 app 的 deploy token。', '- [ ] The Fly token is a deploy token scoped to this app.'));
     if (target === 'home-tunnel')

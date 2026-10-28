@@ -39,6 +39,7 @@ npx cinderous relay deploy --config deploy/cinderous.config.json
 | `secrets.cloudflareApiToken` | `--api-token` | — |
 | `secrets.flyApiToken` | `--api-token` | — |
 | `secrets.tunnelToken` | — | — |
+| `secrets.turnApiToken` | — | — |
 | `pushGateway.android` | — | `PUSH_ANDROID` |
 | `pushGateway.ios` | — | `PUSH_IOS` |
 | `pushGateway.iosLocKey` | — | `PUSH_IOS_LOC_KEY` |
@@ -84,6 +85,8 @@ npx cinderous relay deploy --config deploy/cinderous.config.json
 | `site.trafficNearFullPercent` | — | `TRAFFIC_NEAR_FULL_PERCENT` |
 | `site.ceilingMode` | — | `CEILING_MODE` |
 | `site.storageBudgetBytes` | — | — |
+| `site.turnKeyId` | — | `TURN_KEY_ID` |
+| `site.turnTtlSeconds` | — | `TURN_TTL_SECONDS` |
 
 ## Basics
 
@@ -419,6 +422,35 @@ When full: reject (default) or evict (drop what expires soonest). Node host only
 Account storage budget (bytes): deployment is refused if the worst case across all possible DOs exceeds it. Free plan: 4,000,000,000 (80% of 5 GB) recommended.
 
 - Type: integer, at least 1
+- Relay host: Cloudflare (Worker)
+- Service: `relay`
+
+## TURN (Cloudflare)
+
+### `secrets.turnApiToken`
+
+Environment variable holding the API token of the Cloudflare TURN key (defaults to TURN_API_TOKEN). It is uploaded as a Worker secret when deploying: a secret_text binding over REST, wrangler secret put with wrangler. Without a value, the secret already on the Worker is kept.
+
+- Type: secret reference `{ "$env": "NAME" }`
+- Secret: only `{ "$env": "NAME" }` in the config file; read from `TURN_API_TOKEN`
+- Targets: `cloudflare`, `cloudflare-api`
+- Service: `relay`
+
+### `site.turnKeyId`
+
+Key ID of a Cloudflare TURN key (Realtime → TURN): with it, the relay's /turn issues short-lived TURN credentials, so calls that cannot punch through go over TURN. The token goes in secrets.turnApiToken. 🔴 TURN traffic is billed separately by Cloudflare Realtime.
+
+- Type: string, at most 64 characters
+- Environment variable: `TURN_KEY_ID`
+- Relay host: Cloudflare (Worker)
+- Service: `relay`
+
+### `site.turnTtlSeconds`
+
+Lifetime of the short-lived TURN credentials in seconds (relay default 86400 = 1 day; clients renew before half of it). Needs turnKeyId.
+
+- Type: integer, 60–172800
+- Environment variable: `TURN_TTL_SECONDS`
 - Relay host: Cloudflare (Worker)
 - Service: `relay`
 

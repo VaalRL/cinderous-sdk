@@ -53,7 +53,7 @@ export interface DeployPackageContext {
   /**
    * SDK 怎麼進到部署包：
    * - `embed`（預設，公開前）：複製到 `sdk/`，以 `file:./sdk` 安裝——由寫檔的一方（CLI）複製，這裡只回報 `copySdk`；
-   * - `spec`：以套件相依安裝，例如 `github:VaalRL/cinderous-sdk#v0.78.0`（公開 repo；不上 npm，SDK ADR 0110）。
+   * - `spec`：以套件相依安裝，例如 `github:VaalRL/cinderous-sdk#v0.79.0`（公開 repo；不上 npm，SDK ADR 0110）。
    */
   sdkSource?: { kind: 'embed' } | { kind: 'spec'; spec: string };
   /** Workers 目標：附預打包的中繼（`src/relay.mjs`），不需要安裝 SDK。需要 `relayWorkerSource`。 */
@@ -117,13 +117,16 @@ export function renderDeployConfigFile(config: DeployConfig, sdkVersion?: string
 function renderEnvExample(config: DeployConfig, sdkVersion: string): string {
   const lines = [...header('#', sdkVersion), '#', '# 複製成 .env 再填值；.env 已在 .gitignore，不要提交。Copy to .env and fill in; .env is git-ignored — never commit it.', ''];
   const host = hostOfTarget(config.target);
-  const add = (key: 'cloudflareApiToken' | 'flyApiToken' | 'tunnelToken', note: string) => {
+  const add = (key: 'cloudflareApiToken' | 'flyApiToken' | 'tunnelToken' | 'turnApiToken', note: string) => {
     lines.push(`# ${note}`, `${secretEnvName(config, key)}=`, '');
   };
   if (host === 'worker') {
     add('cloudflareApiToken', 'Cloudflare API Token（沒有就用 `npx wrangler@4 login`）／Cloudflare API token (or use `npx wrangler@4 login`)');
     const account = config.cloudflare?.accountId;
     if (isSecretRef(account)) lines.push('# Cloudflare Account ID', `${account.$env}=`, '');
+    if (config.site?.turnKeyId !== undefined) {
+      add('turnApiToken', 'Cloudflare TURN 金鑰的 API Token（Worker secret TURN_API_TOKEN；SDK ADR 0118）／API token of the Cloudflare TURN key');
+    }
   }
   if (config.target === 'fly') add('flyApiToken', 'Fly deploy token（`fly tokens create deploy --app <name>`；沒有就用 `fly auth login`）');
   if (config.target === 'home-tunnel') add('tunnelToken', 'Cloudflare Tunnel Token（必填／required）');
@@ -234,14 +237,24 @@ function workerEntry(sdkVersion: string, selfContained: boolean): string {
   return lines.join('\n');
 }
 
-function devVarsExample(sdkVersion: string): string {
-  return [
-    ...header('#', sdkVersion),
-    '#',
-    '# `wrangler dev` 的本機秘密範本（複製成 .dev.vars）。這座中繼目前沒有執行期秘密；站台參數都在 wrangler.toml 的 [vars]。',
-    '# Local secrets template for `wrangler dev` (copy to .dev.vars). The relay has no runtime secrets yet; site parameters are in [vars] of wrangler.toml.',
-    '',
-  ].join('\n');
+function devVarsExample(config: DeployConfig, sdkVersion: string): string {
+  const lines = [...header('#', sdkVersion), '#'];
+  if (config.site?.turnKeyId !== undefined) {
+    lines.push(
+      '# `wrangler dev` 的本機秘密範本（複製成 .dev.vars，不要提交）。站台參數都在 wrangler.toml 的 [vars]。',
+      '# Local secrets template for `wrangler dev` (copy to .dev.vars, never commit it). Site parameters are in [vars] of wrangler.toml.',
+      '',
+      '# Cloudflare TURN 金鑰的 API Token（SDK ADR 0118）／API token of the Cloudflare TURN key',
+      'TURN_API_TOKEN=',
+    );
+  } else {
+    lines.push(
+      '# `wrangler dev` 的本機秘密範本（複製成 .dev.vars）。這座中繼沒有執行期秘密（沒有設 site.turnKeyId）；站台參數都在 wrangler.toml 的 [vars]。',
+      '# Local secrets template for `wrangler dev` (copy to .dev.vars). The relay has no runtime secrets (no site.turnKeyId); site parameters are in [vars] of wrangler.toml.',
+    );
+  }
+  lines.push('');
+  return lines.join('\n');
 }
 
 /**
@@ -298,7 +311,7 @@ export function renderDeployPackage(config: DeployConfig, ctx: DeployPackageCont
     add('src/entry.mjs', workerEntry(v, selfContained));
     if (selfContained) add('src/relay.mjs', `// SPDX-License-Identifier: AGPL-3.0-only\n// @cinderous/client ${v} 的中繼 Worker（預打包）。Pre-bundled relay Worker; source: ${SDK_SOURCE_REPO}/tree/v${v}\n${ctx.relayWorkerSource!}`, 'AGPL-3.0-only');
     add('package.json', packageJson(config, dependency, true));
-    add('.dev.vars.example', devVarsExample(v));
+    add('.dev.vars.example', devVarsExample(config, v));
   } else {
     const persist = config.node?.persist === true;
     const trustProxy = config.target === 'docker' ? config.node?.trustProxy === true : true;

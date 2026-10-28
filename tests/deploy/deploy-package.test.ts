@@ -198,3 +198,43 @@ describe('renderDeployGuide（zh-TW、en）', () => {
     expect(guide).toContain('🔴 沒有白名單');
   });
 });
+
+describe('TURN 的 Token 在部署包裡（SDK ADR 0118）', () => {
+  const turn: DeployConfig = {
+    configVersion: 1,
+    target: 'cloudflare',
+    site: { allowedPubkeys: [ALICE], turnKeyId: 'k1' },
+    secrets: { turnApiToken: { $env: 'MY_TURN' } },
+  };
+
+  it('有 turnKeyId：.env.example 與 .dev.vars.example 列出 Token 的變數，wrangler.toml 只有 Key ID', () => {
+    const files = fileMap(turn);
+    expect(files['.env.example']).toMatch(/^MY_TURN=$/m);
+    expect(files['.dev.vars.example']).toMatch(/^TURN_API_TOKEN=$/m);
+    expect(files['wrangler.toml']).toContain('TURN_KEY_ID = "k1"');
+    expect(files['wrangler.toml']).not.toContain('TURN_API_TOKEN');
+  });
+
+  it('有 turnKeyId：說明教 wrangler secret put、寫明 TURN 另外計費（兩種語言）', () => {
+    const zh = renderDeployGuide(turn, 'zh-TW', { sdkVersion: '1.2.3' });
+    const en = renderDeployGuide(turn, 'en', { sdkVersion: '1.2.3' });
+    for (const text of [zh, en]) expect(text).toContain('npx wrangler@4 secret put TURN_API_TOKEN');
+    expect(zh).toContain('另外計費');
+    expect(en).toContain('billed separately');
+  });
+
+  it('沒有 TURN：都不列', () => {
+    const files = fileMap(CONFIGS.cloudflare!);
+    expect(files['.env.example']).not.toContain('TURN');
+    expect(files['.dev.vars.example']).not.toContain('TURN_API_TOKEN=');
+    expect(renderDeployGuide(CONFIGS.cloudflare!, 'zh-TW', { sdkVersion: '1.2.3' })).not.toContain('secret put TURN_API_TOKEN');
+  });
+
+  it('cloudflare-api：說明改成 relay deploy --config 走 REST，不再說「P1 才接上」', () => {
+    for (const locale of ['zh-TW', 'en'] as const) {
+      const guide = renderDeployGuide(CONFIGS['cloudflare-api']!, locale, { sdkVersion: '1.2.3' });
+      expect(guide).not.toContain('P1');
+      expect(guide).toContain('REST');
+    }
+  });
+});

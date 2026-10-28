@@ -1,10 +1,10 @@
-import { type DeployIssue, type DeployProgress, type DeploySubstep, type ReadOnlyLane, type RelaySiteOptions } from '../shared.js';
+import { type DeployIssue, type DeployProgress, type DeploySubstep, type ReadOnlyLane, type RelaySiteOptions, type RelayWorkerSecrets } from '../shared.js';
 import { type HttpFetch } from './http.js';
 /**
  * 站台參數（白名單 `allowedPubkeys`、站名 `relayName`、已知租戶車道 `appLanes`、防濫用、保存期、檔案塊……）
  * 見 `RelaySiteOptions`（SDK ADR 0036、0037），與 wrangler、docker、fly 路徑共用同一份驗證。
  */
-export interface CloudflareApiDeployOptions extends RelaySiteOptions {
+export interface CloudflareApiDeployOptions extends RelaySiteOptions, RelayWorkerSecrets {
     /** 使用者建立的 API Token（權限見 `REQUIRED_TOKEN_PERMISSIONS`），或 OAuth access token。由呼叫端保存。 */
     apiToken: string;
     /**
@@ -102,11 +102,11 @@ export interface WorkerMetadata {
         name: string;
         class_name: string;
     } | {
-        type: 'plain_text';
+        type: 'plain_text' | 'secret_text';
         name: string;
         text: string;
     })[];
-    /** 儀表板上另外設的 secret（例如 TURN 的 Token）重新部署時保留 */
+    /** 這次沒有帶的 secret（例如儀表板上另外設的 TURN Token）重新部署時保留 */
     keep_bindings: string[];
     observability: {
         enabled: boolean;
@@ -116,6 +116,8 @@ export interface WorkerMetadata {
 export declare function buildWorkerMetadata(opts: {
     compatibilityDate: string;
     vars: Record<string, string>;
+    /** Worker secret（SDK ADR 0118）：`secret_text` 綁定，取代線上同名的 secret */
+    secrets?: Record<string, string>;
     migrations?: MigrationPayload;
 }): WorkerMetadata;
 /**

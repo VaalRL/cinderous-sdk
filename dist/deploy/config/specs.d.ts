@@ -3,7 +3,7 @@ import { type DeployConfig, type DeployService, type DeployTarget, type RelayHos
 /** 值的型別（決定驗證、JSON Schema 與表單元件） */
 export type DeployOptionType = 'string' | 'integer' | 'boolean' | 'enum' | 'string-list' | 'pubkey' | 'pubkey-list' | 'https-url' | 'secret-ref' | 'string-or-secret-ref' | 'record';
 /** 精靈的題組（P1 `cinderous init` 依它分組；只有 `basic`、`access`、`vault` 會在不進「進階」時詢問） */
-export type DeployOptionGroup = 'basic' | 'access' | 'vault' | 'nip11' | 'limits' | 'lanes' | 'capacity' | 'host' | 'secrets' | 'push';
+export type DeployOptionGroup = 'basic' | 'access' | 'vault' | 'nip11' | 'limits' | 'lanes' | 'capacity' | 'turn' | 'host' | 'secrets' | 'push';
 export interface DeployOptionSpec {
     /** 在設定檔裡的路徑，例如 `site.maxTtlDays` */
     path: string;

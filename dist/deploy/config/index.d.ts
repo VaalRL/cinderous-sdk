@@ -15,6 +15,8 @@ export { DEPLOY_GUIDE_FILES, DEPLOY_GUIDE_LOCALES, type DeployGuideContext, type
 export { contentHash, DEPLOY_CONFIG_FILE, type DeployPackage, type DeployPackageContext, type DeployPackageFile, type DeployPackageLicense, GENERATED_MANIFEST, type GeneratedManifest, modifiedGeneratedFiles, privateLaneEnvName, readOnlyLanesEnvName, renderDeployConfigFile, renderDeployPackage, } from './package.js';
 export { PUSH_GATEWAY_DO, PUSH_GATEWAY_RUNTIME_SECRETS, pushGatewaySecrets, pushGatewayVars, pushSecretEnvName, renderPushGatewayFiles, } from './push-package.js';
 export { renderPushGatewayGuide } from './push-guide.js';
+export { type DeployAffectingChange, DEPLOY_CONFIG_MIGRATIONS, type DeployConfigMigration, type DeployConfigMigrationResult, migrateDeployConfig, type MigrateDeployConfigOptions, } from './migrate.js';
+export { cloudflareApiOptionsFromConfig, type CloudflareApiOptionsFromConfig } from './cloudflare-api.js';
 export { type InitWizardOptions, type InitWizardResult, parseWizardAnswer, runInitWizard, type WizardAnswer, type WizardIo, WIZARD_MAX_TRIES, wizardQuestions, } from './wizard.js';
 export { collectRelaySiteIssues, type DeployIssue, type DeployIssueSeverity, generatePrivateLaneId, isPrivateLaneId, PRIVATE_LANE_MIN_LENGTH, privateLaneEndpoint, privateLaneFromUrl, READ_ONLY_GRACE_DAYS, type ReadOnlyLane, readOnlyLanesVar, type RelaySiteOptions, } from '../shared.js';
 //# sourceMappingURL=index.d.ts.map

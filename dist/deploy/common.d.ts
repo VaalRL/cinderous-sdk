@@ -1,6 +1,8 @@
 export { assertRelayName, checkRelayName, type DeployProgress, type DeployProgressStatus, type DeployStep, type DeploySubstep, type RelayDeployment, waitForHealthy, } from './shared.js';
 /** 執行外部指令；測試換成替身。 */
-export type CommandRunner = (cmd: string, args: string[], env: Record<string, string | undefined>) => Promise<{
+export type CommandRunner = (cmd: string, args: string[], env: Record<string, string | undefined>, 
+/** 交給指令的標準輸入（秘密走這裡，不進參數；SDK ADR 0118）。沒給＝繼承終端機（首次登入要能互動）。 */
+input?: string) => Promise<{
     code: number;
     stdout: string;
     stderr: string;

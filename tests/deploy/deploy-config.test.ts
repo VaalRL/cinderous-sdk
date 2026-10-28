@@ -60,6 +60,8 @@ describe('描述表 DEPLOY_OPTION_SPECS', () => {
         fileLanes: ['a'],
         appLanePow: 1,
         developerDocsUrl: 'https://x.example',
+        turnKeyId: 'k1',
+        turnTtlSeconds: 3600,
       },
       'worker',
     );

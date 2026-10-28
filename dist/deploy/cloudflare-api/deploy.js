@@ -10,7 +10,7 @@
 // 7. 打 `/healthz` 直到回 `ok`，回傳 `wss://<name>.<subdomain>.workers.dev`
 import { knownLanes, lanesOnlyFrom, READONLY_LANES_MAX, readOnlyLanesFrom } from '../../relay/host-config.js';
 import { LANE_ID_PATTERN } from '../../relay/shard.js';
-import { assertCompatibilityDate, assertRelayName, checkCompatibilityDate, checkRelayName, collectRelaySiteIssues, DEFAULT_COMPATIBILITY_DATE, DEFAULT_WORKER_NAME, privateLaneEndpoint, READ_ONLY_GRACE_DAYS, RELAY_DO_BINDING, RELAY_DO_MIGRATIONS, relayWorkerVars, sameLaneList, waitForHealthy, } from '../shared.js';
+import { assertCompatibilityDate, assertRelayName, checkCompatibilityDate, checkRelayName, collectRelaySiteIssues, DEFAULT_COMPATIBILITY_DATE, DEFAULT_WORKER_NAME, privateLaneEndpoint, READ_ONLY_GRACE_DAYS, RELAY_DO_BINDING, RELAY_DO_MIGRATIONS, relayWorkerSecrets, relayWorkerVars, sameLaneList, waitForHealthy, } from '../shared.js';
 import { listAccounts, verifyToken } from './auth.js';
 import { CloudflareApiError, cloudflareRequest, defaultHttp } from './http.js';
 import { relayWorkerSdkVersion } from './relay-worker-info.js';
@@ -54,6 +54,7 @@ export function buildWorkerMetadata(opts) {
         bindings: [
             { type: 'durable_object_namespace', name: RELAY_DO_BINDING.name, class_name: RELAY_DO_BINDING.className },
             ...Object.entries(opts.vars).map(([name, text]) => ({ type: 'plain_text', name, text })),
+            ...Object.entries(opts.secrets ?? {}).map(([name, text]) => ({ type: 'secret_text', name, text })),
         ],
         keep_bindings: ['secret_text', 'secret_key'],
         observability: { enabled: true },
@@ -93,6 +94,7 @@ export async function deployCloudflareRelayWithWorker(opts) {
     const retired = retiredLane(opts);
     let readOnlyLanes = [...(opts.readOnlyLanes ?? []), ...(retired ? [retired] : [])];
     let vars = relayWorkerVars({ ...opts, ...(readOnlyLanes.length > 0 ? { readOnlyLanes } : {}) });
+    const secrets = relayWorkerSecrets(opts);
     const compatibilityDate = opts.compatibilityDate ?? DEFAULT_COMPATIBILITY_DATE;
     assertCompatibilityDate(compatibilityDate);
     if (opts.workersDevSubdomain !== undefined)
@@ -167,6 +169,7 @@ export async function deployCloudflareRelayWithWorker(opts) {
     const metadata = buildWorkerMetadata({
         compatibilityDate,
         vars,
+        secrets,
         ...(plan.payload ? { migrations: plan.payload } : {}),
     });
     const multipart = buildMultipartBody([

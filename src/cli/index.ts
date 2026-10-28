@@ -5,6 +5,7 @@ import { createInterface, type Interface } from 'node:readline';
 
 import { buildRelayPackage } from '../deploy/build.js';
 import { deployCloudflareRelay } from '../deploy/cloudflare.js';
+import { deployCloudflareRelayViaApi } from '../deploy/cloudflare-api/index.js';
 import { sdkVersion } from '../deploy/common.js';
 import { prepareIotBridgeContext } from '../deploy/container.js';
 import { deployDockerRelay } from '../deploy/docker.js';
@@ -57,6 +58,7 @@ const code = await runCli(process.argv.slice(2), {
   cwd: process.cwd(),
   startNodeRelay,
   deployCloudflareRelay,
+  deployCloudflareRelayViaApi,
   deployDockerRelay,
   deployFlyRelay,
   writeFile: (path, content) => writeFileSync(path, content),

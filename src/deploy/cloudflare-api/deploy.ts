@@ -28,6 +28,8 @@ import {
   RELAY_DO_BINDING,
   RELAY_DO_MIGRATIONS,
   type RelaySiteOptions,
+  type RelayWorkerSecrets,
+  relayWorkerSecrets,
   relayWorkerVars,
   sameLaneList,
   waitForHealthy,
@@ -40,7 +42,7 @@ import { relayWorkerSdkVersion } from './relay-worker-info.js';
  * 站台參數（白名單 `allowedPubkeys`、站名 `relayName`、已知租戶車道 `appLanes`、防濫用、保存期、檔案塊……）
  * 見 `RelaySiteOptions`（SDK ADR 0036、0037），與 wrangler、docker、fly 路徑共用同一份驗證。
  */
-export interface CloudflareApiDeployOptions extends RelaySiteOptions {
+export interface CloudflareApiDeployOptions extends RelaySiteOptions, RelayWorkerSecrets {
   /** 使用者建立的 API Token（權限見 `REQUIRED_TOKEN_PERMISSIONS`），或 OAuth access token。由呼叫端保存。 */
   apiToken: string;
   /**
@@ -149,8 +151,11 @@ export function planMigrations(currentTag: string | undefined): { payload?: Migr
 export interface WorkerMetadata {
   main_module: string;
   compatibility_date: string;
-  bindings: ({ type: 'durable_object_namespace'; name: string; class_name: string } | { type: 'plain_text'; name: string; text: string })[];
-  /** 儀表板上另外設的 secret（例如 TURN 的 Token）重新部署時保留 */
+  bindings: (
+    | { type: 'durable_object_namespace'; name: string; class_name: string }
+    | { type: 'plain_text' | 'secret_text'; name: string; text: string }
+  )[];
+  /** 這次沒有帶的 secret（例如儀表板上另外設的 TURN Token）重新部署時保留 */
   keep_bindings: string[];
   observability: { enabled: boolean };
   migrations?: MigrationPayload;
@@ -159,6 +164,8 @@ export interface WorkerMetadata {
 export function buildWorkerMetadata(opts: {
   compatibilityDate: string;
   vars: Record<string, string>;
+  /** Worker secret（SDK ADR 0118）：`secret_text` 綁定，取代線上同名的 secret */
+  secrets?: Record<string, string>;
   migrations?: MigrationPayload;
 }): WorkerMetadata {
   return {
@@ -167,6 +174,7 @@ export function buildWorkerMetadata(opts: {
     bindings: [
       { type: 'durable_object_namespace', name: RELAY_DO_BINDING.name, class_name: RELAY_DO_BINDING.className },
       ...Object.entries(opts.vars).map(([name, text]) => ({ type: 'plain_text' as const, name, text })),
+      ...Object.entries(opts.secrets ?? {}).map(([name, text]) => ({ type: 'secret_text' as const, name, text })),
     ],
     keep_bindings: ['secret_text', 'secret_key'],
     observability: { enabled: true },
@@ -213,6 +221,7 @@ export async function deployCloudflareRelayWithWorker(
   const retired = retiredLane(opts);
   let readOnlyLanes: ReadOnlyLane[] = [...(opts.readOnlyLanes ?? []), ...(retired ? [retired] : [])];
   let vars = relayWorkerVars({ ...opts, ...(readOnlyLanes.length > 0 ? { readOnlyLanes } : {}) });
+  const secrets = relayWorkerSecrets(opts);
   const compatibilityDate = opts.compatibilityDate ?? DEFAULT_COMPATIBILITY_DATE;
   assertCompatibilityDate(compatibilityDate);
   if (opts.workersDevSubdomain !== undefined) assertRelayName(opts.workersDevSubdomain, 'workers.dev 子網域');
@@ -303,6 +312,7 @@ export async function deployCloudflareRelayWithWorker(
   const metadata = buildWorkerMetadata({
     compatibilityDate,
     vars,
+    secrets,
     ...(plan.payload ? { migrations: plan.payload } : {}),
   });
   const multipart = buildMultipartBody([

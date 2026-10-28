@@ -7,7 +7,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { commandFailure, defaultRunner, sdkVersion, } from './common.js';
-import { assertCompatibilityDate, assertRelayName, DEFAULT_COMPATIBILITY_DATE, DEFAULT_WORKER_NAME, privateLaneEndpoint, relayWorkerVars, waitForHealthy, } from './shared.js';
+import { assertCompatibilityDate, assertRelayName, DEFAULT_COMPATIBILITY_DATE, DEFAULT_WORKER_NAME, privateLaneEndpoint, relayWorkerSecrets, relayWorkerVars, waitForHealthy, } from './shared.js';
 import { renderWorkerEntry, renderWranglerToml } from './render.js';
 import { allowedPubkeysFrom } from '../relay/host-config.js';
 export { DEFAULT_COMPATIBILITY_DATE, DEFAULT_WORKER_NAME } from './shared.js';
@@ -25,6 +25,7 @@ export async function deployCloudflareRelay(opts = {}) {
     // 部署前先驗白名單與所有站台參數：寫錯的名單部署上去，會是一座直接出錯的站（見 allowedPubkeysFrom）。
     const allowed = allowedPubkeysFrom((opts.allowedPubkeys ?? []).join(','));
     relayWorkerVars(opts);
+    const secrets = relayWorkerSecrets(opts);
     const compatibilityDate = opts.compatibilityDate ?? DEFAULT_COMPATIBILITY_DATE;
     assertCompatibilityDate(compatibilityDate);
     const progress = opts.onProgress ?? (() => { });
@@ -55,6 +56,13 @@ export async function deployCloudflareRelay(opts = {}) {
         throw commandFailure('wrangler 部署', result);
     if (opts.dryRun)
         return { workerName, configPath };
+    // Worker secret（SDK ADR 0118）：值從 stdin 給 wrangler，不進參數、環境變數與任何檔案
+    for (const [name, value] of Object.entries(secrets)) {
+        progress({ step: 'deploy', message: `以 wrangler 設定 Worker secret ${name}` });
+        const put = await (opts.run ?? defaultRunner)('npx', ['wrangler@4', 'secret', 'put', name, '--config', configPath], env, value);
+        if (put.code !== 0)
+            throw commandFailure(`wrangler secret put ${name}`, put);
+    }
     const httpUrl = workersDevUrlFrom(`${result.stdout}\n${result.stderr}`);
     if (!httpUrl) {
         throw new Error('wrangler 回報成功，但輸出裡找不到 workers.dev 網址：這個帳號可能停用了 workers.dev 子網域，請到儀表板確認路由');

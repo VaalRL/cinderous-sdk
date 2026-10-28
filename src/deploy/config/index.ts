@@ -88,6 +88,17 @@ export {
   renderPushGatewayFiles,
 } from './push-package.js';
 export { renderPushGatewayGuide } from './push-guide.js';
+// 設定檔遷移（SDK ADR 0118）
+export {
+  type DeployAffectingChange,
+  DEPLOY_CONFIG_MIGRATIONS,
+  type DeployConfigMigration,
+  type DeployConfigMigrationResult,
+  migrateDeployConfig,
+  type MigrateDeployConfigOptions,
+} from './migrate.js';
+// 設定檔 → REST 一鍵部署的參數（SDK ADR 0118）
+export { cloudflareApiOptionsFromConfig, type CloudflareApiOptionsFromConfig } from './cloudflare-api.js';
 export {
   type InitWizardOptions,
   type InitWizardResult,

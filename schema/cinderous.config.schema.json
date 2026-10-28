@@ -146,6 +146,10 @@
           "$ref": "#/$defs/secretRef",
           "description": "Cloudflare Tunnel Token 的環境變數名稱（cloudflared 用；寫在部署包的 .env，不要提交）。\n\nEnvironment variable holding the Cloudflare Tunnel token (used by cloudflared; put it in the package's .env and never commit it)."
         },
+        "turnApiToken": {
+          "$ref": "#/$defs/secretRef",
+          "description": "Cloudflare TURN 金鑰的 API Token 的環境變數名稱（沒給讀 TURN_API_TOKEN）。部署時以 Worker secret 上傳：REST 是 secret_text 綁定，wrangler 是 wrangler secret put。沒有值就沿用線上已經有的 secret。\n\nEnvironment variable holding the API token of the Cloudflare TURN key (defaults to TURN_API_TOKEN). It is uploaded as a Worker secret when deploying: a secret_text binding over REST, wrangler secret put with wrangler. Without a value, the secret already on the Worker is kept."
+        },
         "pushGatewayKey": {
           "$ref": "#/$defs/secretRef",
           "description": "推播閘道私鑰的環境變數名稱（cinderous iot push-keygen 產生）。換掉它＝所有 App 的 token 封包作廢，要重新登記。\n\nEnvironment variable holding the push gateway's private key (generate with cinderous iot push-keygen). Rotating it invalidates every app's token envelope; apps must re-register."
@@ -478,6 +482,17 @@
           "minimum": 1,
           "maximum": 9007199254740991,
           "description": "帳號儲存預算（位元組）：所有可能 DO 的最壞加總超過就拒絕部署。免費方案建議 4,000,000,000（5 GB 的 80%）。\n\nAccount storage budget (bytes): deployment is refused if the worst case across all possible DOs exceeds it. Free plan: 4,000,000,000 (80% of 5 GB) recommended."
+        },
+        "turnKeyId": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Cloudflare TURN 金鑰的 Key ID（Realtime → TURN）：給了，中繼的 /turn 就換發短期 TURN 憑證，打洞失敗的通話改走 TURN。Token 另外放在 secrets.turnApiToken。🔴 TURN 流量由 Cloudflare Realtime 另外計費。\n\nKey ID of a Cloudflare TURN key (Realtime → TURN): with it, the relay's /turn issues short-lived TURN credentials, so calls that cannot punch through go over TURN. The token goes in secrets.turnApiToken. 🔴 TURN traffic is billed separately by Cloudflare Realtime."
+        },
+        "turnTtlSeconds": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 172800,
+          "description": "短期 TURN 憑證的有效秒數（中繼預設 86400＝1 天；客戶端在一半時間前換新）。要有 turnKeyId。\n\nLifetime of the short-lived TURN credentials in seconds (relay default 86400 = 1 day; clients renew before half of it). Needs turnKeyId."
         }
       }
     }

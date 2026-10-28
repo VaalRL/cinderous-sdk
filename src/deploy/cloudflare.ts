@@ -21,6 +21,8 @@ import {
   DEFAULT_WORKER_NAME,
   privateLaneEndpoint,
   type RelaySiteOptions,
+  type RelayWorkerSecrets,
+  relayWorkerSecrets,
   relayWorkerVars,
   waitForHealthy,
 } from './shared.js';
@@ -37,7 +39,7 @@ export { type CommandRunner, defaultRunner, type DeployStep } from './common.js'
  * 站台參數（白名單、站名、已知租戶車道、防濫用、保存期、檔案塊……）見 `RelaySiteOptions`（SDK ADR 0036、0037），
  * 與 REST 路徑、docker、fly 共用同一份驗證。
  */
-export interface CloudflareDeployOptions extends RelaySiteOptions {
+export interface CloudflareDeployOptions extends RelaySiteOptions, RelayWorkerSecrets {
   /** Worker 名稱，也是 workers.dev 網址的第一段。預設 `cinderous-relay`。 */
   workerName?: string;
   /** Cloudflare API Token；沒給就交給 wrangler 自己的登入狀態（`wrangler login`）。 */
@@ -80,6 +82,7 @@ export async function deployCloudflareRelay(opts: CloudflareDeployOptions = {}):
   // 部署前先驗白名單與所有站台參數：寫錯的名單部署上去，會是一座直接出錯的站（見 allowedPubkeysFrom）。
   const allowed = allowedPubkeysFrom((opts.allowedPubkeys ?? []).join(','));
   relayWorkerVars(opts);
+  const secrets = relayWorkerSecrets(opts);
   const compatibilityDate = opts.compatibilityDate ?? DEFAULT_COMPATIBILITY_DATE;
   assertCompatibilityDate(compatibilityDate);
   const progress = opts.onProgress ?? (() => {});
@@ -114,6 +117,13 @@ export async function deployCloudflareRelay(opts: CloudflareDeployOptions = {}):
   const result = await (opts.run ?? defaultRunner)('npx', args, env);
   if (result.code !== 0) throw commandFailure('wrangler 部署', result);
   if (opts.dryRun) return { workerName, configPath };
+
+  // Worker secret（SDK ADR 0118）：值從 stdin 給 wrangler，不進參數、環境變數與任何檔案
+  for (const [name, value] of Object.entries(secrets)) {
+    progress({ step: 'deploy', message: `以 wrangler 設定 Worker secret ${name}` });
+    const put = await (opts.run ?? defaultRunner)('npx', ['wrangler@4', 'secret', 'put', name, '--config', configPath], env, value);
+    if (put.code !== 0) throw commandFailure(`wrangler secret put ${name}`, put);
+  }
 
   const httpUrl = workersDevUrlFrom(`${result.stdout}\n${result.stderr}`);
   if (!httpUrl) {

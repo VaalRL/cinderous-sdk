@@ -97,6 +97,8 @@ export {
   RELAY_SITE_LIMITS,
   type RelaySiteOptions,
   relaySiteVars,
+  type RelayWorkerSecrets,
+  relayWorkerSecrets,
   relayWorkerVars,
   VAULT_SYNC_MAX_FILE_MB,
   waitForHealthy,

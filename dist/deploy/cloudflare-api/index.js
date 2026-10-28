@@ -15,7 +15,7 @@ export { relayWorkerSdkVersion, relayWorkerSha256 } from './relay-worker-info.js
 // 內嵌 Worker 的部署（舊介面）與部署時才下載 Worker（SDK ADR 0094）：沒用到的那一邊會被打包工具剔除（sideEffects: false）
 export { deployCloudflareRelayViaApi } from './deploy-embedded.js';
 export { fetchRelayWorker } from './worker-download.js';
-export { assertCompatibilityDate, collectRelaySiteIssues, assertRelayName, checkCompatibilityDate, checkRelayName, DEFAULT_COMPATIBILITY_DATE, DEFAULT_WORKER_NAME, generatePrivateLaneId, isPrivateLaneId, laneListVar, maxFileMbVar, PRIVATE_LANE_MIN_LENGTH, privateLaneEndpoint, privateLaneFromUrl, READ_ONLY_GRACE_DAYS, readOnlyLanesVar, RELAY_SITE_LIMITS, relaySiteVars, relayWorkerVars, VAULT_SYNC_MAX_FILE_MB, waitForHealthy, WORKER_ONLY_SITE_OPTIONS, } from '../shared.js';
+export { assertCompatibilityDate, collectRelaySiteIssues, assertRelayName, checkCompatibilityDate, checkRelayName, DEFAULT_COMPATIBILITY_DATE, DEFAULT_WORKER_NAME, generatePrivateLaneId, isPrivateLaneId, laneListVar, maxFileMbVar, PRIVATE_LANE_MIN_LENGTH, privateLaneEndpoint, privateLaneFromUrl, READ_ONLY_GRACE_DAYS, readOnlyLanesVar, RELAY_SITE_LIMITS, relaySiteVars, relayWorkerSecrets, relayWorkerVars, VAULT_SYNC_MAX_FILE_MB, waitForHealthy, WORKER_ONLY_SITE_OPTIONS, } from '../shared.js';
 // 帳號儲存預算的守門工具（SDK ADR 0042）：部署者把它放進自己的測試
 export { ACCOUNT_STORAGE_BUDGET_BYTES, computeCeilingBudget } from '../../relay/host-config.js';
 //# sourceMappingURL=index.js.map

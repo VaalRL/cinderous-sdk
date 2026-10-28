@@ -15,6 +15,10 @@ export { DEPLOY_GUIDE_FILES, DEPLOY_GUIDE_LOCALES, deployEndpoints, renderDeploy
 export { contentHash, DEPLOY_CONFIG_FILE, GENERATED_MANIFEST, modifiedGeneratedFiles, privateLaneEnvName, readOnlyLanesEnvName, renderDeployConfigFile, renderDeployPackage, } from './package.js';
 export { PUSH_GATEWAY_DO, PUSH_GATEWAY_RUNTIME_SECRETS, pushGatewaySecrets, pushGatewayVars, pushSecretEnvName, renderPushGatewayFiles, } from './push-package.js';
 export { renderPushGatewayGuide } from './push-guide.js';
+// 設定檔遷移（SDK ADR 0118）
+export { DEPLOY_CONFIG_MIGRATIONS, migrateDeployConfig, } from './migrate.js';
+// 設定檔 → REST 一鍵部署的參數（SDK ADR 0118）
+export { cloudflareApiOptionsFromConfig } from './cloudflare-api.js';
 export { parseWizardAnswer, runInitWizard, WIZARD_MAX_TRIES, wizardQuestions, } from './wizard.js';
 export { collectRelaySiteIssues, generatePrivateLaneId, isPrivateLaneId, PRIVATE_LANE_MIN_LENGTH, privateLaneEndpoint, privateLaneFromUrl, READ_ONLY_GRACE_DAYS, readOnlyLanesVar, } from '../shared.js';
 //# sourceMappingURL=index.js.map

@@ -327,6 +327,28 @@ const SITE_OPTION_SPECS = {
             en: 'Account storage budget (bytes): deployment is refused if the worst case across all possible DOs exceeds it. Free plan: 4,000,000,000 (80% of 5 GB) recommended.',
         },
     },
+    turnKeyId: {
+        type: 'string',
+        maxLength: limits.turnKeyId,
+        hosts: ['worker'],
+        env: 'TURN_KEY_ID',
+        group: 'turn',
+        description: {
+            'zh-TW': 'Cloudflare TURN 金鑰的 Key ID（Realtime → TURN）：給了，中繼的 /turn 就換發短期 TURN 憑證，打洞失敗的通話改走 TURN。Token 另外放在 secrets.turnApiToken。🔴 TURN 流量由 Cloudflare Realtime 另外計費。',
+            en: 'Key ID of a Cloudflare TURN key (Realtime → TURN): with it, the relay\'s /turn issues short-lived TURN credentials, so calls that cannot punch through go over TURN. The token goes in secrets.turnApiToken. 🔴 TURN traffic is billed separately by Cloudflare Realtime.',
+        },
+    },
+    turnTtlSeconds: {
+        type: 'integer',
+        range: limits.turnTtlSeconds,
+        hosts: ['worker'],
+        env: 'TURN_TTL_SECONDS',
+        group: 'turn',
+        description: {
+            'zh-TW': '短期 TURN 憑證的有效秒數（中繼預設 86400＝1 天；客戶端在一半時間前換新）。要有 turnKeyId。',
+            en: 'Lifetime of the short-lived TURN credentials in seconds (relay default 86400 = 1 day; clients renew before half of it). Needs turnKeyId.',
+        },
+    },
 };
 const TOP_LEVEL_SPECS = [
     {
@@ -518,6 +540,19 @@ const TOP_LEVEL_SPECS = [
         description: {
             'zh-TW': 'Cloudflare Tunnel Token 的環境變數名稱（cloudflared 用；寫在部署包的 .env，不要提交）。',
             en: 'Environment variable holding the Cloudflare Tunnel token (used by cloudflared; put it in the package\'s .env and never commit it).',
+        },
+    },
+    {
+        path: 'secrets.turnApiToken',
+        type: 'secret-ref',
+        secret: true,
+        defaultEnv: 'TURN_API_TOKEN',
+        services: ['relay'],
+        targets: WORKER_TARGETS,
+        group: 'turn',
+        description: {
+            'zh-TW': 'Cloudflare TURN 金鑰的 API Token 的環境變數名稱（沒給讀 TURN_API_TOKEN）。部署時以 Worker secret 上傳：REST 是 secret_text 綁定，wrangler 是 wrangler secret put。沒有值就沿用線上已經有的 secret。',
+            en: 'Environment variable holding the API token of the Cloudflare TURN key (defaults to TURN_API_TOKEN). It is uploaded as a Worker secret when deploying: a secret_text binding over REST, wrangler secret put with wrangler. Without a value, the secret already on the Worker is kept.',
         },
     },
 ];

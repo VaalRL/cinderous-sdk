@@ -159,3 +159,60 @@ describe('PRD 3.3 的預設值（SDK ADR 0013）', () => {
     expect(toml).toContain('MAX_MESSAGES_PER_SECOND_PER_IP = "20"');
   });
 });
+
+describe('deployCloudflareRelay：TURN 的 Token（SDK ADR 0118）', () => {
+  it('部署後以 wrangler secret put 上傳，值走 stdin、不在參數與環境變數裡', async () => {
+    const calls: (Call & { input?: string })[] = [];
+    const run: CommandRunner = async (cmd, args, env, input) => {
+      calls.push({ cmd, args, env, ...(input !== undefined ? { input } : {}) });
+      return { code: 0, stdout: 'https://my-relay.someone.workers.dev', stderr: '' };
+    };
+    const opts = base();
+    const steps: string[] = [];
+    await deployCloudflareRelay({
+      ...opts,
+      workerName: 'my-relay',
+      accountId: 'acc',
+      turnKeyId: 'turn-key-1',
+      turnApiToken: 'turn-secret-value',
+      run,
+      fetch: okFetch,
+      onProgress: (status) => steps.push(`${status.step} ${status.message}`),
+    });
+    const configPath = join(opts.workDir, 'wrangler.toml');
+    expect(calls.map((c) => c.args)).toEqual([
+      ['wrangler@4', 'deploy', '--config', configPath],
+      ['wrangler@4', 'secret', 'put', 'TURN_API_TOKEN', '--config', configPath],
+    ]);
+    expect(calls[1]!.input).toBe('turn-secret-value');
+    expect(calls[1]!.env.CLOUDFLARE_ACCOUNT_ID).toBe('acc');
+    expect(JSON.stringify(calls.map((c) => [c.args, c.env]))).not.toContain('turn-secret-value');
+    expect(steps.join('\n')).not.toContain('turn-secret-value');
+    expect(readFileSync(configPath, 'utf8')).toContain('TURN_KEY_ID = "turn-key-1"');
+    expect(readFileSync(configPath, 'utf8')).not.toContain('turn-secret-value');
+  });
+
+  it('dryRun 不上傳 secret；沒給 Token 也不上傳', async () => {
+    const dry = fakeRun('--dry-run: exiting now.');
+    await deployCloudflareRelay({ ...base(), dryRun: true, turnKeyId: 'k', turnApiToken: 'turn-secret-value', run: dry.run, fetch: okFetch });
+    expect(dry.calls).toHaveLength(1);
+    const none = fakeRun('https://x.someone.workers.dev');
+    await deployCloudflareRelay({ ...base(), turnKeyId: 'k', run: none.run, fetch: okFetch });
+    expect(none.calls).toHaveLength(1);
+  });
+
+  it('secret put 失敗 → 丟例外（不回報成功），訊息不含 Token', async () => {
+    let n = 0;
+    const run: CommandRunner = async () =>
+      ++n === 1 ? { code: 0, stdout: 'https://x.someone.workers.dev', stderr: '' } : { code: 1, stdout: '', stderr: '✘ [ERROR] secret failed' };
+    const error = await deployCloudflareRelay({ ...base(), turnKeyId: 'k', turnApiToken: 'turn-secret-value', run, fetch: okFetch }).catch((e: unknown) => e);
+    expect((error as Error).message).toMatch(/secret failed/);
+    expect((error as Error).message).not.toContain('turn-secret-value');
+  });
+
+  it('🔴 有 Token 卻沒有 turnKeyId → 部署前就拒絕', async () => {
+    const { run, calls } = fakeRun('');
+    await expect(deployCloudflareRelay({ ...base(), turnApiToken: 'turn-secret-value', run })).rejects.toThrow(/turnKeyId/);
+    expect(calls).toHaveLength(0);
+  });
+});

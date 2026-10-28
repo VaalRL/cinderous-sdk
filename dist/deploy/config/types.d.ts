@@ -1,10 +1,10 @@
 import type { RelaySiteOptions } from '../shared.js';
-/** 設定檔 schema 的版號。改版時以逐版的純函式遷移（`config migrate`，P1）。 */
+/** 設定檔 schema 的版號。改版時以逐版的純函式遷移（`DEPLOY_CONFIG_MIGRATIONS`、`cinderous config migrate`；SDK ADR 0118）。 */
 export declare const DEPLOY_CONFIG_VERSION = 1;
 /**
  * 部署目標（SDK ADR 0050 §3、§5）：
  * - `cloudflare`：Cloudflare Workers，以 wrangler 部署；
- * - `cloudflare-api`：Cloudflare Workers，以 REST API 部署（外掛用；CLI 的 `relay deploy --config` 在 P1 才接上）；
+ * - `cloudflare-api`：Cloudflare Workers，以 REST API 部署（外掛用 `deployCloudflareRelayViaApi`；CLI 的 `relay deploy --config` 也走 REST，SDK ADR 0118）；
  * - `docker`：這台機器的 docker compose；
  * - `fly`：Fly.io；
  * - `home-tunnel`：家中主機＋Cloudflare Tunnel（relay 不發布埠，`cloudflared` 對外）。
@@ -51,6 +51,8 @@ export interface DeploySecrets {
     flyApiToken?: SecretRef;
     /** Cloudflare Tunnel Token（`home-tunnel`，必填）。 */
     tunnelToken?: SecretRef;
+    /** Cloudflare TURN 的 API Token（Worker secret `TURN_API_TOKEN`；SDK ADR 0118） */
+    turnApiToken?: SecretRef;
     /** 推播閘道私鑰（`push-gateway`；執行期秘密 `PUSH_GATEWAY_KEY`）。 */
     pushGatewayKey?: SecretRef;
     /** Firebase 服務帳號 JSON（`push-gateway`；執行期秘密 `FCM_SERVICE_ACCOUNT`）。 */

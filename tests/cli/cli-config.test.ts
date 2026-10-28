@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { type CliDeps, parseDotEnv, runCli } from '../../src/cli/commands.js';
 import type { CloudflareDeployOptions } from '../../src/deploy/cloudflare.js';
+import type { CloudflareApiDeployOptions } from '../../src/deploy/cloudflare-api/index.js';
 import type { DockerDeployOptions } from '../../src/deploy/docker.js';
 import type { FlyDeployOptions } from '../../src/deploy/fly.js';
 import type { BuildRelayPackageOptions } from '../../src/deploy/build.js';
@@ -176,10 +177,58 @@ describe('relay deploy --config', () => {
     expect(ok.docker[0]).toMatchObject({ dryRun: true });
   });
 
-  it('cloudflare-api 目標在 P1 才接上 → 用法錯誤，說明替代做法', async () => {
-    const h = harness(configFile({ configVersion: 1, target: 'cloudflare-api' }));
-    expect(await runCli(['relay', 'deploy', '--config', 'cinderous.config.json'], h.deps)).toBe(2);
-    expect(h.err.join('\n')).toContain('P1');
+  it('cloudflare-api：交給 REST 部署，Token 與 TURN 的 Token 從 .env 讀（SDK ADR 0118）', async () => {
+    const config = {
+      configVersion: 1,
+      target: 'cloudflare-api',
+      name: 'my-relay',
+      site: { allowedPubkeys: [alice], turnKeyId: 'k1' },
+      cloudflare: { accountId: '0123456789abcdef0123456789abcdef' },
+    };
+    const api: CloudflareApiDeployOptions[] = [];
+    const h = harness(
+      { ...configFile(config, 'pkg/cinderous.config.json'), [resolve(CWD, 'pkg/.env')]: 'CLOUDFLARE_API_TOKEN=cf-tok\nTURN_API_TOKEN=turn-tok\n' },
+      {
+        deployCloudflareRelayViaApi: async (o) => {
+          api.push(o);
+          o.onProgress?.({ step: 'deploy', substep: 'upload', message: '上傳', messages: { 'zh-TW': '上傳', en: 'Uploading' } });
+          return { workerName: 'my-relay', accountId: 'acc1', subdomain: 'me', httpUrl: 'https://my-relay.me.workers.dev', relayEndpoint: 'wss://my-relay.me.workers.dev', migrationsApplied: true };
+        },
+      },
+    );
+    expect(await runCli(['relay', 'deploy', '-c', 'pkg/cinderous.config.json'], h.deps)).toBe(0);
+    expect(api).toHaveLength(1);
+    expect(api[0]).toMatchObject({ apiToken: 'cf-tok', accountId: '0123456789abcdef0123456789abcdef', workerName: 'my-relay', turnKeyId: 'k1', turnApiToken: 'turn-tok', allowedPubkeys: [alice] });
+    expect(h.cloudflare).toHaveLength(0);
+    expect(h.out).toContain('[deploy] 上傳');
+    expect(h.written[join(CWD, '.env.cinderous')]).toBe('CINDEROUS_RELAY_URL=wss://my-relay.me.workers.dev\n');
+    // 🔴 秘密不出現在任何輸出
+    expect([...h.out, ...h.err].join('\n')).not.toMatch(/cf-tok|turn-tok/);
+  });
+
+  it('cloudflare-api：沒有 Token → 回 1、說變數名稱；--dry-run → 用法錯誤（REST 沒有試打包）；環境不支援 → 回 1', async () => {
+    const config = { configVersion: 1, target: 'cloudflare-api' };
+    const viaApi = async () => {
+      throw new Error('不該被呼叫');
+    };
+    const missing = harness(configFile(config), { deployCloudflareRelayViaApi: viaApi });
+    expect(await runCli(['relay', 'deploy', '--config', 'cinderous.config.json'], missing.deps)).toBe(1);
+    expect(missing.err.join('\n')).toContain('CLOUDFLARE_API_TOKEN');
+
+    const dry = harness(configFile(config), { env: { CLOUDFLARE_API_TOKEN: 't' }, deployCloudflareRelayViaApi: viaApi });
+    expect(await runCli(['relay', 'deploy', '--config', 'cinderous.config.json', '--dry-run'], dry.deps)).toBe(2);
+    expect(dry.err.join('\n')).toContain('relay build');
+
+    const unsupported = harness(configFile(config), { env: { CLOUDFLARE_API_TOKEN: 't' } });
+    expect(await runCli(['relay', 'deploy', '--config', 'cinderous.config.json'], unsupported.deps)).toBe(1);
+    expect(unsupported.err.join('\n')).toContain('cloudflare-api');
+  });
+
+  it('cloudflare（wrangler）：TURN 的 Token 也從環境帶給部署函式', async () => {
+    const config = { configVersion: 1, target: 'cloudflare', site: { turnKeyId: 'k1' }, secrets: { turnApiToken: { $env: 'MY_TURN' } } };
+    const h = harness(configFile(config), { env: { MY_TURN: 'turn-tok' } });
+    expect(await runCli(['relay', 'deploy', '--config', 'cinderous.config.json'], h.deps)).toBe(0);
+    expect(h.cloudflare[0]).toMatchObject({ turnKeyId: 'k1', turnApiToken: 'turn-tok' });
   });
 
   it('設定檔由較新的 SDK 產生 → 拒絕', async () => {
@@ -248,7 +297,7 @@ describe('config validate／schema', () => {
     const h = harness();
     expect(await runCli(['config', 'schema'], h.deps)).toBe(0);
     expect(JSON.parse(h.out.join('\n'))).toHaveProperty('properties.site');
-    expect(await runCli(['config', 'migrate'], harness().deps)).toBe(2);
+    expect(await runCli(['config', 'upgrade'], harness().deps)).toBe(2);
   });
 });
 
@@ -323,5 +372,52 @@ describe('init 精靈（SDK ADR 0117）', () => {
 describe('parseDotEnv', () => {
   it('KEY=VALUE、註解、export、成對引號', () => {
     expect(parseDotEnv('# c\nA=1\nexport B = "two words"\nC=\'x\'\n bad line\nD=\n')).toEqual({ A: '1', B: 'two words', C: 'x', D: '' });
+  });
+});
+
+describe('config migrate（SDK ADR 0118）', () => {
+  const path = resolve(CWD, 'cinderous.config.json');
+
+  it('舊版 SDK 的設定：sdk 換成這一版、列出中間影響部署的變更、用固定的鍵順序寫回', async () => {
+    const h = harness(configFile({ target: 'docker', sdk: '0.33.0', configVersion: 1 }));
+    expect(await runCli(['config', 'migrate'], h.deps)).toBe(0);
+    expect(h.written[path]).toBe('{\n  "configVersion": 1,\n  "sdk": "0.38.0",\n  "target": "docker"\n}\n');
+    const text = h.out.join('\n');
+    expect(text).toContain('0.33.0');
+    expect(text).toContain('v0.34.0');
+    expect(text).toContain('v0.38.0');
+    expect(text).not.toContain('v0.31.0');
+  });
+
+  it('--dry-run：只印出結果，不寫檔', async () => {
+    const h = harness(configFile({ configVersion: 1, target: 'docker', sdk: '0.33.0' }, 'x.json'));
+    expect(await runCli(['config', 'migrate', 'x.json', '--dry-run'], h.deps)).toBe(0);
+    expect(h.written).toEqual({});
+    expect(h.out.join('\n')).toContain('"sdk": "0.38.0"');
+  });
+
+  it('已經是這一版：不寫檔', async () => {
+    const h = harness(configFile({ configVersion: 1, target: 'docker', sdk: '0.38.0' }));
+    expect(await runCli(['config', 'migrate'], h.deps)).toBe(0);
+    expect(h.written).toEqual({});
+    expect(h.out.join('\n')).toContain('不需要遷移');
+  });
+
+  it('🔴 較新的 SDK 產生的、或遷移後還有錯：回 1、不寫檔', async () => {
+    const newer = harness(configFile({ configVersion: 1, target: 'docker', sdk: '9.0.0' }));
+    expect(await runCli(['config', 'migrate'], newer.deps)).toBe(1);
+    expect(newer.written).toEqual({});
+    expect(newer.err.join('\n')).toContain('較新的 SDK');
+    const bad = harness(configFile({ configVersion: 1, target: 'docker', sdk: '0.33.0', node: { prot: 1 } }));
+    expect(await runCli(['config', 'migrate'], bad.deps)).toBe(1);
+    expect(bad.written).toEqual({});
+    expect(bad.err.join('\n')).toContain('node.prot');
+  });
+
+  it('用法：只吃一個檔；不知道 SDK 版號的環境 → 回 1', async () => {
+    expect(await runCli(['config', 'migrate', 'a.json', 'b.json'], harness().deps)).toBe(2);
+    const h = harness(configFile({ configVersion: 1, target: 'docker' }));
+    delete h.deps.sdkVersion;
+    expect(await runCli(['config', 'migrate'], h.deps)).toBe(1);
   });
 });

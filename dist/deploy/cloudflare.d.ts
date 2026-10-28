@@ -1,5 +1,5 @@
 import { type CommandRunner, type DeployStep } from './common.js';
-import { type RelaySiteOptions } from './shared.js';
+import { type RelaySiteOptions, type RelayWorkerSecrets } from './shared.js';
 export { DEFAULT_COMPATIBILITY_DATE, DEFAULT_WORKER_NAME } from './shared.js';
 export { renderWorkerEntry, renderWranglerToml } from './render.js';
 export { type CommandRunner, defaultRunner, type DeployStep } from './common.js';
@@ -7,7 +7,7 @@ export { type CommandRunner, defaultRunner, type DeployStep } from './common.js'
  * 站台參數（白名單、站名、已知租戶車道、防濫用、保存期、檔案塊……）見 `RelaySiteOptions`（SDK ADR 0036、0037），
  * 與 REST 路徑、docker、fly 共用同一份驗證。
  */
-export interface CloudflareDeployOptions extends RelaySiteOptions {
+export interface CloudflareDeployOptions extends RelaySiteOptions, RelayWorkerSecrets {
     /** Worker 名稱，也是 workers.dev 網址的第一段。預設 `cinderous-relay`。 */
     workerName?: string;
     /** Cloudflare API Token；沒給就交給 wrangler 自己的登入狀態（`wrangler login`）。 */

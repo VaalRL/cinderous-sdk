@@ -5,26 +5,29 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 export { assertRelayName, checkRelayName, waitForHealthy, } from './shared.js';
 /** 預設的指令執行器：輸出同時轉給終端機（首次登入要看得到提示）。 */
-export const defaultRunner = (cmd, args, env) => new Promise((resolve, reject) => {
+export const defaultRunner = (cmd, args, env, input) => new Promise((resolve, reject) => {
     // Windows 的 npx 是 .cmd，Node 不允許不經 shell 執行；經 shell 就要自己加引號。
     const windows = process.platform === 'win32';
     // 經 shell 時把整行組好再交出去（Node 22 起，shell 模式傳參數陣列會發棄用警告）。
-    const options = { env: { ...process.env, ...env }, stdio: ['inherit', 'pipe', 'pipe'] };
+    const options = { env: { ...process.env, ...env }, stdio: [input === undefined ? 'inherit' : 'pipe', 'pipe', 'pipe'] };
     const child = windows
         ? spawn([cmd, ...args.map((arg) => (/[\s"]/.test(arg) ? `"${arg.replace(/"/g, '\\"')}"` : arg))].join(' '), { ...options, shell: true })
         : spawn(cmd, args, options);
     let stdout = '';
     let stderr = '';
-    child.stdout.on('data', (chunk) => {
+    // stdin 可能是 pipe 或 inherit，型別因此退回一般的 ChildProcess；stdout／stderr 一定是 pipe
+    child.stdout?.on('data', (chunk) => {
         stdout += chunk.toString();
         process.stdout.write(chunk);
     });
-    child.stderr.on('data', (chunk) => {
+    child.stderr?.on('data', (chunk) => {
         stderr += chunk.toString();
         process.stderr.write(chunk);
     });
     child.on('error', reject);
     child.on('close', (code) => resolve({ code: code ?? 1, stdout, stderr }));
+    if (input !== undefined)
+        child.stdin?.end(input);
 });
 /** 失敗時從指令輸出取最後幾行當錯誤訊息 */
 export function commandFailure(tool, result) {

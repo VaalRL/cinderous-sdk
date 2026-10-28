@@ -75,6 +75,9 @@ function renderEnvExample(config, sdkVersion) {
         const account = config.cloudflare?.accountId;
         if (isSecretRef(account))
             lines.push('# Cloudflare Account ID', `${account.$env}=`, '');
+        if (config.site?.turnKeyId !== undefined) {
+            add('turnApiToken', 'Cloudflare TURN 金鑰的 API Token（Worker secret TURN_API_TOKEN；SDK ADR 0118）／API token of the Cloudflare TURN key');
+        }
     }
     if (config.target === 'fly')
         add('flyApiToken', 'Fly deploy token（`fly tokens create deploy --app <name>`；沒有就用 `fly auth login`）');
@@ -159,14 +162,16 @@ function workerEntry(sdkVersion, selfContained) {
     lines.push('');
     return lines.join('\n');
 }
-function devVarsExample(sdkVersion) {
-    return [
-        ...header('#', sdkVersion),
-        '#',
-        '# `wrangler dev` 的本機秘密範本（複製成 .dev.vars）。這座中繼目前沒有執行期秘密；站台參數都在 wrangler.toml 的 [vars]。',
-        '# Local secrets template for `wrangler dev` (copy to .dev.vars). The relay has no runtime secrets yet; site parameters are in [vars] of wrangler.toml.',
-        '',
-    ].join('\n');
+function devVarsExample(config, sdkVersion) {
+    const lines = [...header('#', sdkVersion), '#'];
+    if (config.site?.turnKeyId !== undefined) {
+        lines.push('# `wrangler dev` 的本機秘密範本（複製成 .dev.vars，不要提交）。站台參數都在 wrangler.toml 的 [vars]。', '# Local secrets template for `wrangler dev` (copy to .dev.vars, never commit it). Site parameters are in [vars] of wrangler.toml.', '', '# Cloudflare TURN 金鑰的 API Token（SDK ADR 0118）／API token of the Cloudflare TURN key', 'TURN_API_TOKEN=');
+    }
+    else {
+        lines.push('# `wrangler dev` 的本機秘密範本（複製成 .dev.vars）。這座中繼沒有執行期秘密（沒有設 site.turnKeyId）；站台參數都在 wrangler.toml 的 [vars]。', '# Local secrets template for `wrangler dev` (copy to .dev.vars). The relay has no runtime secrets (no site.turnKeyId); site parameters are in [vars] of wrangler.toml.');
+    }
+    lines.push('');
+    return lines.join('\n');
 }
 /**
  * 產生部署包（SDK ADR 0050 §5）。先驗證設定（有錯就丟例外，列出全部錯誤）；回傳的內容不含絕對路徑與秘密值，
@@ -223,7 +228,7 @@ export function renderDeployPackage(config, ctx) {
         if (selfContained)
             add('src/relay.mjs', `// SPDX-License-Identifier: AGPL-3.0-only\n// @cinderous/client ${v} 的中繼 Worker（預打包）。Pre-bundled relay Worker; source: ${SDK_SOURCE_REPO}/tree/v${v}\n${ctx.relayWorkerSource}`, 'AGPL-3.0-only');
         add('package.json', packageJson(config, dependency, true));
-        add('.dev.vars.example', devVarsExample(v));
+        add('.dev.vars.example', devVarsExample(config, v));
     }
     else {
         const persist = config.node?.persist === true;

@@ -7,7 +7,7 @@ export const DEPLOY_REFERENCE_FILES = {
   'zh-TW': 'docs/reference/deploy-options.zh-TW.md',
 };
 
-const GROUP_ORDER = ['basic', 'access', 'vault', 'nip11', 'limits', 'lanes', 'capacity', 'host', 'secrets', 'push'];
+const GROUP_ORDER = ['basic', 'access', 'vault', 'nip11', 'limits', 'lanes', 'capacity', 'turn', 'host', 'secrets', 'push'];
 
 const TEXT = {
   en: {
@@ -61,6 +61,7 @@ const TEXT = {
       limits: 'Limits',
       lanes: 'App lanes (Cloudflare)',
       capacity: 'Storage capacity',
+      turn: 'TURN (Cloudflare)',
       host: 'Hosting',
       secrets: 'Secrets',
       push: 'Push gateway',
@@ -117,6 +118,7 @@ const TEXT = {
       limits: '上限',
       lanes: '車道（Cloudflare）',
       capacity: '儲存容量',
+      turn: 'TURN（Cloudflare）',
       host: '宿主',
       secrets: '秘密',
       push: '推播閘道',

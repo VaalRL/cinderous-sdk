@@ -50,7 +50,7 @@
 | 文件網址 | `DEVELOPER_DOCS_URL` | 本版（Worker 限定） | 不設（不附網址，ADR 0019） | https、≤ 200 字 | 拒絕 `http:`、`javascript:` 等 | 無 | 無（出現在拒絕連線的 NOTICE／關閉原因） |
 | compatibility_date | —（Worker 設定） | 本版（既有，加格式驗證） | `2026-09-01` | `YYYY-MM-DD` | 改日期會改變執行期行為；預設隨 SDK 版本更新並測試 | 無 | 無 |
 | 健康檢查 | —（部署端） | 本版（既有 `healthRetries`、`healthDelayMs`） | REST 20 次、wrangler／docker／fly 10 次；間隔 3 秒 | 呼叫端決定 | 🔴 沒通過就不回報成功（永遠如此） | 每次檢查一個 Worker 請求 | 無 |
-| TURN | `TURN_KEY_ID`、`TURN_API_TOKEN`（secret）、`TURN_TTL_SECONDS`、`TURN_LIMIT` | 不開放（後續） | 未設＝`/turn` 回 204 | — | Token 是 secret，要走 secret 綁定；TURN 另計費（Cloudflare Realtime） | 免費額度外另計流量 | 無 |
+| TURN | `TURN_KEY_ID`、`TURN_API_TOKEN`（secret）、`TURN_TTL_SECONDS`、`TURN_LIMIT` | `turnKeyId`、`turnTtlSeconds`＋Token 走 secret（SDK ADR 0118） | 未設＝`/turn` 回 204 | — | Token 是 secret，要走 secret 綁定；TURN 另計費（Cloudflare Realtime） | 免費額度外另計流量 | 無 |
 | observability | —（Worker 設定） | 固定開 | `enabled: true` | — | 關掉就看不到 `FILE_LANES` 設錯等警告 | 免費方案有日誌量上限，中繼的日誌量很小 | 無 |
 | 節點自報 | `NODE_ATTESTATION` | 不開放 | — | 需要營運者簽章的事件 | 簽章要在營運者端做，不該經過部署表單 | — | `cinder_node` |
 
@@ -77,5 +77,5 @@
   （例如位址 16–256、TTL 1–90 天、單顆 8–64 KB），NIP-11 如實宣告。需要改 `storeOptions` 與兩座宿主，另開 ADR；部署端以 `appLanePolicies` 開放。
 - **車道升級 IP 限速的綁定**：REST metadata 加 `ratelimit` 綁定、wrangler.toml 加對應設定；開放站建議預設開。
 - **Worker 讀 `MAX_EVENTS_PER_MINUTE`／`MAX_MESSAGES_PER_MINUTE`**（只允許調高到某個上限、不允許關閉），與 Node 主機一致。
-- **TURN**：以 secret 綁定上傳 Token（REST 的 `secret_text`），部署表單只收 Key ID；另計費要在 UI 說明。
+- **TURN**：以 secret 綁定上傳 Token（REST 的 `secret_text`），部署表單只收 Key ID；另計費要在 UI 說明。（已做：SDK ADR 0118，wrangler 路徑用 `wrangler secret put`、值走 stdin。）
 - **PoW 難度宣告**：NIP-11 `limitation.min_pow_difficulty` 依車道回報。

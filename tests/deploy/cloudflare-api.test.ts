@@ -499,3 +499,49 @@ describe('multipart 與入口模組', () => {
     expect(renderApiWorkerEntry('1.0"); evil("')).toContain('setRelayVersion("1.0\\"); evil(\\"")');
   });
 });
+
+describe('deployCloudflareRelayViaApi：TURN（SDK ADR 0118）', () => {
+  it('turnKeyId 是 plain_text、turnApiToken 是 secret_text 綁定；Token 不出現在進度訊息', async () => {
+    const cf = fakeCloudflare();
+    const messages: string[] = [];
+    await deployCloudflareRelayViaApi({
+      ...base,
+      fetch: cf.http,
+      turnKeyId: 'turn-key-1',
+      turnTtlSeconds: 3600,
+      turnApiToken: 'turn-secret-value',
+      onProgress: (s) => messages.push(JSON.stringify(s)),
+    });
+    const parts = parseMultipart(cf.calls.find((c) => c.method === 'PUT' && c.url.endsWith('/my-relay'))!);
+    const metadata = JSON.parse(parts.get('metadata')!.content);
+    expect(metadata.bindings).toContainEqual({ type: 'plain_text', name: 'TURN_KEY_ID', text: 'turn-key-1' });
+    expect(metadata.bindings).toContainEqual({ type: 'plain_text', name: 'TURN_TTL_SECONDS', text: '3600' });
+    expect(metadata.bindings).toContainEqual({ type: 'secret_text', name: 'TURN_API_TOKEN', text: 'turn-secret-value' });
+    // 其他儀表板設的 secret 照舊保留
+    expect(metadata.keep_bindings).toEqual(['secret_text', 'secret_key']);
+    expect(messages.join('\n')).not.toContain('turn-secret-value');
+  });
+
+  it('沒給 turnApiToken：不送 secret_text（沿用線上已經有的 secret）', async () => {
+    const cf = fakeCloudflare();
+    await deployCloudflareRelayViaApi({ ...base, fetch: cf.http, turnKeyId: 'turn-key-1' });
+    const parts = parseMultipart(cf.calls.find((c) => c.method === 'PUT' && c.url.endsWith('/my-relay'))!);
+    const types = JSON.parse(parts.get('metadata')!.content).bindings.map((b: { type: string }) => b.type);
+    expect(types).not.toContain('secret_text');
+  });
+
+  it('🔴 有 turnApiToken 卻沒有 turnKeyId → 部署前就拒絕（訊息不含 Token）', async () => {
+    const cf = fakeCloudflare();
+    const error = await deployCloudflareRelayViaApi({ ...base, fetch: cf.http, turnApiToken: 'turn-secret-value' }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(/turnKeyId/);
+    expect((error as Error).message).not.toContain('turn-secret-value');
+    expect(cf.calls).toHaveLength(0);
+  });
+
+  it('turnTtlSeconds 沒有 turnKeyId → 部署前就拒絕', async () => {
+    const cf = fakeCloudflare();
+    await expect(deployCloudflareRelayViaApi({ ...base, fetch: cf.http, turnTtlSeconds: 3600 })).rejects.toThrow(/turnKeyId/);
+    expect(cf.calls).toHaveLength(0);
+  });
+});

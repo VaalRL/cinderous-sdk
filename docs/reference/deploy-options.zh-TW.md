@@ -39,6 +39,7 @@ npx cinderous relay deploy --config deploy/cinderous.config.json
 | `secrets.cloudflareApiToken` | `--api-token` | — |
 | `secrets.flyApiToken` | `--api-token` | — |
 | `secrets.tunnelToken` | — | — |
+| `secrets.turnApiToken` | — | — |
 | `pushGateway.android` | — | `PUSH_ANDROID` |
 | `pushGateway.ios` | — | `PUSH_IOS` |
 | `pushGateway.iosLocKey` | — | `PUSH_IOS_LOC_KEY` |
@@ -84,6 +85,8 @@ npx cinderous relay deploy --config deploy/cinderous.config.json
 | `site.trafficNearFullPercent` | — | `TRAFFIC_NEAR_FULL_PERCENT` |
 | `site.ceilingMode` | — | `CEILING_MODE` |
 | `site.storageBudgetBytes` | — | — |
+| `site.turnKeyId` | — | `TURN_KEY_ID` |
+| `site.turnTtlSeconds` | — | `TURN_TTL_SECONDS` |
 
 ## 基本
 
@@ -419,6 +422,35 @@ NIP-11 software：這座站跑的程式的原始碼網址（https）。沒給＝
 帳號儲存預算（位元組）：所有可能 DO 的最壞加總超過就拒絕部署。免費方案建議 4,000,000,000（5 GB 的 80%）。
 
 - 型別：整數，至少 1
+- 中繼宿主：Cloudflare（Worker）
+- 服務：`relay`
+
+## TURN（Cloudflare）
+
+### `secrets.turnApiToken`
+
+Cloudflare TURN 金鑰的 API Token 的環境變數名稱（沒給讀 TURN_API_TOKEN）。部署時以 Worker secret 上傳：REST 是 secret_text 綁定，wrangler 是 wrangler secret put。沒有值就沿用線上已經有的 secret。
+
+- 型別：秘密參照 `{ "$env": "NAME" }`
+- 秘密：設定檔只能寫 `{ "$env": "NAME" }`; 沒給時讀 `TURN_API_TOKEN`
+- 部署目標：`cloudflare`, `cloudflare-api`
+- 服務：`relay`
+
+### `site.turnKeyId`
+
+Cloudflare TURN 金鑰的 Key ID（Realtime → TURN）：給了，中繼的 /turn 就換發短期 TURN 憑證，打洞失敗的通話改走 TURN。Token 另外放在 secrets.turnApiToken。🔴 TURN 流量由 Cloudflare Realtime 另外計費。
+
+- 型別：字串，最長 64 字
+- 環境變數：`TURN_KEY_ID`
+- 中繼宿主：Cloudflare（Worker）
+- 服務：`relay`
+
+### `site.turnTtlSeconds`
+
+短期 TURN 憑證的有效秒數（中繼預設 86400＝1 天；客戶端在一半時間前換新）。要有 turnKeyId。
+
+- 型別：整數，60–172800
+- 環境變數：`TURN_TTL_SECONDS`
 - 中繼宿主：Cloudflare（Worker）
 - 服務：`relay`
 

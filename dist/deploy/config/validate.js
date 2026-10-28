@@ -69,6 +69,11 @@ export const DEPLOY_AFFECTING_CHANGES = [
         adr: '0067',
         'zh-TW': '中繼處理收件確認（NIP-11 cinder_inbox_ack）：處理完的 Vault 同步包 2 小時後清掉；不需要新設定，重新部署才生效',
         en: 'The relay handles inbox acks (NIP-11 cinder_inbox_ack): processed Vault sync wraps expire 2 hours later; no new settings, takes effect after a redeploy',
+    }, {
+        version: '0.79.0',
+        adr: '0118',
+        'zh-TW': 'TURN 可以從設定檔設定（site.turnKeyId、site.turnTtlSeconds，Token 是 secrets.turnApiToken，部署時以 Worker secret 上傳）；沒設時行為不變。🔴 TURN 流量由 Cloudflare Realtime 另外計費',
+        en: 'TURN can be set in the config (site.turnKeyId, site.turnTtlSeconds; the token is secrets.turnApiToken and is uploaded as a Worker secret); unchanged when unset. 🔴 TURN traffic is billed separately by Cloudflare Realtime',
     },
 ];
 /** 比較 x.y.z（預發行標記忽略）：a < b 回負數 */

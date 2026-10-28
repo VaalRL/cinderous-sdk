@@ -2,7 +2,7 @@
 // 這個檔只解讀旗標、把工作交出去；起中繼、部署、讀寫檔都經由 `CliDeps`，測試換成替身。
 import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { DEPLOY_TARGETS, renderDeployConfigFile, renderDeployConfigJsonSchema, runInitWizard, resolveSecret, resolveSiteSecrets, resolveStringOrSecret, secretEnvName, serviceOfConfig, siteWithPlaceholders, validateDeployConfig, } from '../deploy/config/index.js';
+import { cloudflareApiOptionsFromConfig, DEPLOY_TARGETS, migrateDeployConfig, renderDeployConfigFile, renderDeployConfigJsonSchema, runInitWizard, resolveSecret, resolveSiteSecrets, resolveStringOrSecret, secretEnvName, serviceOfConfig, siteWithPlaceholders, validateDeployConfig, } from '../deploy/config/index.js';
 import { estimateResourceConsumption, formatEstimationReport, } from '../estimator.js';
 import { Identity } from '../identity.js';
 import { iotPubkeyOf, IOT_ROLES } from '../iot/acl.js';
@@ -54,7 +54,7 @@ export const USAGE = `用法：cinderous <指令> [選項]
       --config, -c <檔>           預設 cinderous.config.json
       --out, -o <目錄>            預設設定檔所在的資料夾
       --self-contained            Workers：附預打包的中繼（src/relay.mjs），不需要安裝 SDK
-      --sdk-spec <相依>           SDK 改以套件相依安裝（例如 github:VaalRL/cinderous-sdk#v0.78.0），不內嵌 sdk/
+      --sdk-spec <相依>           SDK 改以套件相依安裝（例如 github:VaalRL/cinderous-sdk#v0.79.0），不內嵌 sdk/
       --force                     覆寫被手改過、或不是 relay build 產生的檔案
 
   cinderous init           逐題產生設定檔 cinderous.config.json（SDK ADR 0117）；危險選項要打字確認才會開
@@ -81,6 +81,8 @@ export const USAGE = `用法：cinderous <指令> [選項]
 
   cinderous config validate [檔]  驗證設定檔，一次列出所有問題（預設 cinderous.config.json）
   cinderous config schema          印出設定檔的 JSON Schema
+  cinderous config migrate [檔]   把舊版 SDK 產生的設定檔帶到這一版（sdk 欄位、格式），列出中間影響部署的變更
+      --dry-run                   只印出結果，不寫檔
 
   cinderous estimate       試算資源消耗與營運成本
       --mode <cinder-ek|double-ratchet>  預設 cinder-ek
@@ -323,7 +325,12 @@ function deployArgsFromConfig(config, env, overrides) {
         throw new UsageError('relay deploy --config 只部署中繼：推播閘道（service: push-gateway）請用 relay build 產生部署包，照 README-DEPLOY.md 以 wrangler／docker compose／fly 部署（SDK ADR 0049 §11.1）');
     }
     if (config.target === 'cloudflare-api') {
-        throw new UsageError('cloudflare-api 目標的 relay deploy --config 在 P1 才接上（SDK ADR 0050）：外掛請用 deployCloudflareRelayViaApi；終端機請把 target 改成 cloudflare（同一座中繼），或用 relay build 產生的 wrangler 設定');
+        if (overrides.dryRun) {
+            throw new UsageError('cloudflare-api（REST）沒有試打包：要先看會產生什麼，用 relay build；或把 target 改成 cloudflare 再加 --dry-run（同一座中繼）');
+        }
+        // 秘密與站台參數交給外掛也用的那一份（SDK ADR 0118）；--api-token、--account-id 這條路徑沒有（--config 不收旗標）
+        const apiOptions = cloudflareApiOptionsFromConfig(config, env);
+        return { provider: 'cloudflare-api', outputEnv: overrides.outputEnv, site: siteSecretsFor(config, env, false), persist: false, dryRun: false, apiOptions };
     }
     const provider = config.target === 'home-tunnel' ? 'docker' : config.target;
     const args = {
@@ -345,6 +352,9 @@ function deployArgsFromConfig(config, env, overrides) {
             args.accountId = accountId;
         if (config.cloudflare?.compatibilityDate !== undefined)
             args.compatibilityDate = config.cloudflare.compatibilityDate;
+        const turnApiToken = resolveSecret(config.secrets?.turnApiToken, env, secretEnvName(config, 'turnApiToken'));
+        if (turnApiToken)
+            args.turnApiToken = turnApiToken;
     }
     if (provider === 'fly') {
         const apiToken = overrides.apiToken ?? resolveSecret(config.secrets?.flyApiToken, env, 'FLY_API_TOKEN');
@@ -413,7 +423,14 @@ async function deployWith(args, deps) {
                 ...(args.apiToken ? { apiToken: args.apiToken } : {}),
                 ...(args.accountId ? { accountId: args.accountId } : {}),
                 ...(args.compatibilityDate ? { compatibilityDate: args.compatibilityDate } : {}),
+                ...(args.turnApiToken ? { turnApiToken: args.turnApiToken } : {}),
             });
+        }
+        case 'cloudflare-api': {
+            if (!deps.deployCloudflareRelayViaApi)
+                throw new Error('這個環境不支援 cloudflare-api 目標的部署');
+            const deployment = await deps.deployCloudflareRelayViaApi({ ...args.apiOptions, onProgress });
+            return { configPath: deployment.workerName, relayEndpoint: deployment.relayEndpoint };
         }
     }
 }
@@ -629,8 +646,54 @@ function configCommand(sub, argv, deps) {
         deps.stdout(validation.issues.length === 0 ? `設定檔沒有問題：${configPath}` : `設定檔可以用（有 ${validation.issues.length} 則提醒）：${configPath}`);
         return 0;
     }
-    // migrate 在 ADR 0050 P1，還沒做；精靈是 `cinderous init`（SDK ADR 0117）
-    throw new UsageError(`不認得的指令：config ${sub ?? ''}（可用：config validate、config schema）`);
+    if (sub === 'migrate')
+        return configMigrate(argv, deps);
+    throw new UsageError(`不認得的指令：config ${sub ?? ''}（可用：config validate、config schema、config migrate）`);
+}
+/** `cinderous config migrate`（SDK ADR 0118）：遷移後驗證，沒有錯才寫回（固定的鍵順序，同 relay build） */
+function configMigrate(argv, deps) {
+    const { values, positionals } = parseArgs({
+        args: argv,
+        strict: true,
+        allowPositionals: true,
+        options: { config: { type: 'string', short: 'c' }, 'dry-run': { type: 'boolean' } },
+    });
+    if (positionals.length > 1)
+        throw new UsageError('config migrate 只吃一個設定檔');
+    if (deps.sdkVersion === undefined) {
+        deps.stderr('這個環境不知道 SDK 的版號，不能遷移');
+        return 1;
+    }
+    const configPath = resolve(deps.cwd, values.config ?? positionals[0] ?? 'cinderous.config.json');
+    const input = readConfigFile(configPath, deps);
+    if (input === undefined)
+        return 1;
+    const result = migrateDeployConfig(input, { sdkVersion: deps.sdkVersion });
+    if (reportIssues(result.issues, deps)) {
+        deps.stderr(`沒有寫回：先修好上面的錯誤（${configPath}）`);
+        return 1;
+    }
+    if (!result.changed) {
+        deps.stdout(`不需要遷移：這份設定已經是 ${deps.sdkVersion}（${configPath}）`);
+        return 0;
+    }
+    deps.stdout(`${result.fromSdk ?? '（沒有記版號）'} → ${deps.sdkVersion}`);
+    for (const step of result.steps)
+        deps.stdout(`- configVersion ${step.from} → ${step.to}：${step['zh-TW']}`);
+    if (result.changes.length > 0) {
+        deps.stdout('中間影響部署的變更（重新產生部署包、重新部署前看一下）：');
+        for (const change of result.changes)
+            deps.stdout(`- v${change.version}（ADR ${change.adr}）${change['zh-TW']}`);
+    }
+    const content = renderDeployConfigFile(result.config, deps.sdkVersion);
+    if (values['dry-run'] === true) {
+        deps.stdout('（--dry-run：沒有寫檔）');
+        deps.stdout(content.trimEnd());
+        return 0;
+    }
+    deps.writeFile(configPath, content);
+    deps.stdout(`已寫回 ${configPath}；部署包請用 relay build --force 重新產生`);
+    return 0;
 }
 // ── IoT（SDK ADR 0049 P0）─────────────────────────────────────────────
 /** 讀 JSON 設定檔，並把設定檔旁邊的 `.env` 併進環境（環境變數優先；與 relay deploy --config 相同的慣例） */

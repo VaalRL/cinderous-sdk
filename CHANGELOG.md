@@ -4,6 +4,12 @@ Releases are git tags; install one with `npm install github:VaalRL/cinderous-sdk
 
 每個版本是一個 git tag，安裝方式是 `npm install github:VaalRL/cinderous-sdk#vX.Y.Z`。每一版列出那一版的改動（取自 commit 紀錄）；每項改動的理由寫在它引用的 ADR 裡（[docs/adr/](docs/adr/README.md)）。
 
+## v0.79.0 — 2026-10-28
+
+- feat(deploy): TURN 進站台參數（`turnKeyId`、`turnTtlSeconds`）；Token 是 `RelayWorkerSecrets.turnApiToken`，REST 以 `secret_text` 綁定、wrangler 以 `wrangler secret put`（值走 stdin）上傳；`CommandRunner` 多一個可選的 `input`；部署包與說明列出 Token、寫明 TURN 另外計費（ADR 0118）
+- feat(deploy): `@cinderous/client/deploy/config` 新增 `cloudflareApiOptionsFromConfig`；`relay deploy --config` 接上 `cloudflare-api` 目標（ADR 0118）
+- feat(cli): `cinderous config migrate [檔] [--dry-run]`；新增 `migrateDeployConfig`、`DEPLOY_CONFIG_MIGRATIONS`（ADR 0118）
+
 ## v0.78.0 — 2026-10-28
 
 - feat(cli): `cinderous init` 精靈——題目從 `DEPLOY_OPTION_SPECS` 推出、危險選項要打出欄位名稱才開；`@cinderous/client/deploy/config` 新增 `runInitWizard`、`wizardQuestions`、`parseWizardAnswer`、`dangerousChoices`、`isDangerousValue`、`dangerConfirmWord`、`renderDeployConfigFile`（ADR 0117）
