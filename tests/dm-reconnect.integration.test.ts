@@ -28,10 +28,9 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe('DirectMessages × RelayPool × 真的中繼：重連後不漏收外層時戳被往前推的私訊', () => {
   it('🔴 斷線重連之後，別人寄來、外層時間被往前推一天的私訊仍收得到', async () => {
-    const port = 44_000 + Math.floor(Math.random() * 2_000);
-    const relay = startNodeRelay({ PORT: String(port) }, { memory: true });
+    const relay = startNodeRelay({ PORT: '0' }, { memory: true }); // 由系統分配埠（SDK ADR 0114）
     cleanups.push(() => relay.close());
-    await sleep(100);
+    const port = await relay.ready;
     const url = `ws://127.0.0.1:${port}`;
 
     const alice = Identity.generate();
@@ -77,10 +76,9 @@ describe('DirectMessages × RelayPool × 真的中繼：重連後不漏收外層
   }, 20_000);
 
   it('🔴 kind 1060（Vault 同步／名單外層；CinderSync ADR 0013 釘住的情境）：重連之後、外層時間被往前推一天的也收得到', async () => {
-    const port = 46_000 + Math.floor(Math.random() * 2_000);
-    const relay = startNodeRelay({ PORT: String(port), MAX_FILE_MB: '17' }, { memory: true });
+    const relay = startNodeRelay({ PORT: '0', MAX_FILE_MB: '17' }, { memory: true });
     cleanups.push(() => relay.close());
-    await sleep(100);
+    const port = await relay.ready;
     const url = `ws://127.0.0.1:${port}`;
     const sender = Identity.generate();
     const recipient = Identity.generate();

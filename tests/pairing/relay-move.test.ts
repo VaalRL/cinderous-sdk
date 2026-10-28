@@ -264,23 +264,22 @@ describe('端到端（Node 中繼）：A 部署前送到舊路徑 → 換路徑 
   it('被移除的 C 收不到；寬限期過後舊路徑 unknown-path', async () => {
     const OLD_LANE = 'k7q2mxz4ab3cd5ef6gh7ij2kl3';
     const NEW_LANE = 'z9y8x7w6v5u4t3s2r2q2p2o2n2';
-    const port = 42_000 + Math.floor(Math.random() * 2_000);
     const dir = mkdtempSync(join(tmpdir(), 'relay-move-'));
     dirs.push(dir);
     const db = join(dir, 'relay.db');
-    const base = { PORT: String(port), DB_PATH: db, LANES_ONLY: '1', MAX_FILE_MB: '17' };
-    const host = `127.0.0.1:${port}`;
-    const oldUrl = `ws://${host}/app/${OLD_LANE}`;
-    const newUrl = `ws://${host}/app/${NEW_LANE}`;
+    const base = { DB_PATH: db, LANES_ONLY: '1', MAX_FILE_MB: '17' };
     const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
     const { a, b, c, ma, mb, mc } = trio();
     ma.revoke(c.pubkey); // C 先被移除（它還留著舊名單與舊網址）
 
-    // 部署前：舊路徑可寫，A 送出
-    let relay = startNodeRelay({ ...base, APP_LANES: OLD_LANE });
+    // 部署前：舊路徑可寫，A 送出。第一次由系統分配埠，重新部署沿用同一個（SDK ADR 0114）
+    let relay = startNodeRelay({ ...base, PORT: '0', APP_LANES: OLD_LANE });
     handles.push(relay);
-    await wait(100);
+    const port = await relay.ready;
+    const host = `127.0.0.1:${port}`;
+    const oldUrl = `ws://${host}/app/${OLD_LANE}`;
+    const newUrl = `ws://${host}/app/${NEW_LANE}`;
     const connect = (urls: readonly string[]) => {
       const pool = new RelayPool({ urls, identity: a });
       pool.connect();
@@ -294,9 +293,9 @@ describe('端到端（Node 中繼）：A 部署前送到舊路徑 → 換路徑 
     handles.splice(0);
     await wait(100);
     const until = Math.floor(Date.now() / 1000) + 3;
-    relay = startNodeRelay({ ...base, APP_LANES: NEW_LANE, READONLY_LANES: `${OLD_LANE}@${until}` });
+    relay = startNodeRelay({ ...base, PORT: String(port), APP_LANES: NEW_LANE, READONLY_LANES: `${OLD_LANE}@${until}` });
     handles.push(relay);
-    await wait(100);
+    await relay.ready;
 
     // 晚上線的 B：只知道舊網址，從唯讀的舊路徑讀到通知
     const receive = async (signer: Identity, membership: VaultMembership): Promise<ReceivedRelayMove[]> => {

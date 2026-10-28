@@ -9,6 +9,7 @@ import { WebSocket as WsClient } from 'ws';
 import { finalizeEvent, generateSecretKey } from '../../src/protocol/index.js';
 import { classifyRelayMessage } from '../../src/protocol/relay-reject.js';
 import { startNodeRelay } from '../../src/relay/node-relay.js';
+import { opened } from '../node-relay-harness.js';
 import type { SqlExec } from '../../src/relay/sql-message-store.js';
 import { TrafficMeter, trafficBudgetFrom, trafficPeriod } from '../../src/relay/traffic-budget.js';
 
@@ -106,7 +107,6 @@ describe('TrafficMeter', () => {
   });
 });
 
-const port = () => 44_000 + Math.floor(Math.random() * 2_000);
 const handles: { close(): void }[] = [];
 const clients: WsClient[] = [];
 afterEach(() => {
@@ -132,10 +132,9 @@ const note = (sk: Uint8Array, size: number) =>
 
 describe('startNodeRelay：每月流量預算（SDK ADR 0101）', () => {
   it('🔴 快用完時 OK 帶 near-full 預警（客戶端照既有的分類認得）；NIP-11 公告用量百分比', async () => {
-    const p = port();
     // MONTHLY_TRAFFIC_GIB 只收整數 GiB，測試用不完：改用呼叫端選項 trafficBudget 設成 20 KB
-    handles.push(
-      startNodeRelay({ PORT: String(p), REQUIRE_AUTH: '0', MAX_EVENTS_PER_MINUTE: '0' }, { memory: true, trafficBudget: { budgetBytes: 20_000, resetDay: 1, count: 'total', nearFullPercent: 50 } }),
+    const p = await opened(handles,
+      startNodeRelay({ PORT: '0', REQUIRE_AUTH: '0', MAX_EVENTS_PER_MINUTE: '0' }, { memory: true, trafficBudget: { budgetBytes: 20_000, resetDay: 1, count: 'total', nearFullPercent: 50 } }),
     );
     await wait(100);
     const { ws, messages } = await open(`ws://127.0.0.1:${p}`);
@@ -156,9 +155,8 @@ describe('startNodeRelay：每月流量預算（SDK ADR 0101）', () => {
   });
 
   it('🔴 用完：既有連線收到 over quota 並以 1013 關閉；新連線也一樣', async () => {
-    const p = port();
-    handles.push(
-      startNodeRelay({ PORT: String(p), REQUIRE_AUTH: '0', MAX_EVENTS_PER_MINUTE: '0' }, { memory: true, trafficBudget: { budgetBytes: 10_000, resetDay: 1, count: 'total' } }),
+    const p = await opened(handles,
+      startNodeRelay({ PORT: '0', REQUIRE_AUTH: '0', MAX_EVENTS_PER_MINUTE: '0' }, { memory: true, trafficBudget: { budgetBytes: 10_000, resetDay: 1, count: 'total' } }),
     );
     await wait(100);
     const url = `ws://127.0.0.1:${p}`;
@@ -175,8 +173,7 @@ describe('startNodeRelay：每月流量預算（SDK ADR 0101）', () => {
   });
 
   it('沒設＝不限、NIP-11 沒有 cinder_traffic', async () => {
-    const p = port();
-    handles.push(startNodeRelay({ PORT: String(p) }, { memory: true }));
+    const p = await opened(handles,startNodeRelay({ PORT: '0' }, { memory: true }));
     await wait(100);
     const info = (await (await fetch(`http://127.0.0.1:${p}/`, { headers: { accept: 'application/nostr+json' } })).json()) as Record<string, unknown>;
     expect(info.cinder_traffic).toBeUndefined();

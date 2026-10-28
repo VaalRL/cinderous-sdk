@@ -26,9 +26,18 @@
 - － 其他 11 個測試檔仍用固定範圍的隨機埠（見〈後續〉）。
 - － 撞埠是推論；若這個測試在 CI 上仍然失敗，原因在別處，要再查。
 
+## 補充：其他測試檔也改（2026-10-28，v0.77.4）
+
+v0.77.3 的公開 CI：`node-capacity` 過了，換 `call-relay` 失敗，日誌直接是 `listen EADDRINUSE: address already in use :::43560`——撞埠在 CI 上確實會發生（Context 的推論得到證實）。所以〈後續〉當天就做：
+
+- `startDevRelay` 也回傳 `NodeRelayHandle`（`ready` 的語意相同）。
+- 新增 `tests/node-relay-harness.ts` 的 `opened(handles, relay)`：登記關站、回傳實際的埠。
+- 11 個測試檔全部改成 `PORT: '0'`＋`await ready`，拿掉開站後固定等 100 ms；`relay-move` 第一次由系統分配，重新部署沿用同一個埠。用埠號當暫存檔名的兩處改用 `process.pid`＋時間。
+- 現在 `tests/` 裡沒有任何固定範圍的隨機埠。
+
 ## 後續（未做）
 
-- 其他用隨機埠開中繼的測試檔改用 `PORT=0`＋`ready`：`call-relay`、`dm-reconnect`、`bridge-e2e`、`relay-move`、`peer-relay`、`iot-node`、`lanes-only-node`、`node-connections`、`node-host`、`traffic-budget`、`inbox-ack.e2e`。`startDevRelay` 也要有 `ready`。
+- ~~其他用隨機埠開中繼的測試檔改用 `PORT=0`＋`ready`；`startDevRelay` 也要有 `ready`。~~（v0.77.4 已做）
 
 ## 驗證
 

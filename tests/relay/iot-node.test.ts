@@ -18,8 +18,8 @@ import { sealIotEnvelope } from '../../src/iot/envelope.js';
 import { decryptDM, encryptDM } from '../../src/protocol/nip44.js';
 import { finalizeEvent, generateSecretKey, getPublicKey, type NostrEvent } from '../../src/protocol/index.js';
 import { startNodeRelay } from '../../src/relay/node-relay.js';
+import { opened } from '../node-relay-harness.js';
 
-const port = () => 40_000 + Math.floor(Math.random() * 2_000);
 const home = deriveIotHome('44'.repeat(32));
 const gwSk = generateSecretKey();
 const operator = generateSecretKey();
@@ -27,9 +27,8 @@ const token = generateIotDeviceToken();
 const blind = home.blind('dev:lamp');
 const key = home.deviceKey('lamp', 0);
 
-function iotEnv(p: number): Record<string, string> {
+function iotEnv(): Record<string, string> {
   return {
-    PORT: String(p),
     DB_PATH: ':memory:',
     IOT_REALTIME: JSON.stringify({
       homes: [
@@ -53,9 +52,9 @@ afterEach(() => {
   for (const h of handles.splice(0)) h.close();
 });
 
-async function start(env: Record<string, string>): Promise<void> {
-  handles.push(startNodeRelay(env));
-  await new Promise((r) => setTimeout(r, 100));
+/** 由系統分配埠（SDK ADR 0114），回傳實際的埠 */
+function start(env: Record<string, string>): Promise<number> {
+  return opened(handles, startNodeRelay({ ...env, PORT: '0' }));
 }
 
 /** 開一條連線並收集訊息 */
@@ -89,21 +88,18 @@ function open(url: string, headers: Record<string, string> = {}): Promise<{ ws: 
 
 describe('Node 宿主的 C′ 即時通道', () => {
   it('權杖錯 → 升級失敗 401，帶 Cinder-Relay；不認得的家 → 403；沒開 C′ 的站 → 404', async () => {
-    const p = port();
-    await start(iotEnv(p));
+    const p = await start(iotEnv());
     await expect(open(`ws://127.0.0.1:${p}/iot/v1/dev/${home.homeTag}/${blind}`, { Authorization: 'Bearer cit1_x' })).rejects.toMatchObject({
       status: 401,
       headers: { 'cinder-relay': '1' },
     });
     await expect(open(`ws://127.0.0.1:${p}/iot/v1/home/${'Q'.repeat(22)}`)).rejects.toMatchObject({ status: 403 });
-    const plain = port();
-    await start({ PORT: String(plain), DB_PATH: ':memory:' });
+    const plain = await start({ DB_PATH: ':memory:' });
     await expect(open(`ws://127.0.0.1:${plain}/iot/v1/home/${home.homeTag}`)).rejects.toMatchObject({ status: 404 });
   });
 
   it('設備心跳回 hb-ack；手機指令 → 設備收到 cmd；設備 ack → 手機收到 25171；一般 Nostr 路徑不受影響', async () => {
-    const p = port();
-    await start(iotEnv(p));
+    const p = await start(iotEnv());
     const dev = await open(`ws://127.0.0.1:${p}/iot/v1/dev/${home.homeTag}/${blind}`, { Authorization: `Bearer ${token}` });
     dev.ws.send(IOT_DEVICE_HEARTBEAT);
     expect(await dev.next()).toBe(IOT_DEVICE_HEARTBEAT_ACK);
@@ -135,8 +131,7 @@ describe('Node 宿主的 C′ 即時通道', () => {
   });
 
   it('同一台設備的新連線把舊的以 4409 關掉', async () => {
-    const p = port();
-    await start(iotEnv(p));
+    const p = await start(iotEnv());
     const url = `ws://127.0.0.1:${p}/iot/v1/dev/${home.homeTag}/${blind}`;
     const first = await open(url, { Authorization: `Bearer ${token}` });
     const closed = new Promise<number>((r) => first.ws.on('close', (code) => r(code)));

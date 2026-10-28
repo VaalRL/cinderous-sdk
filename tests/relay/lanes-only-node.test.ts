@@ -2,11 +2,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { startNodeRelay } from "../../src/relay/node-relay.js";
+import { opened } from "../node-relay-harness.js";
 
 const SECRET = "k7q2mxz4ab3cd5ef6gh7ij2kl3";
 
 // ── Node 主機（docker／fly／home-tunnel 共用）─────────────────────────────────
-const port = () => 40_000 + Math.floor(Math.random() * 2_000);
 const handles: { close(): void }[] = [];
 afterEach(() => {
   for (const handle of handles.splice(0)) handle.close();
@@ -35,9 +35,7 @@ function collect(url: string, ms = 1_500): Promise<{ messages: unknown[][]; clos
 
 describe("Node 主機：僅限車道模式（自架同一個環境變數）", () => {
   it("秘密車道收到 NIP-42 挑戰；其他路徑收到與 Worker 相同的拒絕並以 1008 關閉；NIP-11 同樣不透露", async () => {
-    const p = port();
-    handles.push(startNodeRelay({ PORT: String(p), DB_PATH: ":memory:", APP_LANES: SECRET, LANES_ONLY: "1", MAX_FILE_MB: "17" }));
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    const p = await opened(handles,startNodeRelay({ PORT: '0', DB_PATH: ":memory:", APP_LANES: SECRET, LANES_ONLY: "1", MAX_FILE_MB: "17" }));
 
     const ok = await collect(`ws://127.0.0.1:${p}/app/${SECRET}`, 500);
     expect(ok.messages[0]?.[0]).toBe("AUTH");
@@ -62,9 +60,7 @@ describe("Node 主機：僅限車道模式（自架同一個環境變數）", ()
   });
 
   it("沒開：任何路徑照舊連得上（既有自架站不變）", async () => {
-    const p = port();
-    handles.push(startNodeRelay({ PORT: String(p), DB_PATH: ":memory:", APP_LANES: SECRET }));
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    const p = await opened(handles,startNodeRelay({ PORT: '0', DB_PATH: ":memory:", APP_LANES: SECRET }));
     const ok = await collect(`ws://127.0.0.1:${p}/`, 500);
     expect(ok.messages[0]?.[0]).toBe("AUTH");
   });
@@ -88,11 +84,10 @@ describe("Node 主機：唯讀寬限期（READONLY_LANES；SDK ADR 0052）", () 
   }
 
   it("舊路徑：連得上、寫入被拒（restricted: read-only:）、NIP-11 宣告唯讀；新路徑照常；到期後與認不得的路徑相同", async () => {
-    const p = port();
     const until = Math.floor(Date.now() / 1000) + 4;
-    handles.push(
+    const p = await opened(handles,
       startNodeRelay({
-        PORT: String(p),
+        PORT: '0',
         DB_PATH: ":memory:",
         APP_LANES: NEW,
         LANES_ONLY: "1",
@@ -100,7 +95,6 @@ describe("Node 主機：唯讀寬限期（READONLY_LANES；SDK ADR 0052）", () 
         READONLY_LANES: `${SECRET}@${until}`,
       }),
     );
-    await new Promise((resolve) => setTimeout(resolve, 100));
     const { finalizeEvent, generateSecretKey } = await import("../../src/protocol/index.js");
     const event = finalizeEvent({ kind: 1, created_at: Math.floor(Date.now() / 1000), tags: [["t", "x"]], content: "x" }, generateSecretKey());
 

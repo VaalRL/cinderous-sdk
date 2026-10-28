@@ -39,17 +39,15 @@ async function until(check: () => boolean | Promise<boolean>, ms = 10_000): Prom
 }
 
 async function setup() {
-  const port = 44_000 + Math.floor(Math.random() * 2_000);
-  const dbPath = join(tmpdir(), `cinderous-inbox-ack-${port}-${Date.now()}.db`);
-  const relay = startNodeRelay({ PORT: String(port), DB_PATH: dbPath, MAX_FILE_MB: '17' });
+  const dbPath = join(tmpdir(), `cinderous-inbox-ack-${process.pid}-${Date.now()}.db`);
+  const relay = startNodeRelay({ PORT: '0', DB_PATH: dbPath, MAX_FILE_MB: '17' }); // 由系統分配埠（SDK ADR 0114）
   const db = new DatabaseSync(dbPath);
   cleanups.push(() => {
     relay.close();
     db.close();
     for (const suffix of ['', '-wal', '-shm']) rmSync(dbPath + suffix, { force: true });
   });
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  const url = `ws://127.0.0.1:${port}`;
+  const url = `ws://127.0.0.1:${await relay.ready}`;
   /** 寄給某人、還在庫裡的列 */
   const rowsTo = (pubkey: string) =>
     db.prepare('SELECT id, expiration FROM offline_msgs WHERE recipient = ?').all(pubkey) as { id: string; expiration: number }[];

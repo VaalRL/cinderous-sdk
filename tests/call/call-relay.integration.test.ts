@@ -22,10 +22,9 @@ async function until(check: () => boolean, ms = 8_000) {
 
 describe('CallManager × 真的中繼', () => {
   it('撥號、響鈴、接聽、通話中、掛斷，信令全程經嚴格平面', async () => {
-    const port = 42_000 + Math.floor(Math.random() * 2_000);
-    const relay = startNodeRelay({ PORT: String(port) }, { memory: true });
+    const relay = startNodeRelay({ PORT: '0' }, { memory: true }); // 由系統分配埠（SDK ADR 0114）
     cleanups.push(() => relay.close());
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    const port = await relay.ready;
     const network = new FakeCallNetwork();
     const make = (identity: Identity) => {
       const pool = new RelayPool({ urls: [`ws://127.0.0.1:${port}`], identity });

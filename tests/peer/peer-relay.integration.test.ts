@@ -15,11 +15,9 @@ afterEach(() => {
 });
 
 async function relayUrl(): Promise<string> {
-  const port = 40_000 + Math.floor(Math.random() * 2_000);
-  const relay = startNodeRelay({ PORT: String(port) }, { memory: true }); // 預設要求 NIP-42
+  const relay = startNodeRelay({ PORT: '0' }, { memory: true }); // 預設要求 NIP-42；由系統分配埠（SDK ADR 0114）
   cleanups.push(() => relay.close());
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  return `ws://127.0.0.1:${port}`;
+  return `ws://127.0.0.1:${await relay.ready}`;
 }
 
 function peer(url: string, identity: Identity, rtc: FakeRtcNetwork | null): PeerNode {

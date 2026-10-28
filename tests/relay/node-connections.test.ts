@@ -5,9 +5,9 @@ import { WebSocket as WsClient } from 'ws';
 
 import { maxConnectionsFrom, maxConnectionsPerIpFrom } from '../../src/relay/host-config.js';
 import { startNodeRelay } from '../../src/relay/node-relay.js';
+import { opened } from '../node-relay-harness.js';
 import { upgradeRejection, upgradeCloseCode } from '../../src/relay/reject-messages.js';
 
-const port = () => 42_000 + Math.floor(Math.random() * 2_000);
 const handles: { close(): void }[] = [];
 const sockets: WsClient[] = [];
 afterEach(() => {
@@ -68,8 +68,7 @@ describe('連線數設定的解析（SDK ADR 0100）', () => {
 
 describe('startNodeRelay：同時連線數（SDK ADR 0100）', () => {
   it('🔴 MAX_CONNECTIONS：滿了的下一條收到說明並以 1013 關閉；有人離開後又進得來', async () => {
-    const p = port();
-    handles.push(startNodeRelay({ PORT: String(p), MAX_CONNECTIONS: '2' }, { memory: true }));
+    const p = await opened(handles,startNodeRelay({ PORT: '0', MAX_CONNECTIONS: '2' }, { memory: true }));
     await wait(100);
     const url = `ws://127.0.0.1:${p}`;
     expect((await connect(url)).kind).toBe('open');
@@ -83,8 +82,7 @@ describe('startNodeRelay：同時連線數（SDK ADR 0100）', () => {
   });
 
   it('🔴 MAX_CONNECTIONS_PER_IP：同一個 IP 超過就擋，別的 IP 照常（TRUST_PROXY 時看 X-Forwarded-For）', async () => {
-    const p = port();
-    handles.push(startNodeRelay({ PORT: String(p), MAX_CONNECTIONS_PER_IP: '1', TRUST_PROXY: '1' }, { memory: true }));
+    const p = await opened(handles,startNodeRelay({ PORT: '0', MAX_CONNECTIONS_PER_IP: '1', TRUST_PROXY: '1' }, { memory: true }));
     await wait(100);
     const url = `ws://127.0.0.1:${p}`;
     expect((await connect(url, { 'x-forwarded-for': '203.0.113.1' })).kind).toBe('open');
@@ -95,8 +93,7 @@ describe('startNodeRelay：同時連線數（SDK ADR 0100）', () => {
   });
 
   it('被擋的連線不佔名額（不會因為一直被擋而永遠進不來）', async () => {
-    const p = port();
-    handles.push(startNodeRelay({ PORT: String(p), MAX_CONNECTIONS: '1' }, { memory: true }));
+    const p = await opened(handles,startNodeRelay({ PORT: '0', MAX_CONNECTIONS: '1' }, { memory: true }));
     await wait(100);
     const url = `ws://127.0.0.1:${p}`;
     expect((await connect(url)).kind).toBe('open');
@@ -107,8 +104,7 @@ describe('startNodeRelay：同時連線數（SDK ADR 0100）', () => {
   });
 
   it('沒設＝不限（與之前相同）', async () => {
-    const p = port();
-    handles.push(startNodeRelay({ PORT: String(p) }, { memory: true }));
+    const p = await opened(handles,startNodeRelay({ PORT: '0' }, { memory: true }));
     await wait(100);
     const url = `ws://127.0.0.1:${p}`;
     for (let i = 0; i < 5; i += 1) expect((await connect(url)).kind).toBe('open');

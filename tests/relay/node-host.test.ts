@@ -9,8 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { buildAuthEvent, buildInboxAck, finalizeEvent, generateSecretKey, getPublicKey, npubEncode, type NostrEvent } from '../../src/protocol/index.js';
 import { startDevRelay } from '../../src/relay/dev-server.js';
 import { startNodeRelay } from '../../src/relay/node-relay.js';
-
-const port = () => 38_000 + Math.floor(Math.random() * 2_000);
+import { opened } from '../node-relay-harness.js';
 
 function firstMessage(url: string): Promise<unknown[]> {
   return new Promise((resolve, reject) => {
@@ -32,9 +31,7 @@ afterEach(() => {
 
 describe('startNodeRelay', () => {
   it('開起來：連上就送 NIP-42 挑戰；/healthz 回 ok；NIP-11 回 JSON', async () => {
-    const p = port();
-    handles.push(startNodeRelay({ PORT: String(p), DB_PATH: ':memory:', RELAY_NAME: '測試站' }));
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    const p = await opened(handles,startNodeRelay({ PORT: '0', DB_PATH: ':memory:', RELAY_NAME: '測試站' }));
     const [type, challenge] = await firstMessage(`ws://127.0.0.1:${p}`);
     expect(type).toBe('AUTH');
     expect(typeof challenge).toBe('string');
@@ -47,9 +44,7 @@ describe('startNodeRelay', () => {
   });
 
   it('RELAY_SOFTWARE_URL → NIP-11 software（SDK ADR 0050；改過中繼的人履行 AGPL §13）', async () => {
-    const p = port();
-    handles.push(startNodeRelay({ PORT: String(p), DB_PATH: ':memory:', RELAY_SOFTWARE_URL: 'https://git.example.com/fork' }));
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    const p = await opened(handles,startNodeRelay({ PORT: '0', DB_PATH: ':memory:', RELAY_SOFTWARE_URL: 'https://git.example.com/fork' }));
     const info = (await (
       await fetch(`http://127.0.0.1:${p}/`, { headers: { accept: 'application/nostr+json' } })
     ).json()) as { software?: string };
@@ -78,9 +73,7 @@ describe('startNodeRelay：ready（SDK ADR 0114）', () => {
 
 describe('startDevRelay', () => {
   it('純記憶體開發站：連得上、回得了查詢、關得掉', async () => {
-    const p = port();
-    handles.push(startDevRelay(p));
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    const p = await opened(handles, startDevRelay(0));
     // 開發站不要求認證（RelayCore 預設），所以不會先送挑戰：送一個 REQ，看得到 EOSE 就是活的
     const reply = await new Promise<unknown[]>((resolve, reject) => {
       const ws = new WebSocket(`ws://127.0.0.1:${p}`);
@@ -117,12 +110,10 @@ const beat = (sk: Uint8Array): NostrEvent =>
 
 describe('startNodeRelay：白名單與純記憶體（SDK ADR 0008）', () => {
   it('ALLOWED_PUBKEYS：名單上的人收下、名單外的人 blocked', async () => {
-    const p = port();
     const member = generateSecretKey();
-    handles.push(
-      startNodeRelay({ PORT: String(p), DB_PATH: ':memory:', REQUIRE_AUTH: '0', ALLOWED_PUBKEYS: npubEncode(getPublicKey(member)) }),
+    const p = await opened(handles,
+      startNodeRelay({ PORT: '0', DB_PATH: ':memory:', REQUIRE_AUTH: '0', ALLOWED_PUBKEYS: npubEncode(getPublicKey(member)) }),
     );
-    await new Promise((resolve) => setTimeout(resolve, 100));
     expect((await publishOnce(`ws://127.0.0.1:${p}`, beat(member)))[2]).toBe(true);
     const outsider = await publishOnce(`ws://127.0.0.1:${p}`, beat(generateSecretKey()));
     expect(outsider[2]).toBe(false);
@@ -130,14 +121,12 @@ describe('startNodeRelay：白名單與純記憶體（SDK ADR 0008）', () => {
   });
 
   it('🔴 ALLOWED_PUBKEYS 寫錯 → 直接拒絕啟動，不會默默變成開放中繼', () => {
-    expect(() => startNodeRelay({ PORT: String(port()), DB_PATH: ':memory:', ALLOWED_PUBKEYS: 'npub1壞掉' })).toThrow();
+    expect(() => startNodeRelay({ PORT: '0', DB_PATH: ':memory:', ALLOWED_PUBKEYS: 'npub1壞掉' })).toThrow();
   });
 
   it('memory: true → 不碰 SQLite 檔（就算環境裡有 DB_PATH）', async () => {
-    const p = port();
-    const dbPath = join(tmpdir(), `cinderous-mem-${p}.db`);
-    handles.push(startNodeRelay({ PORT: String(p), DB_PATH: dbPath, REQUIRE_AUTH: '0' }, { memory: true }));
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    const dbPath = join(tmpdir(), `cinderous-mem-${process.pid}-${Date.now()}.db`);
+    const p = await opened(handles,startNodeRelay({ PORT: '0', DB_PATH: dbPath, REQUIRE_AUTH: '0' }, { memory: true }));
     expect((await publishOnce(`ws://127.0.0.1:${p}`, beat(generateSecretKey())))[2]).toBe(true);
     expect(existsSync(dbPath)).toBe(false);
   });
@@ -145,9 +134,7 @@ describe('startNodeRelay：白名單與純記憶體（SDK ADR 0008）', () => {
 
 describe('startNodeRelay：存取控制（PRD 3.3；SDK ADR 0013）', () => {
   it('🔴 名單外的人認證後，連線以 4003 關閉', async () => {
-    const p = port();
-    handles.push(startNodeRelay({ PORT: String(p), ALLOWED_PUBKEYS: getPublicKey(generateSecretKey()) }, { memory: true }));
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    const p = await opened(handles,startNodeRelay({ PORT: '0', ALLOWED_PUBKEYS: getPublicKey(generateSecretKey()) }, { memory: true }));
     const code = await new Promise<number>((resolve, reject) => {
       const ws = new WebSocket(`ws://127.0.0.1:${p}`);
       const timer = setTimeout(() => reject(new Error('沒有被關閉')), 3_000);
@@ -168,9 +155,7 @@ describe('startNodeRelay：NIP-11 的 version（SDK ADR 0018 冒煙測試抓到�
   it('宿主注入的版號出現在 NIP-11（與 Worker 一致；Cinderous 的一鍵更新節點靠它比對）', async () => {
     const { setRelayVersion } = await import('../../src/relay/version.js');
     setRelayVersion('9.8.7');
-    const p = port();
-    handles.push(startNodeRelay({ PORT: String(p) }, { memory: true }));
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    const p = await opened(handles,startNodeRelay({ PORT: '0' }, { memory: true }));
     const info = (await (await fetch(`http://127.0.0.1:${p}/`, { headers: { accept: 'application/nostr+json' } })).json()) as { version?: string };
     expect(info.version).toBe('9.8.7');
     setRelayVersion('0.0.0');
@@ -180,9 +165,7 @@ describe('startNodeRelay：NIP-11 的 version（SDK ADR 0018 冒煙測試抓到�
 describe('startNodeRelay：收件確認（SDK ADR 0067）', () => {
   it('NIP-11 宣告、本人送確認回 OK true（記憶體與 SQLite 兩種儲存）', async () => {
     for (const memory of [true, false]) {
-      const p = port();
-      handles.push(startNodeRelay({ PORT: String(p), DB_PATH: ':memory:' }, { memory }));
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      const p = await opened(handles,startNodeRelay({ PORT: '0', DB_PATH: ':memory:' }, { memory }));
       const info = (await (
         await fetch(`http://127.0.0.1:${p}/`, { headers: { accept: 'application/nostr+json' } })
       ).json()) as { cinder_inbox_ack?: unknown };
@@ -209,9 +192,7 @@ describe('startNodeRelay：收件確認（SDK ADR 0067）', () => {
   });
 
   it('REQUIRE_AUTH=0：不發挑戰，就不宣告', async () => {
-    const p = port();
-    handles.push(startNodeRelay({ PORT: String(p), REQUIRE_AUTH: '0' }, { memory: true }));
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    const p = await opened(handles,startNodeRelay({ PORT: '0', REQUIRE_AUTH: '0' }, { memory: true }));
     const info = (await (
       await fetch(`http://127.0.0.1:${p}/`, { headers: { accept: 'application/nostr+json' } })
     ).json()) as Record<string, unknown>;

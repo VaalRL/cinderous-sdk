@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { finalizeEvent, generateSecretKey, getPublicKey } from '../../src/protocol/index.js';
 import { DO_ADDRESSABLE_MAX_BYTES, DO_OFFLINE_MAX_BYTES, nodeCapacityFrom, NODE_CEILING_MAX_MIB } from '../../src/relay/host-config.js';
 import { startNodeRelay } from '../../src/relay/node-relay.js';
+import { opened } from '../node-relay-harness.js';
 
 const MIB = 1024 * 1024;
 
@@ -82,11 +83,9 @@ describe('nodeCapacityFrom（SDK ADR 0099）', () => {
 
 const handles: { close(): void }[] = [];
 
-/** 由系統分配埠（SDK ADR 0114）：固定範圍的隨機埠會和其他測試、Linux 的臨時埠撞在一起 */
-async function start(env: Record<string, string>): Promise<number> {
-  const relay = startNodeRelay({ PORT: '0', ...env }, { memory: true });
-  handles.push(relay);
-  return relay.ready;
+/** 由系統分配埠（SDK ADR 0114），回傳實際的埠 */
+function start(env: Record<string, string>): Promise<number> {
+  return opened(handles, startNodeRelay({ ...env, PORT: '0' }, { memory: true }));
 }
 afterEach(() => {
   for (const handle of handles.splice(0)) handle.close();

@@ -25,7 +25,7 @@ import {
   type IotGatewayStatus,
   type IotStateMessage,
 } from '../../src/iot/index.js';
-import { startNodeRelay } from '../../src/relay/node-relay.js';
+import { startNodeRelay, type NodeRelayHandle } from '../../src/relay/node-relay.js';
 import { RelayEventBudget, sharedRelayEventBudget } from '../../src/relay-budget.js';
 import { RelayPool, type SocketLike, type SocketListener } from '../../src/relay-pool.js';
 
@@ -47,7 +47,7 @@ const viewer = Identity.generate();
 const outsider = Identity.generate();
 
 let relayUrl = '';
-let relay: { close(): void };
+let relay: NodeRelayHandle;
 let broker: Aedes;
 let mqttServer: Server;
 let mqttUrl = '';
@@ -83,9 +83,8 @@ function memberClient(
 }
 
 beforeAll(async () => {
-  const relayPort = 47_000 + Math.floor(Math.random() * 2_000);
-  relay = startNodeRelay({ PORT: String(relayPort) }, { memory: true });
-  relayUrl = `ws://127.0.0.1:${relayPort}`;
+  relay = startNodeRelay({ PORT: '0' }, { memory: true }); // 由系統分配埠（SDK ADR 0114）
+  relayUrl = `ws://127.0.0.1:${await relay.ready}`;
 
   broker = await Aedes.createBroker();
   mqttServer = createServer(broker.handle);

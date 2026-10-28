@@ -30,8 +30,19 @@ export function startDevRelay(port = Number(process.env.PORT ?? 8787)) {
         ws.on("close", cleanup);
         ws.on("error", cleanup);
     });
-    console.log(`Cinderous dev relay 於 ws://localhost:${port}`);
+    // 與 startNodeRelay 相同（SDK ADR 0114）：開始監聽後給出實際的埠，監聽失敗就 reject
+    const ready = new Promise((resolve, reject) => {
+        wss.once("error", reject);
+        wss.once("listening", () => {
+            wss.off("error", reject);
+            const address = wss.address();
+            const actual = typeof address === "object" && address !== null ? address.port : port;
+            console.log(`Cinderous dev relay 於 ws://localhost:${actual}`);
+            resolve(actual);
+        });
+    });
     return {
+        ready,
         close() {
             wss.close();
         },
