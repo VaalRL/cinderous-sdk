@@ -61,7 +61,7 @@ export const USAGE = `用法：cinderous <指令> [選項]
       --config, -c <檔>           預設 cinderous.config.json
       --out, -o <目錄>            預設設定檔所在的資料夾
       --self-contained            Workers：附預打包的中繼（src/relay.mjs），不需要安裝 SDK
-      --sdk-spec <相依>           SDK 改以套件相依安裝（例如 github:VaalRL/cinderous-sdk#v0.82.0），不內嵌 sdk/
+      --sdk-spec <相依>           SDK 改以套件相依安裝（例如 github:VaalRL/cinderous-sdk#v0.83.0），不內嵌 sdk/
       --force                     覆寫被手改過、或不是 relay build 產生的檔案
 
   cinderous init           逐題產生設定檔 cinderous.config.json（SDK ADR 0117）；危險選項要打字確認才會開
@@ -87,6 +87,10 @@ export const USAGE = `用法：cinderous <指令> [選項]
       --config, -c <檔>           一併複製這份 iot-bridge.json
   cinderous iot realtime home     把一個家庭加進 C′ 的設定（SDK ADR 0121；家庭秘密讀 IOT_HOME_SECRET）；閘道私鑰與 operator 秘密只印這一次
       --owner <npub>              第一位 owner（新家庭必填）
+      --rotate-secret             換家庭秘密（撤銷成員；SDK ADR 0123）：舊秘密讀 IOT_HOME_SECRET、新的讀 IOT_NEW_HOME_SECRET（沒給就產生）；
+                                  IOT_GATEWAY_KEYS 要放既有的整份；每台設備都要重燒（印出新網址與金鑰），留下的人要重新配對
+      --remove <npub>             與 --rotate-secret 一起：從名單拿掉（可以給多次）；拿掉 operator／owner 時 operator 秘密也換
+      --new-operator-secret       與 --rotate-secret 一起：一定換 operator 秘密
       --rotate-gateway            換這個家庭的閘道私鑰（外洩時；沒有寬限，手機的 realtime.gateway 要同時換；有別的家庭時 IOT_GATEWAY_KEYS 要放既有的整份）
       --file, -f <檔>             預設 iot-realtime.json（只有公開值與雜湊；relay start --iot-realtime 與 site.iotRealtime 用它）
   cinderous iot realtime device <id>  把一台設備加進那個家庭；設備權杖與金鑰只印這一次（燒進韌體）
@@ -998,11 +1002,26 @@ function iotRealtimeHome(argv, deps) {
         args: argv,
         strict: true,
         allowPositionals: true,
-        options: { owner: { type: 'string' }, file: { type: 'string', short: 'f' }, 'rotate-gateway': { type: 'boolean' } },
+        options: {
+            owner: { type: 'string' },
+            file: { type: 'string', short: 'f' },
+            'rotate-gateway': { type: 'boolean' },
+            'rotate-secret': { type: 'boolean' },
+            remove: { type: 'string', multiple: true },
+            'new-operator-secret': { type: 'boolean' },
+        },
     });
     if (positionals.length > 0)
         throw new UsageError(`iot realtime home 不吃位置參數，收到：${positionals.join(' ')}`);
     const homeSecret = homeSecretFrom(deps);
+    if (values['rotate-secret'] === true) {
+        const others = ['owner', 'rotate-gateway'].filter((k) => values[k] !== undefined);
+        if (others.length > 0)
+            throw new UsageError(`--rotate-secret 不能與 ${others.map((k) => `--${k}`).join('、')} 一起給`);
+        return iotRealtimeRotateSecret(homeSecret, { remove: values.remove ?? [], newOperatorSecret: values['new-operator-secret'] === true, file: values.file }, deps);
+    }
+    if (values.remove !== undefined || values['new-operator-secret'] !== undefined)
+        throw new UsageError('--remove 與 --new-operator-secret 只能和 --rotate-secret 一起用');
     if (values['rotate-gateway'] === true) {
         if (values.owner !== undefined)
             throw new UsageError('--rotate-gateway 只換既有家庭的閘道私鑰，不能同時給 --owner');
@@ -1089,6 +1108,110 @@ function iotRealtimeRotateGateway(homeSecret, file, deps) {
     deps.stdout('# 🔴 以下只顯示這一次。IOT_GATEWAY_KEYS 是整份：放進 relay 的 .env 或 Worker secret，取代舊值');
     deps.stdout(`IOT_GATEWAY_KEYS=${JSON.stringify(keys)}`);
     deps.stdout(`# 手機端的閘道公鑰（realtime.gateway）要同時換成：${homes[index].gatewayPubkey}`);
+    return 0;
+}
+/**
+ * `iot realtime home --rotate-secret [--remove <npub>…]`（SDK ADR 0123）：撤銷成員＝換家庭秘密（ADR 0049 §2.6）。
+ * 從名單拿掉只擋得住指令；被踢的人手上的家庭秘密還推得出 `homeTag` 與每台設備的金鑰，訂得到也解得開之後的狀態。
+ * 換成新秘密：這一家整筆改寫（homeTag、homePub、盲化 id、aclBlindId），**每台設備都要重燒**（新網址與金鑰；不做 keyWrap）。
+ * 權杖、epoch、閘道私鑰不變（被踢的人沒有這兩樣）；被踢的是 operator 以上，或給了 `--new-operator-secret`，operator 秘密也換。
+ */
+function iotRealtimeRotateSecret(homeSecret, o, deps) {
+    const given = deps.env.IOT_NEW_HOME_SECRET;
+    if (given !== undefined && given === homeSecret)
+        throw new UsageError('IOT_NEW_HOME_SECRET 與 IOT_HOME_SECRET 相同：要換成一把新的');
+    const newSecret = given ?? generateIotHomeSecret();
+    let next;
+    try {
+        next = deriveIotHome(newSecret);
+    }
+    catch {
+        throw new UsageError('IOT_NEW_HOME_SECRET 不是合法的家庭秘密（`cinderous iot keygen` 產生，或不給讓 CLI 產生）');
+    }
+    let removing;
+    try {
+        removing = o.remove.map((r) => iotPubkeyOf(r));
+    }
+    catch {
+        throw new UsageError(`--remove 要給 npub 或 64 位 hex 公鑰：${o.remove.join(' ')}`);
+    }
+    const path = pathIn(deps.cwd, o.file ?? IOT_REALTIME_FILE);
+    const config = readIotRealtimeFile(path, deps);
+    const old = deriveIotHome(homeSecret);
+    const index = config.homes.findIndex((h) => h.homeTag === old.homeTag);
+    if (index === -1) {
+        deps.stderr(`${path} 裡沒有這個家庭（${old.homeTag}）：IOT_HOME_SECRET 要是現在（舊）的家庭秘密`);
+        return 1;
+    }
+    let existing = {};
+    try {
+        existing = JSON.parse(deps.env.IOT_GATEWAY_KEYS ?? '{}');
+    }
+    catch {
+        throw new UsageError('環境變數 IOT_GATEWAY_KEYS 不是合法的 JSON；先修好它再換');
+    }
+    const missing = config.homes.filter((h) => existing[h.homeTag] === undefined).map((h) => h.homeTag);
+    if (missing.length > 0) {
+        throw new UsageError(`IOT_GATEWAY_KEYS 要放既有的整份（閘道私鑰不換，只是搬到新的 homeTag 底下）；缺這幾家：${missing.join('、')}`);
+    }
+    const target = config.homes[index];
+    if (!Array.isArray(target.acl)) {
+        deps.stderr(`${path} 裡這個家庭的 acl 不是陣列（部署設定器也只收陣列）；先改成 [{ "pubkey", "role" }, …]`);
+        return 1;
+    }
+    const members = target.acl;
+    const pubOf = (entry) => (entry.pubkey === undefined ? undefined : iotPubkeyOf(entry.pubkey));
+    const notMember = removing.filter((pk) => !members.some((e) => pubOf(e) === pk));
+    if (notMember.length > 0) {
+        deps.stderr(`這些人不在這個家庭的名單裡：${notMember.join('、')}（名單以 ${path} 為準）`);
+        return 1;
+    }
+    const removed = members.filter((e) => removing.includes(pubOf(e) ?? ''));
+    const acl = members.filter((e) => !removing.includes(pubOf(e) ?? ''));
+    if (!acl.some((e) => e.role === 'owner')) {
+        deps.stderr('拿掉之後這個家庭沒有 owner 了：至少要留一位');
+        return 1;
+    }
+    const rotateOperator = o.newOperatorSecret || removed.some((e) => e.role === 'operator' || e.role === 'owner');
+    const operatorSecret = rotateOperator ? bytesToHex(generateSecretKey()) : undefined;
+    const devices = target.devices.map(({ previousEpoch: _grace, ...d }) => ({ ...d, blindId: next.blind(`dev:${d.id}`) }));
+    const home = { ...target, homeTag: next.homeTag, homePub: next.homePub, aclBlindId: next.blind('sys:acl'), acl, devices };
+    const homes = config.homes.map((h, i) => (i === index ? home : h));
+    const { issues } = checkIotRealtimeConfig({ homes }, checkIotRealtimeAclShape);
+    if (issues.length > 0) {
+        deps.stderr(`改完之後設定不合法：\n${issues.map((i) => `- ${i.path}：${i.message}`).join('\n')}`);
+        return 1;
+    }
+    deps.writeFile(path, `${JSON.stringify({ ...config, homes }, null, 2)}\n`);
+    const keys = Object.fromEntries(homes.map((h, i) => [h.homeTag, existing[i === index ? old.homeTag : h.homeTag]]));
+    deps.stdout(`# 已把家庭 ${old.homeTag} 換成新的家庭秘密（${next.homeTag}）於 ${path}${removed.length > 0 ? `，名單拿掉 ${removed.length} 人` : ''}`);
+    deps.stdout('# ⚠️ 名單以這份設定檔為準：用 App 改過的名單存在舊家庭的 relay 裡，不會帶過來——先確認檔案裡的名單是對的');
+    deps.stdout('# 重新部署或重啟 relay 之後舊家庭立刻停用；每台設備重燒之前都連不上（沒有寬限）');
+    deps.stdout('# 🔴 以下秘密只顯示這一次，不要提交');
+    if (given === undefined) {
+        deps.stdout('# 新的家庭秘密：以配對（QR）發給留下來的家人，取代舊的；被踢的人不能拿到');
+        deps.stdout(`IOT_HOME_SECRET=${newSecret}`);
+    }
+    else {
+        deps.stdout('# 留下來的家人要以配對（QR）拿到新的家庭秘密（IOT_NEW_HOME_SECRET），取代舊的');
+    }
+    deps.stdout('# IOT_GATEWAY_KEYS 是整份：閘道私鑰不變，只是換到新的 homeTag 底下；放進 relay 的 .env 或 Worker secret');
+    deps.stdout(`IOT_GATEWAY_KEYS=${JSON.stringify(keys)}`);
+    if (operatorSecret !== undefined) {
+        deps.stdout('# 新的 operator 秘密：只發給留下來的 operator／owner（realtime.operatorSecret）；門鎖類的 down 金鑰跟著換');
+        deps.stdout(`IOT_OPERATOR_SECRET=${operatorSecret}`);
+    }
+    for (const d of devices) {
+        deps.stdout(`# 設備 ${d.id}：重燒網址 /iot/v1/dev/${next.homeTag}/${d.blindId} 與金鑰（權杖不變）${d.class === 'lock' && operatorSecret === undefined ? '；down 金鑰不變' : ''}`);
+        deps.stdout(`IOT_DEVICE_ID=${d.id}`);
+        deps.stdout(`IOT_DEVICE_BLIND_ID=${d.blindId}`);
+        deps.stdout(`IOT_DEVICE_KID=${iotKid(d.id, d.epoch)}`);
+        deps.stdout(`IOT_DEVICE_KEY=${bytesToHex(next.deviceKey(d.id, d.epoch))}`);
+        if (d.class === 'lock' && operatorSecret !== undefined)
+            deps.stdout(`IOT_DEVICE_KEY_DOWN=${bytesToHex(deriveIotDeviceKeyDown(operatorSecret, d.id, d.epoch))}`);
+    }
+    deps.stdout('# 手機端 IotClient 的 realtime.devices（公開值；閘道公鑰 realtime.gateway 不變）：');
+    deps.stdout(`IOT_PHONE_DEVICES=${JSON.stringify(Object.fromEntries(devices.map((d) => [d.id, { epoch: d.epoch, ...(d.class === 'lock' ? { class: 'lock' } : {}) }])))}`);
     return 0;
 }
 /** `iot realtime device <id>`（SDK ADR 0121）：設定檔只存 tokenHash 與 blindId；權杖與設備金鑰只印這一次 */

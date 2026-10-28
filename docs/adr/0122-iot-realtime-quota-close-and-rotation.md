@@ -118,4 +118,4 @@ ADR 0121 發版後，C′ 還剩兩件事沒做。
 ## 後續
 
 - 還沒有部署到 Cloudflare，也還沒接過真的 ESP32／Tasmota 設備。
-- 家庭秘密輪換（撤銷成員）會讓所有設備金鑰一起變，還沒有 CLI（ADR 0049 §2.6 的 `keyWrap`）。
+- 家庭秘密輪換（撤銷成員）會讓所有設備金鑰一起變——已在 [SDK ADR 0123](0123-iot-realtime-home-secret-rotation.md) 做掉（`home --rotate-secret`，使用者決定不做 `keyWrap`）。

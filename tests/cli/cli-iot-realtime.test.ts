@@ -234,6 +234,115 @@ describe('輪換（SDK ADR 0122）', () => {
   });
 });
 
+describe('家庭秘密輪換：home --rotate-secret（SDK ADR 0123）', () => {
+  const valuesOf = (out: string[], name: string): string[] => out.filter((l) => l.startsWith(`${name}=`)).map((l) => l.slice(name.length + 1));
+
+  /** 一個家：owner、operator、viewer 三個人，燈與門鎖兩台設備（燈換過一次金鑰、還在寬限） */
+  async function family() {
+    const homeSecret = generateIotHomeSecret();
+    const owner = getPublicKey(generateSecretKey());
+    const operator = getPublicKey(generateSecretKey());
+    const viewer = getPublicKey(generateSecretKey());
+    const h = harness({ IOT_HOME_SECRET: homeSecret });
+    await runCli(['iot', 'realtime', 'home', '--owner', owner], h.deps);
+    const operatorSecret = valueOf(h.out, 'IOT_OPERATOR_SECRET')!;
+    const gatewayKeys = valueOf(h.out, 'IOT_GATEWAY_KEYS')!;
+    const env = { IOT_HOME_SECRET: homeSecret, IOT_OPERATOR_SECRET: operatorSecret };
+    await runCli(['iot', 'realtime', 'device', 'lamp'], harness(env, h.files).deps);
+    await runCli(['iot', 'realtime', 'device', 'lamp', '--rotate'], harness(env, h.files).deps);
+    await runCli(['iot', 'realtime', 'device', 'door', '--class', 'lock', '--local-fallback', 'key'], harness(env, h.files).deps);
+    const cfg = JSON.parse(h.files[FILE]!) as { homes: IotRealtimeHomeConfig[] };
+    const acl = [...(cfg.homes[0]!.acl as { pubkey: string; role: string }[]), { pubkey: operator, role: 'operator' }, { pubkey: viewer, role: 'viewer' }];
+    h.files[FILE] = JSON.stringify({ homes: [{ ...cfg.homes[0]!, acl }] });
+    return { homeSecret, operatorSecret, gatewayKeys, files: h.files, owner, operator, viewer, before: cfg.homes[0]! };
+  }
+
+  it('🔴 踢掉 viewer：家庭整筆換成新秘密推出的值（homeTag、homePub、盲化 id、aclBlindId），名單少了他；權杖、epoch、閘道公鑰不變', async () => {
+    const f = await family();
+    const newSecret = generateIotHomeSecret();
+    const h = harness({ IOT_HOME_SECRET: f.homeSecret, IOT_NEW_HOME_SECRET: newSecret, IOT_GATEWAY_KEYS: f.gatewayKeys }, f.files);
+    expect(await runCli(['iot', 'realtime', 'home', '--rotate-secret', '--remove', f.viewer], h.deps)).toBe(0);
+    const next = deriveIotHome(newSecret);
+    const cfg = JSON.parse(f.files[FILE]!) as { homes: IotRealtimeHomeConfig[] };
+    expect(cfg.homes).toHaveLength(1);
+    const home = cfg.homes[0]!;
+    expect(home).toMatchObject({ homeTag: next.homeTag, homePub: next.homePub, aclBlindId: next.blind('sys:acl'), gatewayPubkey: f.before.gatewayPubkey });
+    expect((home.acl as unknown as { pubkey: string }[]).map((e) => e.pubkey)).toEqual([f.owner, f.operator]);
+    expect(home.devices.map((d) => [d.id, d.blindId, d.epoch, d.tokenHash])).toEqual(
+      f.before.devices.map((d) => [d.id, next.blind(`dev:${d.id}`), d.epoch, d.tokenHash]),
+    );
+    // 舊的寬限沒有意義了（設備換了網址與金鑰，一次切過去）
+    expect(home.devices.every((d) => d.previousEpoch === undefined)).toBe(true);
+    // 閘道私鑰不變，只是換到新的 homeTag 底下
+    const keys = JSON.parse(valueOf(h.out, 'IOT_GATEWAY_KEYS')!) as Record<string, string>;
+    expect(keys).toEqual({ [next.homeTag]: (JSON.parse(f.gatewayKeys) as Record<string, string>)[f.before.homeTag] });
+    expect(parseIotRealtimeConfig(cfg, keys).issues).toEqual([]);
+    // 每台設備的新金鑰各印一次；踢的是 viewer，operator 秘密不換、門鎖的 down 金鑰不變（不印）
+    expect(valuesOf(h.out, 'IOT_DEVICE_ID')).toEqual(['lamp', 'door']);
+    expect(valuesOf(h.out, 'IOT_DEVICE_KEY')).toEqual([bytesToHex(next.deviceKey('lamp', 1)), bytesToHex(next.deviceKey('door', 0))]);
+    expect(valuesOf(h.out, 'IOT_DEVICE_BLIND_ID')).toEqual([next.blind('dev:lamp'), next.blind('dev:door')]);
+    expect(valuesOf(h.out, 'IOT_DEVICE_KEY_DOWN')).toEqual([]);
+    expect(valueOf(h.out, 'IOT_OPERATOR_SECRET')).toBeUndefined();
+    // 給了新秘密就不再印；設定檔裡沒有任何秘密
+    expect(valueOf(h.out, 'IOT_HOME_SECRET')).toBeUndefined();
+    expect(f.files[FILE]).not.toContain(newSecret);
+    expect(f.files[FILE]).not.toContain(f.homeSecret);
+    // 提醒：名單以設定檔為準（App 改過的名單留在舊的家庭）、留下的人要重新配對
+    expect(h.out.join('\n')).toMatch(/名單.*設定檔/);
+    expect(h.out.join('\n')).toMatch(/配對/);
+  });
+
+  it('沒給新秘密就產生一把、只印一次；手機端的 realtime.devices 一起印', async () => {
+    const f = await family();
+    const h = harness({ IOT_HOME_SECRET: f.homeSecret, IOT_GATEWAY_KEYS: f.gatewayKeys }, f.files);
+    expect(await runCli(['iot', 'realtime', 'home', '--rotate-secret'], h.deps)).toBe(0);
+    const fresh = valueOf(h.out, 'IOT_HOME_SECRET')!;
+    expect(deriveIotHome(fresh).homeTag).toBe((JSON.parse(f.files[FILE]!) as { homes: IotRealtimeHomeConfig[] }).homes[0]!.homeTag);
+    expect(JSON.parse(valueOf(h.out, 'IOT_PHONE_DEVICES')!)).toEqual({ lamp: { epoch: 1 }, door: { epoch: 0, class: 'lock' } });
+  });
+
+  it('🔴 踢掉 operator：operator 秘密也換，門鎖的 down 金鑰以新的衍生', async () => {
+    const f = await family();
+    const h = harness({ IOT_HOME_SECRET: f.homeSecret, IOT_NEW_HOME_SECRET: generateIotHomeSecret(), IOT_GATEWAY_KEYS: f.gatewayKeys }, f.files);
+    expect(await runCli(['iot', 'realtime', 'home', '--rotate-secret', '--remove', f.operator], h.deps)).toBe(0);
+    const op = valueOf(h.out, 'IOT_OPERATOR_SECRET')!;
+    expect(op).toMatch(/^[0-9a-f]{64}$/);
+    expect(op).not.toBe(f.operatorSecret);
+    expect(valuesOf(h.out, 'IOT_DEVICE_KEY_DOWN')).toEqual([bytesToHex(deriveIotDeviceKeyDown(op, 'door', 0))]);
+  });
+
+  it('--new-operator-secret：踢 viewer 也可以順便換 operator 秘密', async () => {
+    const f = await family();
+    const h = harness({ IOT_HOME_SECRET: f.homeSecret, IOT_GATEWAY_KEYS: f.gatewayKeys }, f.files);
+    expect(await runCli(['iot', 'realtime', 'home', '--rotate-secret', '--remove', f.viewer, '--new-operator-secret'], h.deps)).toBe(0);
+    expect(valueOf(h.out, 'IOT_OPERATOR_SECRET')).toMatch(/^[0-9a-f]{64}$/);
+    expect(valuesOf(h.out, 'IOT_DEVICE_KEY_DOWN')).toHaveLength(1);
+  });
+
+  it('擋下來的情況：不在名單、踢掉最後一位 owner、新舊秘密相同、IOT_GATEWAY_KEYS 沒有這家、家庭不在設定裡、與 --owner 一起給——都不寫檔', async () => {
+    const f = await family();
+    const snapshot = f.files[FILE];
+    const env = { IOT_HOME_SECRET: f.homeSecret, IOT_GATEWAY_KEYS: f.gatewayKeys };
+    const run = (args: string[], e: Record<string, string> = env) => runCli(['iot', 'realtime', 'home', '--rotate-secret', ...args], harness(e, f.files).deps);
+    expect(await run(['--remove', getPublicKey(generateSecretKey())])).toBe(1);
+    expect(await run(['--remove', f.owner])).toBe(1);
+    expect(await run([], { ...env, IOT_NEW_HOME_SECRET: f.homeSecret })).toBe(2);
+    expect(await run([], { IOT_HOME_SECRET: f.homeSecret })).toBe(2);
+    expect(await run([], { ...env, IOT_HOME_SECRET: generateIotHomeSecret() })).toBe(1);
+    expect(await run(['--owner', f.owner])).toBe(2);
+    expect(await run(['--rotate-gateway'])).toBe(2);
+    expect(await runCli(['iot', 'realtime', 'home', '--remove', f.viewer], harness(env, f.files).deps)).toBe(2);
+    expect(f.files[FILE]).toBe(snapshot);
+  });
+
+  it('--remove 可以給 npub、可以給多次', async () => {
+    const f = await family();
+    const h = harness({ IOT_HOME_SECRET: f.homeSecret, IOT_GATEWAY_KEYS: f.gatewayKeys }, f.files);
+    expect(await runCli(['iot', 'realtime', 'home', '--rotate-secret', '--remove', npubEncode(f.viewer), '--remove', f.operator], h.deps)).toBe(0);
+    expect(((JSON.parse(f.files[FILE]!) as { homes: IotRealtimeHomeConfig[] }).homes[0]!.acl as unknown as { pubkey: string }[]).map((e) => e.pubkey)).toEqual([f.owner]);
+  });
+});
+
 describe('cinderous relay start --iot-realtime（SDK ADR 0121）', () => {
   it('讀設定檔寫進 IOT_REALTIME；閘道私鑰只從環境讀', async () => {
     const homeSecret = generateIotHomeSecret();

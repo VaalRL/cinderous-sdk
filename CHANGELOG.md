@@ -4,6 +4,10 @@ Releases are git tags; install one with `npm install github:VaalRL/cinderous-sdk
 
 每個版本是一個 git tag，安裝方式是 `npm install github:VaalRL/cinderous-sdk#vX.Y.Z`。每一版列出那一版的改動（取自 commit 紀錄）；每項改動的理由寫在它引用的 ADR 裡（[docs/adr/](docs/adr/README.md)）。
 
+## v0.83.0 — 2026-10-28
+
+- feat(cli): `iot realtime home --rotate-secret [--remove <npub>…] [--new-operator-secret]`——撤銷成員＝換家庭秘密：這一家整筆改寫成新秘密推出的值、名單拿掉那些人、每台設備的新網址與金鑰各印一次（要重燒，不做 keyWrap）；權杖、epoch、閘道私鑰不變；拿掉 operator／owner 時 operator 秘密也換（ADR 0123）
+
 ## v0.82.0 — 2026-10-28
 
 - fix(relay-pool): 關閉碼 4429 `iot-quota:<reset>` 分類成 `unavailable`、詞元 `iot-quota`、帶 `reset`（`IOT_QUOTA_CLOSE_CODE`、`RELAY_REJECT_TOKENS.iotQuota`）；健康標記與重連等到重置時間（加最多 60 秒抖動、最多一天）；在等的發布以詞元結案——原本當一般斷線，每分鐘重連一次（ADR 0122）
