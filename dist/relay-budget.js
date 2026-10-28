@@ -12,6 +12,7 @@
  *
  * 獨立成一個檔案、只依賴 `publish-rejections`：`./pairing`、`./sync/vault` 子路徑不能把連線池執行期拉進來。
  */
+import { RELAY_REJECT_TOKENS } from './protocol/relay-reject.js';
 import { publishRejections } from './publish-rejections.js';
 /** SDK 中繼預設的每把公鑰每分鐘事件上限（鏡射 `relay/host-config` 的 `MAX_EVENTS_PER_MINUTE`；測試釘住兩者相同） */
 export const RELAY_MAX_EVENTS_PER_MINUTE = 120;
@@ -111,7 +112,7 @@ export function rateLimitBackoffMs(result) {
     let ms;
     for (const r of publishRejections(result)) {
         // IoT 即時通道的「今日額度用完」（SDK ADR 0049 §10）不是短暫限速：退避重送沒用，還會拖慢同一身分的其他流量
-        if (r.kind !== 'rate-limited' || r.token === 'iot-quota')
+        if (r.kind !== 'rate-limited' || r.token === RELAY_REJECT_TOKENS.iotQuota)
             continue;
         const wait = r.token === 'ip' ? IP_BACKOFF_MS : RELAY_RATE_LIMIT_BACKOFF_MS;
         ms = Math.max(ms ?? 0, wait);

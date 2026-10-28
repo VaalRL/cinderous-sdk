@@ -71,6 +71,7 @@ describe("契約：每一句拒收訊息都是「前綴＋詞元＋說明」，�
   it("每一個詞元至少被一句用到（沒有死詞元）", () => {
     const used = new Set(table.map((row) => row[2]));
     used.add(T.resubscribe); // worker.ts 的 CLOSED（見 worker.test.ts）
+    used.add(T.iotQuota); // iot-home-room.ts 的 4429 關閉原因與 503（見 iot/realtime-quota-close.test.ts、iot-worker.test.ts）
     for (const token of Object.values(T)) expect(used.has(token), token).toBe(true);
   });
 

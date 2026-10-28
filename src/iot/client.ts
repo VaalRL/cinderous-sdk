@@ -49,7 +49,7 @@ import { IOT_KIND_ACK, IOT_KIND_COMMAND, IOT_KIND_HEARTBEAT, IOT_KIND_QUERY, IOT
 import { clampIot, IotReplayGuard } from './replay.js';
 import { mergeIotRetained } from './retained.js';
 import { assertIotTopic, IOT_ACL_TOPIC, IOT_PUSH_TOPIC, isValidIotDeviceId, topicMatches, topicSubscriptionPlan } from './topic.js';
-import { iotPublish, iotQuery, iotVerified, type IotTransport } from './transport.js';
+import { IOT_QUOTA_REJECTION as QUOTA_REJECTION, iotPublish, iotQuery, iotQuotaHold, iotVerified, type IotTransport } from './transport.js';
 
 export const IOT_DEFAULT_COMMAND_TIMEOUT_MS = 3_000;
 export const IOT_DEFAULT_COMMAND_RETRIES = 2;
@@ -57,8 +57,6 @@ export const IOT_DEFAULT_TTL_SEC = 30;
 export const IOT_DEFAULT_CLIENT_QUERY_TIMEOUT_MS = 8_000;
 /** retained 多久沒更新就視為不可信（秒）：閘道每 6 小時刷新一次，留兩輪＋一小時 */
 export const IOT_DEFAULT_STALE_AFTER_SEC = 13 * 3600;
-/** 中繼的額度拒收（ADR 0049 §10）：`…iot-quota:<重置 unix 秒>` 或只有詞元 */
-const QUOTA_REJECTION = /\biot-quota:\s*(\d{1,12})?/;
 
 /** 即時等級（ADR 0049 §9.4 裁示 5）：ttl 預設 15 秒、夾 5–60；等 ack 預設 5 秒、不重送 */
 export const IOT_REALTIME_DEFAULT_TTL_SEC = 15;
@@ -173,6 +171,11 @@ export interface IotGatewayStatus {
 export interface IotRealtimeDeviceRef {
   /** 金鑰版本（kid 的 epoch），預設 0；設備輪換金鑰後跟著改 */
   readonly epoch?: number;
+  /**
+   * 輪換寬限（與 relay 設定的同名欄位相同；`iot realtime device --rotate` 會印出來，SDK ADR 0122）：
+   * `until`（unix 秒）之前，舊版本的設備回報照收，指令改用設備最近一次開口的版本，讓還沒更新的設備也收得到。
+   */
+  readonly previousEpoch?: { readonly epoch: number; readonly until: number };
   /** `lock`（門、門鎖、車庫門、門禁）：指令的 down 金鑰由 `operatorSecret` 導出（§9.5），viewer＋被攻破的 relay 也開不了 */
   readonly class?: 'lock' | 'general';
   /** 非門鎖類也選用 `operatorSecret`（§9.5） */
@@ -236,7 +239,10 @@ interface Route {
 interface RealtimeDevice {
   readonly id: string;
   readonly epoch: number;
+  readonly previous?: { readonly epoch: number; readonly until: number };
   readonly downByOperator: boolean;
+  /** 設備最近一次開口（解得開的 up 信封）用的版本與時間（毫秒）：寬限期內指令跟著它（SDK ADR 0122） */
+  heard?: { epoch: number; at: number };
 }
 
 export class IotClient {
@@ -277,7 +283,11 @@ export class IotClient {
         if (!isValidIotDeviceId(id)) throw new RangeError(`設備 id 不合法：${id}`);
         const epoch = ref.epoch ?? 0;
         iotKid(id, epoch); // 檢查 epoch
-        this.#rtDevices.set(id, { id, epoch, downByOperator: ref.class === 'lock' || ref.operatorSecret === true });
+        const prev = ref.previousEpoch;
+        if (prev !== undefined && (!Number.isSafeInteger(prev.epoch) || prev.epoch < 0 || prev.epoch >= epoch || !Number.isSafeInteger(prev.until))) {
+          throw new RangeError(`設備 ${id} 的 previousEpoch 要是比 epoch 小的非負整數，until 要是整數（unix 秒）`);
+        }
+        this.#rtDevices.set(id, { id, epoch, ...(prev !== undefined ? { previous: { epoch: prev.epoch, until: prev.until } } : {}), downByOperator: ref.class === 'lock' || ref.operatorSecret === true });
       }
       this.#operatorSecret = rt.operatorSecret;
     }
@@ -321,8 +331,7 @@ export class IotClient {
       // C′：門鎖類沒有 operatorSecret 就做不出設備解得開的指令——不送（relay 也擋不了偽造，設備會直接丟掉）
       if (rtDevice.downByOperator && this.#operatorSecret === undefined) return { status: 'not-allowed', msgId, attempts: 0, reason: 'operator-secret' };
       const inner = { type: 'cmd', msgId, topic, payload, enc: opts.enc ?? 'utf8', ...(opts.confirmed !== undefined ? { confirmed: opts.confirmed } : {}), exp: expiration };
-      const key = rtDevice.downByOperator ? deriveIotDeviceKeyDown(this.#operatorSecret!, rtDevice.id, rtDevice.epoch) : this.#o.home.deviceKey(rtDevice.id, rtDevice.epoch);
-      const env = this.#sealDown(rtDevice, key, ts, inner);
+      const env = this.#sealDown(rtDevice, rtDevice.downByOperator, ts, inner);
       const body: IotBody = { v: 1, type: 'dev-cmd', msgId, ts, device: rtDevice.id, env, ...(opts.confirmed !== undefined ? { confirmed: opts.confirmed } : {}) };
       sent = await this.#sendAndWait(this.#rt!, IOT_KIND_COMMAND, this.#rtTags(rtDevice, expiration), body, { msgId, timeoutMs, retries, expiration, toGateway: true });
     } else {
@@ -373,7 +382,7 @@ export class IotClient {
     let result: IotCommandResult & { ack?: IotAckBody };
     if (rtDevice) {
       // 查詢一律用 deviceKey（門鎖類也是）：viewer 也能查；設備只執行 `cmd` 幀
-      const env = this.#sealDown(rtDevice, this.#o.home.deviceKey(rtDevice.id, rtDevice.epoch), ts, { type: 'query', msgId, exp: expiration });
+      const env = this.#sealDown(rtDevice, false, ts, { type: 'query', msgId, exp: expiration });
       const body: IotBody = { v: 1, type: 'dev-query', msgId, ts, device, env };
       result = await this.#sendAndWait(this.#rt!, IOT_KIND_QUERY, this.#rtTags(rtDevice, expiration), body, { msgId, timeoutMs, retries: 0, expiration, toGateway: true });
     } else {
@@ -470,9 +479,21 @@ export class IotClient {
     return this.command(IOT_PUSH_TOPIC, JSON.stringify({ op: 'remove', id }), opts);
   }
 
-  #sealDown(device: RealtimeDevice, key: Uint8Array, tsMs: number, inner: Record<string, unknown>): ReturnType<typeof sealIotEnvelope> {
+  /**
+   * 下行用哪個版本（SDK ADR 0122）：寬限期內、設備最近一次開口用的是舊版本 → 舊版本（還沒更新的設備才解得開）；
+   * 其他情況（含還沒聽過設備開口）用目前的版本。
+   */
+  #downEpoch(device: RealtimeDevice): number {
+    const prev = device.previous;
+    return prev !== undefined && device.heard?.epoch === prev.epoch && Math.floor(this.#now() / 1000) <= prev.until ? prev.epoch : device.epoch;
+  }
+
+  /** 封下行信封：`operatorKey`＝門鎖類的指令（down 金鑰由 operatorSecret 導出，§9.5），否則用 deviceKey */
+  #sealDown(device: RealtimeDevice, operatorKey: boolean, tsMs: number, inner: Record<string, unknown>): ReturnType<typeof sealIotEnvelope> {
+    const epoch = this.#downEpoch(device);
+    const key = operatorKey ? deriveIotDeviceKeyDown(this.#operatorSecret!, device.id, epoch) : this.#o.home.deviceKey(device.id, epoch);
     this.#downCtr += 1;
-    return sealIotEnvelope({ key, kid: iotKid(device.id, device.epoch), dir: 'down', ctr: this.#downCtr, ts: Math.floor(tsMs / 1000), plaintext: JSON.stringify(inner) });
+    return sealIotEnvelope({ key, kid: iotKid(device.id, epoch), dir: 'down', ctr: this.#downCtr, ts: Math.floor(tsMs / 1000), plaintext: JSON.stringify(inner) });
   }
 
   #rtTags(device: RealtimeDevice, expiration: number): string[][] {
@@ -512,16 +533,20 @@ export class IotClient {
     this.#waiters.set(p.msgId, set);
     let attempts = 0;
     let lastRejected: readonly ClassifiedRejection[] | undefined;
+    // relay 已經以 4429 關掉這條路線、還沒到重置時間（SDK ADR 0122）：送了也沒有一座收，不必送、不必等
+    let held: { readonly reset?: number } | undefined;
     try {
       for (let attempt = 0; attempt <= p.retries && !this.#closed; attempt += 1) {
         if (attempt > 0 && Math.floor(this.#now() / 1000) >= p.expiration) break; // 指令已過期：不再送
+        held = iotQuotaHold(route.pool);
+        if (held) break;
         // 每次重新簽章（新的 created_at 與 NIP-44 nonce ⇒ 新 id），內容的 msgId 與 ts 不變
         const event = this.#build(route, kind, tags, body, p.toGateway === true);
         attempts += 1;
         const outcome = await iotPublish(route.pool, this.#budget, event);
         if (acked) break;
         lastRejected = outcome.ok ? undefined : outcome.rejected;
-        // 中繼說今日額度用完（ADR 0049 §10）：重送也一樣，不必等
+        // 中繼說今日額度用完（ADR 0049 §10；拒收或 4429 斷線）：重送也一樣，不必等
         if (lastRejected?.some((r) => QUOTA_REJECTION.test(r.reason))) break;
         await this.#pause(p.timeoutMs * 2 ** attempt, (w) => {
           wake = w;
@@ -540,8 +565,10 @@ export class IotClient {
     if (lastRejected) {
       const quota = lastRejected.map((r) => QUOTA_REJECTION.exec(r.reason)).find((m) => m !== null);
       if (quota) return { status: 'quota', msgId: p.msgId, attempts, rejected: lastRejected, ...(quota[1] !== undefined ? { reset: Number(quota[1]) } : {}) };
-      return { status: 'relay-rejected', msgId: p.msgId, attempts, rejected: lastRejected };
     }
+    held ??= iotQuotaHold(route.pool);
+    if (held) return { status: 'quota', msgId: p.msgId, attempts, ...(held.reset !== undefined ? { reset: held.reset } : {}) };
+    if (lastRejected) return { status: 'relay-rejected', msgId: p.msgId, attempts, rejected: lastRejected };
     return { status: 'timeout', msgId: p.msgId, attempts };
   }
 
@@ -595,20 +622,26 @@ export class IotClient {
   }
 
   /**
-   * 解開 C′ 設備的 up 信封（以 `deviceKey`；只認設定的 epoch）。`live`：即時的 ack／狀態要在時間窗內、沒看過（`kid#ctr`）；
-   * retained 是舊值，不做這兩項檢查。
+   * 解開 C′ 設備的 up 信封（以 `deviceKey`；只認設定的 epoch，寬限期內加上 `previousEpoch`）。
+   * `live`：即時的 ack／狀態要在時間窗內、沒看過（`kid#ctr`）；retained 是舊值，不做這兩項檢查。
+   * 解得開就記下設備用的版本（取信封時間最新的），下行跟著它（SDK ADR 0122）。
    */
   #openUp(body: IotDeviceReportBody, live: boolean): IotUpMessage | undefined {
     const device = this.#rtDevices.get(body.device);
     const kid = parseIotKid(body.env.kid);
-    if (!device || !kid || kid.deviceId !== device.id || kid.epoch !== device.epoch) return undefined;
+    if (!device || !kid || kid.deviceId !== device.id) return undefined;
+    const prev = device.previous;
+    const inGrace = prev !== undefined && kid.epoch === prev.epoch && Math.floor(this.#now() / 1000) <= prev.until;
+    if (kid.epoch !== device.epoch && !inGrace) return undefined;
     let plaintext: Uint8Array;
     try {
-      plaintext = openIotEnvelope(body.env, this.#o.home.deviceKey(device.id, device.epoch));
+      plaintext = openIotEnvelope(body.env, this.#o.home.deviceKey(device.id, kid.epoch));
     } catch {
       return undefined;
     }
     if (live && this.#upGuard.check(`${body.env.kid}#${body.env.ctr}`, body.env.ts * 1000).verdict !== 'fresh') return undefined;
+    const at = body.env.ts * 1000;
+    if (device.heard === undefined || at >= device.heard.at) device.heard = { epoch: kid.epoch, at };
     return parseIotUpMessage(plaintext);
   }
 

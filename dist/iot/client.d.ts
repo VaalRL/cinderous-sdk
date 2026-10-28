@@ -120,6 +120,14 @@ export interface IotGatewayStatus {
 export interface IotRealtimeDeviceRef {
     /** 金鑰版本（kid 的 epoch），預設 0；設備輪換金鑰後跟著改 */
     readonly epoch?: number;
+    /**
+     * 輪換寬限（與 relay 設定的同名欄位相同；`iot realtime device --rotate` 會印出來，SDK ADR 0122）：
+     * `until`（unix 秒）之前，舊版本的設備回報照收，指令改用設備最近一次開口的版本，讓還沒更新的設備也收得到。
+     */
+    readonly previousEpoch?: {
+        readonly epoch: number;
+        readonly until: number;
+    };
     /** `lock`（門、門鎖、車庫門、門禁）：指令的 down 金鑰由 `operatorSecret` 導出（§9.5），viewer＋被攻破的 relay 也開不了 */
     readonly class?: 'lock' | 'general';
     /** 非門鎖類也選用 `operatorSecret`（§9.5） */

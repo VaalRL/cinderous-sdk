@@ -134,6 +134,106 @@ describe('cinderous iot realtime device（SDK ADR 0121）', () => {
   });
 });
 
+describe('輪換（SDK ADR 0122）', () => {
+  async function withLamp(cls: 'lock' | 'general' = 'general') {
+    const homeSecret = generateIotHomeSecret();
+    const h = harness({ IOT_HOME_SECRET: homeSecret });
+    await runCli(['iot', 'realtime', 'home', '--owner', getPublicKey(generateSecretKey())], h.deps);
+    const operatorSecret = valueOf(h.out, 'IOT_OPERATOR_SECRET')!;
+    const gatewayKeys = valueOf(h.out, 'IOT_GATEWAY_KEYS')!;
+    const add = harness({ IOT_HOME_SECRET: homeSecret, IOT_OPERATOR_SECRET: operatorSecret }, h.files);
+    const args = cls === 'lock' ? ['--class', 'lock', '--local-fallback', 'key'] : [];
+    expect(await runCli(['iot', 'realtime', 'device', 'lamp', ...args], add.deps)).toBe(0);
+    const token = valueOf(add.out, 'IOT_DEVICE_TOKEN')!;
+    return { homeSecret, operatorSecret, gatewayKeys, files: h.files, token };
+  }
+  const lampOf = (files: Record<string, string>) => (JSON.parse(files[FILE]!) as { homes: IotRealtimeHomeConfig[] }).homes[0]!.devices[0]!;
+
+  it('device --rotate：epoch 加 1、舊版本寬限一天（previousEpoch）；權杖不變；印出新版本的 kid／金鑰與手機端的設定', async () => {
+    const { homeSecret, gatewayKeys, files, token } = await withLamp();
+    const before = Math.floor(Date.now() / 1000);
+    const h = harness({ IOT_HOME_SECRET: homeSecret }, files);
+    expect(await runCli(['iot', 'realtime', 'device', 'lamp', '--rotate'], h.deps)).toBe(0);
+    const lamp = lampOf(files);
+    expect(lamp).toMatchObject({ epoch: 1, tokenHash: hashIotDeviceToken(token) });
+    expect(lamp.previousEpoch!.epoch).toBe(0);
+    expect(lamp.previousEpoch!.until).toBeGreaterThanOrEqual(before + 86_400);
+    expect(lamp.previousEpoch!.until).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 86_400);
+    const home = deriveIotHome(homeSecret);
+    expect(valueOf(h.out, 'IOT_DEVICE_KID')).toBe('lamp.1');
+    expect(valueOf(h.out, 'IOT_DEVICE_KEY')).toBe(bytesToHex(home.deviceKey('lamp', 1)));
+    expect(valueOf(h.out, 'IOT_DEVICE_TOKEN')).toBeUndefined();
+    expect(JSON.parse(valueOf(h.out, 'IOT_PHONE_DEVICE')!)).toEqual({ lamp: { epoch: 1, previousEpoch: lamp.previousEpoch } });
+    expect(parseIotRealtimeConfig(JSON.parse(files[FILE]!), JSON.parse(gatewayKeys)).issues).toEqual([]);
+  });
+
+  it('--grace-sec 0＝不寬限（舊版本立刻作廢）；超過 7 天是用法錯誤；再換一次時舊的寬限被取代並提醒', async () => {
+    const { homeSecret, files } = await withLamp();
+    expect(await runCli(['iot', 'realtime', 'device', 'lamp', '--rotate', '--grace-sec', '604801'], harness({ IOT_HOME_SECRET: homeSecret }, files).deps)).toBe(2);
+    expect(await runCli(['iot', 'realtime', 'device', 'lamp', '--rotate'], harness({ IOT_HOME_SECRET: homeSecret }, files).deps)).toBe(0);
+    const again = harness({ IOT_HOME_SECRET: homeSecret }, files);
+    expect(await runCli(['iot', 'realtime', 'device', 'lamp', '--rotate', '--grace-sec', '0'], again.deps)).toBe(0);
+    expect(again.err.join('\n')).toMatch(/epoch 0.*寬限/);
+    const lamp = lampOf(files);
+    expect(lamp.epoch).toBe(2);
+    expect(lamp.previousEpoch).toBeUndefined();
+  });
+
+  it('門鎖類輪換要 IOT_OPERATOR_SECRET，印出新版本的 down 金鑰', async () => {
+    const { homeSecret, operatorSecret, files } = await withLamp('lock');
+    expect(await runCli(['iot', 'realtime', 'device', 'lamp', '--rotate'], harness({ IOT_HOME_SECRET: homeSecret }, files).deps)).toBe(2);
+    const h = harness({ IOT_HOME_SECRET: homeSecret, IOT_OPERATOR_SECRET: operatorSecret }, files);
+    expect(await runCli(['iot', 'realtime', 'device', 'lamp', '--rotate'], h.deps)).toBe(0);
+    expect(valueOf(h.out, 'IOT_DEVICE_KEY_DOWN')).toBe(bytesToHex(deriveIotDeviceKeyDown(operatorSecret, 'lamp', 1)));
+    expect(JSON.parse(valueOf(h.out, 'IOT_PHONE_DEVICE')!).lamp).toMatchObject({ epoch: 1, class: 'lock' });
+  });
+
+  it('device --new-token：換權杖（外洩時），epoch 不變；舊權杖的雜湊不在了', async () => {
+    const { homeSecret, files, token } = await withLamp();
+    const h = harness({ IOT_HOME_SECRET: homeSecret }, files);
+    expect(await runCli(['iot', 'realtime', 'device', 'lamp', '--new-token'], h.deps)).toBe(0);
+    const fresh = valueOf(h.out, 'IOT_DEVICE_TOKEN')!;
+    expect(fresh).not.toBe(token);
+    expect(lampOf(files)).toMatchObject({ epoch: 0, tokenHash: hashIotDeviceToken(fresh) });
+    expect(files[FILE]).not.toContain(hashIotDeviceToken(token));
+  });
+
+  it('沒有這台設備就不能輪換；--rotate 與 --epoch、--class 不能一起給', async () => {
+    const { homeSecret, files } = await withLamp();
+    expect(await runCli(['iot', 'realtime', 'device', 'fan', '--rotate'], harness({ IOT_HOME_SECRET: homeSecret }, files).deps)).toBe(1);
+    expect(await runCli(['iot', 'realtime', 'device', 'lamp', '--rotate', '--epoch', '5'], harness({ IOT_HOME_SECRET: homeSecret }, files).deps)).toBe(2);
+    expect(await runCli(['iot', 'realtime', 'device', 'lamp', '--new-token', '--class', 'lock'], harness({ IOT_HOME_SECRET: homeSecret }, files).deps)).toBe(2);
+  });
+
+  it('home --rotate-gateway：新的閘道公鑰寫進設定、IOT_GATEWAY_KEYS 整份換掉這一家；舊私鑰立刻不能用（不寬限）', async () => {
+    const { homeSecret, gatewayKeys, files } = await withLamp();
+    const other = harness({ IOT_HOME_SECRET: generateIotHomeSecret(), IOT_GATEWAY_KEYS: gatewayKeys }, files);
+    await runCli(['iot', 'realtime', 'home', '--owner', getPublicKey(generateSecretKey())], other.deps);
+    const bothKeys = valueOf(other.out, 'IOT_GATEWAY_KEYS')!;
+    const homeTag = deriveIotHome(homeSecret).homeTag;
+    const oldPub = (JSON.parse(files[FILE]!) as { homes: IotRealtimeHomeConfig[] }).homes[0]!.gatewayPubkey;
+    // 有別的家庭時一定要給既有的整份，否則印出來的會少掉別家
+    expect(await runCli(['iot', 'realtime', 'home', '--rotate-gateway'], harness({ IOT_HOME_SECRET: homeSecret }, files).deps)).toBe(2);
+    const h = harness({ IOT_HOME_SECRET: homeSecret, IOT_GATEWAY_KEYS: bothKeys }, files);
+    expect(await runCli(['iot', 'realtime', 'home', '--rotate-gateway'], h.deps)).toBe(0);
+    const cfg = JSON.parse(files[FILE]!) as { homes: IotRealtimeHomeConfig[] };
+    const keys = JSON.parse(valueOf(h.out, 'IOT_GATEWAY_KEYS')!) as Record<string, string>;
+    expect(Object.keys(keys)).toHaveLength(2);
+    expect(cfg.homes[0]!.gatewayPubkey).not.toBe(oldPub);
+    expect(getPublicKey(hexToBytes(keys[homeTag]!))).toBe(cfg.homes[0]!.gatewayPubkey);
+    expect(cfg.homes[0]!.devices).toHaveLength(1);
+    expect(parseIotRealtimeConfig(cfg, keys).issues).toEqual([]);
+    expect(parseIotRealtimeConfig(cfg, JSON.parse(bothKeys)).issues.length).toBeGreaterThan(0);
+    expect(h.out.join('\n')).toContain(cfg.homes[0]!.gatewayPubkey);
+  });
+
+  it('home --rotate-gateway：家庭不在設定檔裡就失敗；不能與 --owner 一起給', async () => {
+    const { homeSecret, files } = await withLamp();
+    expect(await runCli(['iot', 'realtime', 'home', '--rotate-gateway'], harness({ IOT_HOME_SECRET: generateIotHomeSecret() }, files).deps)).toBe(1);
+    expect(await runCli(['iot', 'realtime', 'home', '--rotate-gateway', '--owner', getPublicKey(generateSecretKey())], harness({ IOT_HOME_SECRET: homeSecret }, files).deps)).toBe(2);
+  });
+});
+
 describe('cinderous relay start --iot-realtime（SDK ADR 0121）', () => {
   it('讀設定檔寫進 IOT_REALTIME；閘道私鑰只從環境讀', async () => {
     const homeSecret = generateIotHomeSecret();

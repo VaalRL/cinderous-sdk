@@ -4,6 +4,13 @@ Releases are git tags; install one with `npm install github:VaalRL/cinderous-sdk
 
 每個版本是一個 git tag，安裝方式是 `npm install github:VaalRL/cinderous-sdk#vX.Y.Z`。每一版列出那一版的改動（取自 commit 紀錄）；每項改動的理由寫在它引用的 ADR 裡（[docs/adr/](docs/adr/README.md)）。
 
+## v0.82.0 — 2026-10-28
+
+- fix(relay-pool): 關閉碼 4429 `iot-quota:<reset>` 分類成 `unavailable`、詞元 `iot-quota`、帶 `reset`（`IOT_QUOTA_CLOSE_CODE`、`RELAY_REJECT_TOKENS.iotQuota`）；健康標記與重連等到重置時間（加最多 60 秒抖動、最多一天）；在等的發布以詞元結案——原本當一般斷線，每分鐘重連一次（ADR 0122）
+- fix(iot): C′ 連線被 4429 關掉時 `command`／`deviceLink` 回 `quota`（附 `reset`），已經被關之後下的指令不送、馬上回——原本是 `relay-rejected` 或空的拒收清單（ADR 0122）
+- feat(iot): 手機端 `realtime.devices[id].previousEpoch`：寬限內舊版本的回報照收，指令跟著設備最近開口的版本（ADR 0122）
+- feat(cli): `iot realtime device <id> --rotate [--grace-sec]`（換金鑰版本，印出新金鑰與手機端設定 `IOT_PHONE_DEVICE`）、`--new-token`（換權杖）、`iot realtime home --rotate-gateway`（換閘道私鑰，沒有寬限）；設定檢查 `previousEpoch.epoch` 要比 `epoch` 小（ADR 0122）
+
 ## v0.81.0 — 2026-10-28
 
 - feat(iot): C′ 即時通道的手機端——`IotClient` 新增 `realtime`（`devices`、`operatorSecret`、選配 `pool`／`gateway`）、`urgency: 'realtime'`（ttl 15、等 ack 5 秒、逾時回 `unknown` 並自動查詢，結果在 `after`）、`ackTimeoutMs`、`deviceLink()`、`quota` 狀態與 `reset`、ack 帶回的 `state`；`subscribeState`／`getRetained`／`query` 涵蓋 C′ 設備（ADR 0120）

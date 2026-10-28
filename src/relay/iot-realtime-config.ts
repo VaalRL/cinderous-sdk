@@ -20,6 +20,9 @@ export const IOT_REALTIME_MAX_HOMES = 32;
 export const IOT_REALTIME_ADDRESSABLE_PER_AUTHOR = IOT_REALTIME_MAX_DEVICES + 1;
 export const IOT_REALTIME_DEFAULT_HEARTBEAT_SEC = 30;
 export const IOT_REALTIME_DEFAULT_TTL_MAX_SEC = 60;
+/** 換金鑰時舊版本的寬限（秒；ADR 0049 §2.6 `keyGraceSec`）：預設一天、最多七天（SDK ADR 0122） */
+export const IOT_KEY_GRACE_DEFAULT_SEC = 86_400;
+export const IOT_KEY_GRACE_MAX_SEC = 604_800;
 /** 盲化 id 的長度（＝`./iot` 的 `IOT_BLIND_LENGTH`；這裡不能引用 `./iot`，測試比對兩者一致） */
 export const IOT_REALTIME_BLIND_LENGTH = 22;
 
@@ -153,6 +156,7 @@ export function checkIotRealtimeConfig(
       }
       const prev = dev.previousEpoch as { epoch?: unknown; until?: unknown } | undefined;
       if (prev !== undefined && (!Number.isSafeInteger(prev.epoch) || !Number.isSafeInteger(prev.until))) add(`${p}.previousEpoch`, 'epoch', 'previousEpoch 需要整數 epoch 與 until（unix 秒）');
+      else if (prev !== undefined && Number.isSafeInteger(dev.epoch) && ((prev.epoch as number) < 0 || (prev.epoch as number) >= (dev.epoch as number))) add(`${p}.previousEpoch`, 'epoch', 'previousEpoch.epoch 要比 epoch 小（舊的版本）');
     });
     homes.push({ index: i, home, ok: issues.length === before });
   });

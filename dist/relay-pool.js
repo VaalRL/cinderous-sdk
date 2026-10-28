@@ -59,6 +59,19 @@ const RESUBSCRIBE_COOLDOWN_MS = 30_000;
 function defaultCreateSocket(url) {
     return new WebSocket(url);
 }
+/** 關閉碼帶了恢復時間（4429 `iot-quota:<reset>`）時最多等多久、抖動多少（毫秒；SDK ADR 0122） */
+const MAX_RESUME_WAIT_MS = 24 * 3_600_000;
+const RESUME_JITTER_MS = 60_000;
+/**
+ * 關閉碼帶了恢復時間：健康標記與重連都等到那時（毫秒時間）。加最多 60 秒抖動，免得一家的手機在午夜同一秒一起重連；
+ * 離譜的時間最多等一天。沒帶就回 undefined（照分類的預設冷卻）。
+ */
+function resumeAt(closed) {
+    if (closed.reset === undefined)
+        return undefined;
+    const now = Date.now();
+    return Math.min(Math.max(closed.reset * 1000, now), now + MAX_RESUME_WAIT_MS) + Math.floor(Math.random() * RESUME_JITTER_MS);
+}
 function newConnection(standby, read = false) {
     return {
         socket: null,
@@ -321,8 +334,8 @@ export class RelayPool {
             }
             const listeners = new Map();
             for (const url of urls) {
-                listeners.set(url, (ok, reason, kind) => {
-                    answers.set(url, { ok, reason, kind });
+                listeners.set(url, (ok, reason, kind, token) => {
+                    answers.set(url, { ok, reason, kind, ...(token !== undefined ? { token } : {}) });
                     if (answers.size === urls.length)
                         finish();
                 });
@@ -350,7 +363,7 @@ export class RelayPool {
             }
             return { url, standby, outcome: 'accepted' };
         }
-        const klass = answer.kind !== undefined ? { kind: answer.kind } : classifyRelayMessage(answer.reason);
+        const klass = answer.kind !== undefined ? { kind: answer.kind, token: answer.token } : classifyRelayMessage(answer.reason);
         // `duplicate` 是「本來就有這顆」：舊中繼回 `OK false "duplicate:"`，NIP-01 的範例是 `OK true`，兩種都算收下
         if (klass.kind === 'duplicate') {
             result.accepted.push(url);
@@ -822,16 +835,17 @@ export class RelayPool {
             this.#queryDone(id, url);
         this.#setStatus(url, connection, 'closed');
         if (kicked !== undefined) {
-            this.#health.observe(url, { kind: kicked.kind, reason: kicked.reason, source: 'close' });
+            this.#health.observe(url, { kind: kicked.kind, reason: kicked.reason, token: kicked.token, source: 'close', until: resumeAt(kicked) });
             this.#onRelayReject?.(url, {
                 source: 'close',
                 kind: kicked.kind,
                 retryable: kicked.retryable,
                 tryOtherRelays: kicked.tryOtherRelays,
                 reason: kicked.reason,
+                ...(kicked.token !== undefined ? { token: kicked.token } : {}),
                 ...(code !== undefined ? { code } : {}),
             });
-            this.#failPending(url, `disconnected (${code}${kicked.reason ? ` ${kicked.reason}` : ''})`, kicked.kind);
+            this.#failPending(url, `disconnected (${code}${kicked.reason ? ` ${kicked.reason}` : ''})`, kicked.kind, kicked.token);
         }
         else {
             this.#failPending(url);
@@ -862,9 +876,9 @@ export class RelayPool {
         }, delay);
     }
     /** 連線斷了：等這個 Relay 回 OK 的發布都當作沒送到 */
-    #failPending(url, reason = 'disconnected', kind = 'disconnected') {
+    #failPending(url, reason = 'disconnected', kind = 'disconnected', token) {
         for (const pending of this.#pending.values()) {
-            pending.listeners.get(url)?.(false, reason, kind);
+            pending.listeners.get(url)?.(false, reason, kind, token);
         }
     }
     /**

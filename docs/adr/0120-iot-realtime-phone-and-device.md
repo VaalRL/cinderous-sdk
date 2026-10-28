@@ -129,7 +129,7 @@ R2 的範圍（ADR 0049 §9.7）還包括 `RelaySiteOptions`、部署設定與 C
 
 ## 後續（R2b）
 
-> 第 1、2 點已在 [SDK ADR 0121](0121-iot-realtime-deploy-and-cli.md) 做掉（2026-10-28）；第 3 點仍待做。
+> 第 1、2 點已在 [SDK ADR 0121](0121-iot-realtime-deploy-and-cli.md) 做掉（2026-10-28）；第 3 點在 [SDK ADR 0122](0122-iot-realtime-quota-close-and-rotation.md) 做掉。
 
 - `RelaySiteOptions.iotRealtime`、部署設定（`IOT_REALTIME`、`IOT_GATEWAY_KEYS` 是秘密）、四條部署路徑的 `IOT_HOME` DO 綁定與遷移、`relay start --iot-realtime`。
 - 產生設備登錄的工具：權杖（只顯示一次）、雜湊、盲化 id、`kid`，順便提供 `$sys/acl` 的盲化 id，讓 relay 能發名單公告（§7）。

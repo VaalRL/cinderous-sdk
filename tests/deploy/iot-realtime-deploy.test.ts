@@ -70,6 +70,14 @@ describe('站台參數 iotRealtime → IOT_REALTIME（SDK ADR 0121）', () => {
     expect(issues.map((i) => i.code)).toEqual(['iot-acl']);
   });
 
+  it('輪換寬限的 previousEpoch.epoch 要比 epoch 小（SDK ADR 0122）', () => {
+    const dev = (previousEpoch: unknown) => ({ id: 'lamp', blindId: 'd'.repeat(22), epoch: 1, tokenHash: 'a'.repeat(64), previousEpoch });
+    expect(collectRelaySiteIssues({ iotRealtime: realtime({ devices: [dev({ epoch: 0, until: 1 })] }) }, 'worker')).toEqual([]);
+    for (const bad of [{ epoch: 1, until: 1 }, { epoch: 2, until: 1 }, { epoch: -1, until: 1 }]) {
+      expect(collectRelaySiteIssues({ iotRealtime: realtime({ devices: [dev(bad)] }) }, 'worker').map((i) => [i.path, i.code])).toEqual([['iotRealtime.homes[0].devices[0].previousEpoch', 'iot-epoch']]);
+    }
+  });
+
   it('門鎖類沒有本地開啟方式就拒絕部署（ADR 0049 §10.5）', () => {
     const issues = collectRelaySiteIssues({ iotRealtime: realtime({ devices: [{ id: 'door', blindId: 'd'.repeat(22), epoch: 0, tokenHash: 'a'.repeat(64), class: 'lock' }] }) }, 'worker');
     expect(issues.map((i) => i.code)).toEqual(['iot-lock-local-fallback']);

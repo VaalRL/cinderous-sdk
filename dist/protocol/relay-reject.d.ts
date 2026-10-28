@@ -30,6 +30,8 @@ export declare const RELAY_REJECT_TOKENS: {
     readonly messages: "messages";
     readonly ip: "ip";
     readonly subscriptions: "subscriptions";
+    /** IoT 即時通道的家庭今日額度用完（ADR 0049 §10；關閉碼 4429 也是這個詞元，SDK ADR 0122） */
+    readonly iotQuota: "iot-quota";
     readonly scope: "scope";
     readonly tooManyConnections: "too-many-connections";
     readonly selfOnly: "self-only";
@@ -86,7 +88,16 @@ export interface RelayCloseClass extends RelayRejectTraits {
     readonly kind: RelayRejectKind;
     readonly code: number | undefined;
     readonly reason: string;
+    /** 關閉碼本身就說明了原因時的詞元（4429＝`iot-quota`） */
+    readonly token?: string;
+    /** 什麼時候恢復（unix 秒；4429 `iot-quota:<reset>`） */
+    readonly reset?: number;
 }
+/**
+ * IoT 即時通道（C′）的家庭額度用完（ADR 0049 §10.2）：relay 以 4429 `iot-quota:<重置 unix 秒>` 關掉這個家的所有連線。
+ * 設備與手機都據此睡到重置時間，不狂重連（SDK ADR 0122）。
+ */
+export declare const IOT_QUOTA_CLOSE_CODE = 4429;
 /**
  * `OK true "warning: borrowed: <秒>: …"` 的借用保存秒數（SDK ADR 0039／0041）。不是借用回 undefined；
  * 是借用但沒寫秒數回 `{ ttlSec: undefined }`。

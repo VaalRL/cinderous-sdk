@@ -15,6 +15,7 @@ import { openIotEnvelope, parseIotKid, sealIotEnvelope } from './envelope.js';
 import { encodeIotDeviceFrame, IOT_DEVICE_HEARTBEAT, IOT_DEVICE_HEARTBEAT_ACK, IOT_DEVICE_TOKEN_PATTERN, parseIotDeviceFrame } from './device-frame.js';
 import { parseIotDownMessage } from './device-message.js';
 import { isValidIotTopic } from './topic.js';
+import { IOT_QUOTA_CLOSE_CODE } from '../protocol/relay-reject.js';
 export { parseIotDownMessage, parseIotUpMessage, IOT_DEVICE_ACK_STATUSES } from './device-message.js';
 export { generateIotDeviceToken, hashIotDeviceToken, IOT_DEVICE_HEARTBEAT, IOT_DEVICE_HEARTBEAT_ACK } from './device-frame.js';
 export { deriveIotDeviceKeyDown, iotKid } from './envelope.js';
@@ -251,7 +252,7 @@ export function connectIotDevice(opts) {
             if (closed)
                 return;
             const quota = /^iot-quota:(\d{1,12})$/.exec(ev.reason ?? '');
-            if (ev.code === 4429) {
+            if (ev.code === IOT_QUOTA_CLOSE_CODE) {
                 const reset = quota ? Number(quota[1]) : undefined;
                 if (urls.length > 1) {
                     urlIndex = (urlIndex + 1) % urls.length;

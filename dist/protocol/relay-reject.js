@@ -33,6 +33,8 @@ export const RELAY_REJECT_TOKENS = {
     messages: 'messages',
     ip: 'ip',
     subscriptions: 'subscriptions',
+    /** IoT 即時通道的家庭今日額度用完（ADR 0049 §10；關閉碼 4429 也是這個詞元，SDK ADR 0122） */
+    iotQuota: 'iot-quota',
     // restricted:
     scope: 'scope',
     tooManyConnections: 'too-many-connections',
@@ -67,6 +69,12 @@ export const RELAY_WARNING_TOKENS = {
     nearFull: 'near-full',
     dropped: 'dropped',
 };
+/**
+ * IoT 即時通道（C′）的家庭額度用完（ADR 0049 §10.2）：relay 以 4429 `iot-quota:<重置 unix 秒>` 關掉這個家的所有連線。
+ * 設備與手機都據此睡到重置時間，不狂重連（SDK ADR 0122）。
+ */
+export const IOT_QUOTA_CLOSE_CODE = 4429;
+const IOT_QUOTA_CLOSE_REASON = /^iot-quota:\s*(\d{1,12})\b/i;
 const TRAITS = {
     duplicate: { retryable: false, tryOtherRelays: false },
     // 收下了但只是借用（溢位帶、會最先被淘汰）：不必重送這一座，但要耐久就得另找一座
@@ -214,6 +222,10 @@ export function classifyRelayClose(code, reason) {
         kind = 'restricted';
     else if (code === 1013)
         kind = 'unavailable';
+    else if (code === IOT_QUOTA_CLOSE_CODE) {
+        const reset = IOT_QUOTA_CLOSE_REASON.exec(r)?.[1];
+        return { kind: 'unavailable', code, reason: r, token: RELAY_REJECT_TOKENS.iotQuota, ...(reset !== undefined ? { reset: Number(reset) } : {}), ...TRAITS.unavailable };
+    }
     else if (code === 1008) {
         if (lower.startsWith('rate-limited'))
             kind = 'rate-limited';

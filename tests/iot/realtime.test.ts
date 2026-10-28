@@ -23,7 +23,9 @@ const lamps = ['lamp1', 'lamp2', 'lamp3', 'lamp4', 'lamp5', 'lamp6'];
 for (const id of lamps) tokens[id] = generateIotDeviceToken();
 const blind = (id: string) => home.blind(`dev:${id}`);
 
-function iotEnv(opts: { aclBlindId?: string } = {}): Record<string, string> {
+type LampKey = { epoch: number; previousEpoch?: { epoch: number; until: number } };
+
+function iotEnv(opts: { aclBlindId?: string; lamp?: LampKey } = {}): Record<string, string> {
   return {
     DB_PATH: ':memory:',
     PORT: '0',
@@ -38,7 +40,7 @@ function iotEnv(opts: { aclBlindId?: string } = {}): Record<string, string> {
             { pubkey: viewer.pubkey, role: 'viewer' },
           ],
           devices: [
-            { id: 'lamp', blindId: blind('lamp'), epoch: 0, tokenHash: hashIotDeviceToken(tokens.lamp!) },
+            { id: 'lamp', blindId: blind('lamp'), epoch: 0, tokenHash: hashIotDeviceToken(tokens.lamp!), ...opts.lamp },
             { id: 'door', blindId: blind('door'), epoch: 0, tokenHash: hashIotDeviceToken(tokens.door!), class: 'lock', minRole: 'operator', localFallback: ['key'] },
             ...lamps.map((id) => ({ id, blindId: blind(id), epoch: 0, tokenHash: hashIotDeviceToken(tokens[id]!) })),
           ],
@@ -55,7 +57,7 @@ afterEach(async () => {
   for (const c of cleanups.splice(0).reverse()) await c();
 });
 
-async function relay(opts: { aclBlindId?: string } = {}): Promise<number> {
+async function relay(opts: { aclBlindId?: string; lamp?: LampKey } = {}): Promise<number> {
   const handles: { close(): void }[] = [];
   const port = await opened(handles, startNodeRelay(iotEnv(opts)));
   cleanups.push(() => handles.forEach((h) => h.close()));
@@ -249,5 +251,36 @@ describe('SDK ADR 0121：retained 的上限與名單公告', () => {
     const client = await phone(port, owner);
     await sleep(100);
     expect(await client.myRole()).toBeUndefined();
+  });
+});
+
+describe('金鑰輪換（SDK ADR 0122）', () => {
+  const rotated = (): LampKey => ({ epoch: 1, previousEpoch: { epoch: 0, until: Math.floor(Date.now() / 1000) + 3600 } });
+
+  it('🔴 換了 epoch、設備還沒更新：寬限期內手機收得到舊版本的狀態，指令改用設備最近開口的版本——燈照樣開得了', async () => {
+    const lamp = rotated();
+    const port = await relay({ lamp });
+    const { dev, commands } = await device(port, 'lamp');
+    const client = await phone(port, owner, { devices: { lamp } });
+    const got: IotStateMessage[] = [];
+    const sub = client.subscribeState('home/lamp/#', (m) => got.push(m));
+    cleanups.push(() => sub.close());
+    await sleep(150);
+    expect(await dev.publishState({ 'home/lamp/power': 'OFF' })).toBe(true);
+    for (let i = 0; i < 40 && got.length === 0; i++) await sleep(25);
+    expect(got).toMatchObject([{ topic: 'home/lamp/power', payload: 'OFF', live: true }]);
+    const r = await client.command('home/lamp/power', 'ON', { device: 'lamp', urgency: 'realtime' });
+    expect(r.status).toBe('ok');
+    expect(commands.map((c) => c.payload)).toEqual(['ON']);
+  });
+
+  it('設備已經換成新版本：手機用新版本（還沒聽過設備開口時預設就是新版本）', async () => {
+    const lamp = rotated();
+    const port = await relay({ lamp });
+    const { commands } = await device(port, 'lamp', { deviceKey: home.deviceKey('lamp', 1), kid: 'lamp.1' });
+    const client = await phone(port, owner, { devices: { lamp } });
+    const r = await client.command('home/lamp/power', 'ON', { device: 'lamp', urgency: 'realtime' });
+    expect(r.status).toBe('ok');
+    expect(commands).toHaveLength(1);
   });
 });

@@ -16,6 +16,7 @@ import { encodeIotDeviceFrame, IOT_DEVICE_HEARTBEAT, IOT_DEVICE_HEARTBEAT_ACK, I
 import { parseIotDownMessage, type IotDeviceAckStatus, type IotUpAck, type IotUpMessage } from './device-message.js';
 import type { IotEncoding, IotTopicValue } from './content.js';
 import { isValidIotTopic } from './topic.js';
+import { IOT_QUOTA_CLOSE_CODE } from '../protocol/relay-reject.js';
 
 export { parseIotDownMessage, parseIotUpMessage, IOT_DEVICE_ACK_STATUSES } from './device-message.js';
 export type { IotDeviceAckStatus, IotDownCommand, IotDownMessage, IotDownQuery, IotUpAck, IotUpMessage, IotUpState } from './device-message.js';
@@ -319,7 +320,7 @@ export function connectIotDevice(opts: IotDeviceOptions): IotDeviceConnection {
       stopHeartbeat();
       if (closed) return;
       const quota = /^iot-quota:(\d{1,12})$/.exec(ev.reason ?? '');
-      if (ev.code === 4429) {
+      if (ev.code === IOT_QUOTA_CLOSE_CODE) {
         const reset = quota ? Number(quota[1]) : undefined;
         if (urls.length > 1) {
           urlIndex = (urlIndex + 1) % urls.length;

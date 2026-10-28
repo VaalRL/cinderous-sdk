@@ -12,6 +12,7 @@
  * | 關閉碼 1008 `rate-limited`／`too-many-connections` | `backoff` | 整座 | `rateLimitedMs` |
  * | 關閉碼 4003、1008 其他（車道被拒） | `inapplicable` | 整座 | `inapplicableMs` |
  * | 關閉碼 1013（`unavailable`：額度用完、儲存起不來；SDK ADR 0108） | `backoff` | 整座 | `unavailableMs`（預設 5 分鐘）；那一座回了 EOSE 就清掉 |
+ * | 關閉碼 4429（`unavailable`，詞元 `iot-quota`：C′ 家庭今日額度用完；SDK ADR 0122） | `backoff` | 整座 | 到原因帶的重置時間（加最多 60 秒抖動、最多一天）；沒帶＝`unavailableMs` |
  * | `invalid`、`stale`、`pow`、`error`、`timeout`、`disconnected`、`auth-failed:` | 不標記（只記最近一次） | — | — |
  *
  * `invalid` 是自己的錯：換哪座都一樣，所以不標記、不改用、不重試。
@@ -168,7 +169,7 @@ export class RelayHealthTracker {
             kind: o.kind,
             reason: o.reason,
             since: existing?.since ?? now,
-            until: now + ms,
+            until: o.until !== undefined && o.until > now ? o.until : now + ms,
             ...(minBytes !== undefined ? { minBytes: Math.min(minBytes, existing?.minBytes ?? Infinity) } : {}),
         };
         entry.marks = [...entry.marks.filter((m) => m.scope !== scope && m.until > now), mark];

@@ -7,10 +7,36 @@ import type { NostrEvent } from '../protocol/event.js';
 import { verifyEvent } from '../protocol/sign.js';
 import { publishRejections, type ClassifiedRejection } from '../publish-rejections.js';
 import { publishPaced, type RelayEventBudget } from '../relay-budget.js';
+import type { RelayHealthSnapshot } from '../relay-health.js';
 import type { PublishResult, RelayTransport } from '../relay-pool.js';
 
-/** `RelayPool` 直接符合；有 `query` 就用它，沒有就以訂閱＋EOSE 代替 */
-export type IotTransport = RelayTransport & { query?(filters: Filter[], timeoutMs?: number): Promise<Event[]> };
+/**
+ * `RelayPool` 直接符合；有 `query` 就用它，沒有就以訂閱＋EOSE 代替。
+ * 有 `relayHealth` 就看得出「relay 已經以 4429 關掉、還沒到重置時間」（SDK ADR 0122）。
+ */
+export type IotTransport = RelayTransport & {
+  query?(filters: Filter[], timeoutMs?: number): Promise<Event[]>;
+  relayHealth?(): ReadonlyMap<string, RelayHealthSnapshot>;
+};
+
+/** 中繼的額度拒收（ADR 0049 §10）：`…iot-quota:<重置 unix 秒>` 或只有詞元；4429 關閉的原因也是這個格式 */
+export const IOT_QUOTA_REJECTION = /\biot-quota:\s*(\d{1,12})?/;
+
+/**
+ * 這條路線的每一座（不含備援）都還掛著 4429 `iot-quota` 的標記（SDK ADR 0122）：額度用完、連線被關、還沒到重置時間。
+ * 回 `{ reset }`（unix 秒，取最早的；不知道就沒有），否則 undefined。
+ */
+export function iotQuotaHold(pool: IotTransport): { readonly reset?: number } | undefined {
+  const primaries = [...(pool.relayHealth?.().values() ?? [])].filter((h) => !h.standby);
+  if (primaries.length === 0) return undefined;
+  let reset: number | undefined;
+  for (const health of primaries) {
+    const m = health.marks.filter((mark) => mark.kind === 'unavailable').map((mark) => IOT_QUOTA_REJECTION.exec(mark.reason)).find((x) => x !== null);
+    if (m === undefined) return undefined;
+    if (m[1] !== undefined) reset = Math.min(reset ?? Infinity, Number(m[1]));
+  }
+  return reset !== undefined ? { reset } : {};
+}
 
 /** 一次性查詢：有 `query` 用它，否則訂閱到第一個 EOSE（或逾時）為止 */
 export function iotQuery(pool: IotTransport, filters: Filter[], timeoutMs: number): Promise<Event[]> {

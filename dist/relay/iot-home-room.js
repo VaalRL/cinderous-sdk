@@ -12,6 +12,7 @@
 import { IOT_DEVICE_HEARTBEAT, IOT_DEVICE_HEARTBEAT_ACK, verifyIotDeviceToken } from '../iot/device-frame.js';
 import { IOT_KIND_ACK, IOT_KIND_COMMAND, IOT_KIND_HEARTBEAT, IOT_KIND_QUERY, IOT_KIND_RETAINED, IOT_KIND_STATE } from '../iot/kinds.js';
 import { parseIotAcl } from '../iot/acl.js';
+import { IOT_QUOTA_CLOSE_CODE } from '../protocol/relay-reject.js';
 import { ConnPersistence } from './conn-persistence.js';
 import { storeOptions } from './host-config.js';
 import { IOT_REALTIME_ADDRESSABLE_PER_AUTHOR } from './iot-realtime-config.js';
@@ -22,7 +23,7 @@ import { SqlMessageStore } from './sql-message-store.js';
 /** 設備連線被新連線取代時的關閉碼 */
 export const IOT_DEVICE_REPLACED_CLOSE = 4409;
 /** 本家預算用完（§10.2）：reason `iot-quota:<reset unix 秒>`，設備據此睡到重置時間，不狂重連 */
-export const IOT_QUOTA_CLOSE = 4429;
+export const IOT_QUOTA_CLOSE = IOT_QUOTA_CLOSE_CODE;
 const QUOTA_KEY = 'cinder:iot-quota';
 /** 手機端 RelayCore 只收的 kind：IoT 事件（NIP-42 AUTH 另外處理） */
 const IOT_PHONE_KINDS = [IOT_KIND_COMMAND, IOT_KIND_ACK, IOT_KIND_STATE, IOT_KIND_QUERY, IOT_KIND_RETAINED, IOT_KIND_HEARTBEAT];

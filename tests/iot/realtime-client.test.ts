@@ -120,4 +120,26 @@ describe('設備 ack 的信任', () => {
     net.deliver(ack(gwSk, report(upAck(msgId)), cmd));
     expect((await pending).status).toBe('ok');
   });
+
+  it('金鑰輪換（SDK ADR 0122）：previousEpoch 寬限內舊版本的 ack 算數；過了 until 就不算', async () => {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const run = async (until: number): Promise<string> => {
+      const net = new FakeTransport();
+      const c = new IotClient({ pool: net, signer: member, home, gateway: gwPub, budget: new RelayEventBudget({ perMinute: 6000 }), readTimeoutMs: 50, realtime: { devices: { lamp: { epoch: 1, previousEpoch: { epoch: 0, until } } } } });
+      clients.push(c);
+      const pending = c.command('home/lamp/power', 'ON', { device: 'lamp', ackTimeoutMs: 150 });
+      await sleep(10);
+      const cmd = net.published[0]!;
+      net.deliver(ack(gwSk, { v: 1, type: 'dev-ack', msgId: newIotMsgId(), ts: Date.now(), device: 'lamp', env: upAck(outer(cmd)!.msgId, 0) }, cmd));
+      return (await pending).status;
+    };
+    expect(await run(nowSec + 3600)).toBe('ok');
+    expect(await run(nowSec - 1)).toBe('timeout');
+  });
+
+  it('previousEpoch 要比 epoch 小、until 要是整數', () => {
+    const make = (lamp: object) => new IotClient({ pool: new FakeTransport(), signer: member, home, gateway: gwPub, realtime: { devices: { lamp } } });
+    expect(() => make({ epoch: 1, previousEpoch: { epoch: 1, until: 1 } })).toThrow(RangeError);
+    expect(() => make({ epoch: 1, previousEpoch: { epoch: 0, until: 1.5 } })).toThrow(RangeError);
+  });
 });

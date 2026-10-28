@@ -111,6 +111,8 @@ ADR 0120 把手機端和設備端接上了，但 relay 這一側只能手動設�
 
 ## 後續
 
+> 前兩點已在 [SDK ADR 0122](0122-iot-realtime-quota-close-and-rotation.md) 做掉（2026-10-28）。
+
 - 連線池把 relay 的 close code（4429 `iot-quota:<reset>`）交給 `IotClient`，讓斷線時也能回 `quota`（ADR 0120〈後續〉第 3 點，這次沒做）。
 - `iot realtime device --rotate`：換金鑰版本並設 `previousEpoch` 寬限；閘道私鑰的輪換。
 - 還沒有部署到 Cloudflare，也還沒接過真的 ESP32／Tasmota 設備。

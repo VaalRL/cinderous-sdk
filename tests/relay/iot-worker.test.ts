@@ -18,6 +18,7 @@ import { IOT_KIND_ACK, IOT_KIND_COMMAND, IOT_KIND_RETAINED, IOT_KIND_STATE } fro
 import { newIotMsgId, parseIotBody } from '../../src/iot/content.js';
 import { sealIotEnvelope } from '../../src/iot/envelope.js';
 import { decryptDM, encryptDM } from '../../src/protocol/nip44.js';
+import { classifyRelayClose } from '../../src/protocol/relay-reject.js';
 import { finalizeEvent, generateSecretKey, getPublicKey, type NostrEvent } from '../../src/protocol/index.js';
 import worker, { IotHomeRoom, relayInfoFrom, type Env } from '../../src/relay/worker.js';
 
@@ -28,6 +29,7 @@ class FakeWs {
   sent: string[] = [];
   closed = false;
   closeCode: number | undefined;
+  closeReason: string | undefined;
   tags: string[] = [];
   serializeAttachment(o: unknown): void {
     this.attachment = JSON.parse(JSON.stringify(o));
@@ -40,9 +42,10 @@ class FakeWs {
     this.sent.push(s);
   }
   accept(): void {}
-  close(code?: number): void {
+  close(code?: number, reason?: string): void {
     this.closed = true;
     this.closeCode = code;
+    this.closeReason = reason;
   }
   drain(): string[] {
     const out = this.sent;
@@ -347,6 +350,9 @@ describe('家庭預算（ADR 0049 §10.3）', () => {
     expect(dev.closed).toBe(true);
     expect(dev.closeCode).toBe(4429);
     expect(phone.closed).toBe(true);
+    // 契約（SDK ADR 0122）：手機的連線池從關閉原因讀得出重置時間
+    expect(classifyRelayClose(phone.closeCode, phone.closeReason)).toMatchObject({ kind: 'unavailable', token: 'iot-quota', reset: expect.any(Number) });
+    expect(classifyRelayClose(phone.closeCode, phone.closeReason).reset! * 1000).toBeGreaterThan(Date.now());
     const res = await room.fetch(upgrade(`/iot/v1/home/${home.homeTag}`));
     expect(res.status).toBe(503);
     expect(res.headers.get('Cinder-Quota')).toBe('home-budget');
