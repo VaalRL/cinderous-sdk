@@ -21,7 +21,7 @@ export interface DeployPackageContext {
     /**
      * SDK 怎麼進到部署包：
      * - `embed`（預設，公開前）：複製到 `sdk/`，以 `file:./sdk` 安裝——由寫檔的一方（CLI）複製，這裡只回報 `copySdk`；
-     * - `spec`：以套件相依安裝，例如 `github:VaalRL/cinderous-sdk#v0.77.5`（公開 repo；不上 npm，SDK ADR 0110）。
+     * - `spec`：以套件相依安裝，例如 `github:VaalRL/cinderous-sdk#v0.77.6`（公開 repo；不上 npm，SDK ADR 0110）。
      */
     sdkSource?: {
         kind: 'embed';

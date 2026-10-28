@@ -1,6 +1,6 @@
 {
   "name": "@cinderous/client",
-  "version": "0.77.5",
+  "version": "0.77.6",
   "description": "Cinderous SDK：客戶端（多中繼連線池、NIP-44／NIP-17、封鎖名單、身分、試算器）、共用協定，中繼（核心、Cloudflare Worker、Node 主機），以及 `cinderous` 命令列與一鍵部署",
   "license": "AGPL-3.0-only",
   "repository": {

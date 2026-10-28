@@ -4,6 +4,10 @@ Releases are git tags; install one with `npm install github:VaalRL/cinderous-sdk
 
 每個版本是一個 git tag，安裝方式是 `npm install github:VaalRL/cinderous-sdk#vX.Y.Z`。每一版列出那一版的改動（取自 commit 紀錄）；每項改動的理由寫在它引用的 ADR 裡（[docs/adr/](docs/adr/README.md)）。
 
+## v0.77.6 — 2026-10-28
+
+- test(relay): node-capacity 的六則留言共用同一個基準時間（跨秒時兩則同 id、被當重複，CI 偶發失敗；ADR 0114 補充）
+
 ## v0.77.5 — 2026-10-28
 
 - test(star): 灌量者被請離開後就停止送（GitHub runner 較快時的測試競態）

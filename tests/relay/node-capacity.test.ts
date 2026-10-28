@@ -118,10 +118,16 @@ function publishAll(url: string, events: ReturnType<typeof finalizeEvent>[]): Pr
   });
 }
 
-/** 約 200 KB 的離線留言：五則就超過 1 MiB 的天花板 */
-function bigNote(sk: Uint8Array, to: string, n: number): ReturnType<typeof finalizeEvent> {
+/**
+ * 約 200 KB 的離線留言：五則就超過 1 MiB 的天花板。
+ * 每則的 created_at 從同一個 `now` 往回推：每則各取一次現在時間的話，跨過秒的邊界時兩則會一模一樣（同一個 id），
+ * 中繼回 `duplicate:`、只存五則，第六則就放得下（CI 上的偶發失敗）。
+ */
+function bigNotes(sk: Uint8Array, to: string, count: number): ReturnType<typeof finalizeEvent>[] {
   const now = Math.floor(Date.now() / 1000);
-  return finalizeEvent({ kind: 1059, created_at: now - n, tags: [['p', to]], content: 'x'.repeat(200_000) }, sk);
+  return Array.from({ length: count }, (_, n) =>
+    finalizeEvent({ kind: 1059, created_at: now - n, tags: [['p', to]], content: 'x'.repeat(200_000) }, sk),
+  );
 }
 
 describe('startNodeRelay：空間上限（SDK ADR 0099）', () => {
@@ -136,7 +142,7 @@ describe('startNodeRelay：空間上限（SDK ADR 0099）', () => {
     const p = await start({ REQUIRE_AUTH: '0', MAX_EVENTS_PER_MINUTE: '0', DO_CEILINGS_MIB: 'strict=1/1' });
     const sk = generateSecretKey();
     const to = getPublicKey(generateSecretKey());
-    const oks = await publishAll(`ws://127.0.0.1:${p}`, [0, 1, 2, 3, 4, 5].map((n) => bigNote(sk, to, n)));
+    const oks = await publishAll(`ws://127.0.0.1:${p}`, bigNotes(sk, to, 6));
     expect(oks.slice(0, 5).every((ok) => ok[2] === true)).toBe(true);
     expect(oks[5]![2]).toBe(false);
     expect(String(oks[5]![3])).toMatch(/^blocked: ceiling/);
@@ -146,7 +152,7 @@ describe('startNodeRelay：空間上限（SDK ADR 0099）', () => {
     const p = await start({ REQUIRE_AUTH: '0', MAX_EVENTS_PER_MINUTE: '0', DO_CEILINGS_MIB: 'strict=1/1', CEILING_MODE: 'evict' });
     const sk = generateSecretKey();
     const to = getPublicKey(generateSecretKey());
-    const oks = await publishAll(`ws://127.0.0.1:${p}`, [0, 1, 2, 3, 4, 5].map((n) => bigNote(sk, to, n)));
+    const oks = await publishAll(`ws://127.0.0.1:${p}`, bigNotes(sk, to, 6));
     expect(oks.every((ok) => ok[2] === true)).toBe(true);
   });
 });
