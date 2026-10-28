@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { apiEntryPoints, API_OUT, importPath } from '../../site/typedoc.config.mjs';
+import typedocConfig, { apiEntryPoints, API_OUT, importPath } from '../../site/typedoc.config.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const pkg = JSON.parse(readFileSync(`${root}package.json`, 'utf8')) as { exports: Record<string, unknown> };
@@ -29,6 +29,13 @@ describe('apiEntryPoints', () => {
 
   it('產出放在 VitePress 的產出裡的 api/（同一個 Pages 部署）', () => {
     expect(API_OUT.replaceAll('\\', '/')).toMatch(/site\/\.vitepress\/dist\/api$/);
+  });
+});
+
+describe('連結檢查', () => {
+  it('連不到的 {@link} 讓建置失敗（CI 的 docs:build 會擋下來）', () => {
+    expect(typedocConfig.validation).toMatchObject({ invalidLink: true });
+    expect(typedocConfig.treatWarningsAsErrors).toBe(true);
   });
 });
 

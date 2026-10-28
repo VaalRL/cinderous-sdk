@@ -151,7 +151,7 @@ export class NostrVaultTransport {
         return this.#opts.inboxAck !== false && this.#ackRelays.length > 0;
     }
     /**
-     * 現在就把處理完的 id 送出確認（SDK ADR 0067 §3）：每則最多 {@link INBOX_ACK_MAX_IDS} 個、只送給宣告了的中繼。
+     * 現在就把處理完的 id 送出確認（SDK ADR 0067 §3）：每則最多 {@link "@cinderous/client/protocol"!INBOX_ACK_MAX_IDS} 個、只送給宣告了的中繼。
      * 沒有宣告的中繼、或沒有一座收下時留著下次再送。同時呼叫多次共用同一輪。平常不必呼叫：滿 500 個、
      * 每 5 分鐘、補拉完成、`stop()` 時都會自動送。
      */

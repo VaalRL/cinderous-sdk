@@ -161,7 +161,7 @@ export interface RelayCoreOptions {
      */
     authMaxAgeSec?: number;
     /**
-     * 收件確認的寬限（秒；SDK ADR 0067）。給了（而且 store 有 `ackInbox`）就處理 {@link INBOX_ACK_KIND}：
+     * 收件確認的寬限（秒；SDK ADR 0067）。給了（而且 store 有 `ackInbox`）就處理 {@link "@cinderous/client/protocol"!INBOX_ACK_KIND}：
      * 本人確認過的列降為「現在＋寬限」到期；確認事件本身不存、不轉發。未設＝不處理，那個 kind 照一般瞬時事件轉發。
      * 宿主以 {@link inboxAckGraceFor} 算（比照未註冊應用的保存期、不超過站方保存上限），並在 NIP-11 宣告同一個值。
      */

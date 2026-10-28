@@ -52,7 +52,7 @@ export interface MessageStoreOptions {
      * **整顆 DO** 的可尋址總位元組天花板（ADR-0367 §決策 2）；未設＝不限制。
      *
      * 每作者總量擋不住換金鑰（pubkey 不用錢），所以還需要一道與身分無關的上限。
-     * 超過時的行為由 {@link addressableCeilingEvicts} 決定。
+     * 超過時的行為由 {@link ceilingEvicts} 決定。
      */
     addressableMaxTotalBytes?: number;
     /**

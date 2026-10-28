@@ -103,7 +103,7 @@ export interface ApnsRequest {
 
 /**
  * 組出一則 APNs 請求（純函式；兩版共用）：`POST /3/device/<token>`、`authorization: bearer <provider token>`、
- * 一般推播（`apns-push-type: alert`、高優先 10、到期＝現在＋{@link IOT_PUSH_DELIVERY_TTL_SEC}），本文經 `iosWakePayload` 守門。
+ * 一般推播（`apns-push-type: alert`、高優先 10、到期＝現在＋{@link "@cinderous/client/iot"!IOT_PUSH_DELIVERY_TTL_SEC}），本文經 `iosWakePayload` 守門。
  */
 export function buildApnsRequest(input: {
   credentials: Pick<ApnsCredentials, 'topic' | 'environment'>;

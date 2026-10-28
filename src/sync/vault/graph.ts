@@ -365,8 +365,8 @@ export interface PlanMergeOptions {
   /**
    * Markdown 合併規則（SDK ADR 0059）。協調器只在**所有**版本頭都支援時打開（{@link supportsMergeRules}）：
    * - 兩邊都是文字檔、找不到共同祖先（例如兩台各自新建的同路徑檔案被收成同一個檔案）：以空檔為祖先三方合併
-   *   （{@link commonLinesBase} 精簡衝突），合不了才退回 callout／衝突副本；
-   * - 衝突區塊兩邊只差在任務勾選狀態：自動合併（{@link resolveTaskCheckboxConflict}）。
+   *   （{@link "@cinderous/client/sync"!commonLinesBase} 精簡衝突），合不了才退回 callout／衝突副本；
+   * - 衝突區塊兩邊只差在任務勾選狀態：自動合併（{@link "@cinderous/client/sync"!resolveTaskCheckboxConflict}）。
    */
   mergeRules?: boolean;
   /**
@@ -600,7 +600,7 @@ function tryCalloutMerge(
 }
 
 /**
- * 沒有共同祖先的兩個文字版本的「空檔祖先」（SDK ADR 0059）：兩邊共同的行（{@link commonLinesBase}）。
+ * 沒有共同祖先的兩個文字版本的「空檔祖先」（SDK ADR 0059）：兩邊共同的行（{@link "@cinderous/client/sync"!commonLinesBase}）。
  * 兩邊的內容都要在手上（否則丟 `MissingContentError`，等內容到）；不是合法 UTF-8 回 undefined（照舊）。
  */
 function virtualBase(a: Side, b: Side): { node: VaultVersion; bytes: Uint8Array } | undefined {

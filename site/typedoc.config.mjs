@@ -42,8 +42,8 @@ export default {
   },
   // 不連外部字型或追蹤（與 VitePress 網站相同，ADR 0113）
   githubPages: true,
-  // 註解是中英混寫的散文，不要求每個匯出都有說明
+  // 註解是中英混寫的散文，不要求每個匯出都有說明；連不到的 {@link} 讓建置失敗（ADR 0115 補充）
   validation: { notExported: false, invalidLink: true, notDocumented: false },
-  treatWarningsAsErrors: false,
+  treatWarningsAsErrors: true,
   logLevel: 'Warn',
 };

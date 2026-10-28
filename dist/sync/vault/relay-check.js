@@ -147,7 +147,7 @@ export async function fetchRelayFilePolicy(relayUrl, opts = {}) {
     return out;
 }
 /**
- * 哪幾座宣告了收件確認（SDK ADR 0067 §2；`cinder_inbox_ack.kind` 是 {@link INBOX_ACK_KIND}）。
+ * 哪幾座宣告了收件確認（SDK ADR 0067 §2；`cinder_inbox_ack.kind` 是 {@link "@cinderous/client/protocol"!INBOX_ACK_KIND}）。
  * 交給 `NostrVaultTransport.setInboxAckRelays`：確認只送給這幾座。讀不到的（`null`）不算。
  */
 export function inboxAckRelays(policies) {
@@ -167,7 +167,7 @@ export async function checkRelayAcceptsFiles(relayUrl, opts = {}) {
 const DEFAULT_FILE_TTL_SECONDS = 7 * 86_400;
 /**
  * 中繼沒宣告時的保守預設（SDK ADR 0029）：
- * - 單檔上限：{@link FILE_TIER_MAX_BYTES}（≈16.5 MB，v0.24 以前的固定值；舊版收端只收得下這麼大）。
+ * - 單檔上限：{@link "@cinderous/client/sync"!FILE_TIER_MAX_BYTES}（≈16.5 MB，v0.24 以前的固定值；舊版收端只收得下這麼大）。
  * - 配額：以中繼「檔案車道」的配額公式（兩個上限檔＋128 塊餘裕）套上這個預設單檔上限：2 × 360 ＋ 128 ＝ 848 塊。
  *   比任何已知的中繼設定都小（中繼的預設 4,000；Cinderous 檔案車道 1,440）。
  * - 保存期：7 天（客戶端自己的過期章）。

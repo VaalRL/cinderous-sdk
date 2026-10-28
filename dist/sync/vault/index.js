@@ -19,7 +19,7 @@ export { BUNDLE_CAPABILITY, DEFAULT_BASE_VERSIONS_KEPT, DEFAULT_BULK_THRESHOLD, 
 export { decodeVaultMessage, encodedVaultMessageLength, encodeVaultMessage, isSafeVaultPath, MAX_BUNDLE_ITEMS, parseVersion, validateVaultMessage, vaultFrameCount, VAULT_WIRE_VERSION, } from './codec.js';
 export { CONFLICT_CALLOUT_MARKER, CONFLICT_CALLOUT_MAX_CHARS, CONFLICT_CALLOUT_MAX_LINES, CONFLICT_CALLOUT_MAX_VERSIONS, CONFLICT_CALLOUT_TYPE, CONFLICT_CALLOUTS_CAPABILITY, isMarkdownPath, mergeWithConflictCallouts, parseConflictCallouts, renderConflictCallout, resolveConflictCallout, } from './conflict-callout.js';
 export { ancestorsOf, bestCommonAncestor, compareVersions, computeHeads, deterministicId, CALLOUT_BREAK_CAPABILITY, isCalloutBreakId, isCalloutCapableId, isMergeRulesId, isMergeVersion, markCalloutBreakId, markCalloutCapableId, markMergeRulesId, MERGE_RULES_CAPABILITY, MissingContentError, planMerge, sha256Hex, supportsCalloutBreak, supportsConflictCallouts, supportsMergeRules, } from './graph.js';
-export { createNostrVaultTransport, DEFAULT_VAULT_TTL_SECONDS, frameVaultMessage, NostrVaultTransport, VAULT_FRAME_BYTES, VAULT_MAX_FRAMES, VAULT_OP_KIND, } from './nostr-transport.js';
+export { createNostrVaultTransport, BACKFILL_PAGE_TIMEOUT_MS, DEFAULT_VAULT_TTL_SECONDS, frameVaultMessage, NostrVaultTransport, VAULT_FRAME_BYTES, VAULT_MAX_FRAMES, VAULT_OP_KIND, } from './nostr-transport.js';
 export { RelayEventBudget, relayEventsPerMinute, sharedRelayEventBudget } from '../../relay-budget.js';
 export { addRange, coversRange, RelayLedger } from './relay-ledger.js';
 export { EMPTY_SHA256, parseVaultEntryMeta, peerNodeLink, VAULT_STREAM_PURPOSE, } from './p2p.js';

@@ -92,6 +92,7 @@ export {
 } from './graph.js';
 export {
   createNostrVaultTransport,
+  BACKFILL_PAGE_TIMEOUT_MS,
   DEFAULT_VAULT_TTL_SECONDS,
   frameVaultMessage,
   NostrVaultTransport,

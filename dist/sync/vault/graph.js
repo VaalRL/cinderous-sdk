@@ -510,7 +510,7 @@ function tryCalloutMerge(a, b, base, baseBytes, rules = false, calloutBreak = fa
     return { body: { hash: sha256Hex(bytes), size: bytes.length, text: true, p2p: false, bytes }, ids: result.callouts };
 }
 /**
- * 沒有共同祖先的兩個文字版本的「空檔祖先」（SDK ADR 0059）：兩邊共同的行（{@link commonLinesBase}）。
+ * 沒有共同祖先的兩個文字版本的「空檔祖先」（SDK ADR 0059）：兩邊共同的行（{@link "@cinderous/client/sync"!commonLinesBase}）。
  * 兩邊的內容都要在手上（否則丟 `MissingContentError`，等內容到）；不是合法 UTF-8 回 undefined（照舊）。
  */
 function virtualBase(a, b) {

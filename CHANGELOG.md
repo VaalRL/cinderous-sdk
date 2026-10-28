@@ -4,6 +4,10 @@ Releases are git tags; install one with `npm install github:VaalRL/cinderous-sdk
 
 每個版本是一個 git tag，安裝方式是 `npm install github:VaalRL/cinderous-sdk#vX.Y.Z`。每一版列出那一版的改動（取自 commit 紀錄）；每項改動的理由寫在它引用的 ADR 裡（[docs/adr/](docs/adr/README.md)）。
 
+## v0.77.8 — 2026-10-28
+
+- docs(api): 修掉 API 參考的 17 個連不到的 `{@link}`，之後連不到的連結讓 `docs:build` 失敗；`@cinderous/client/sync/vault` 多匯出 `BACKFILL_PAGE_TIMEOUT_MS`（ADR 0115 補充）
+
 ## v0.77.7 — 2026-10-28
 
 - docs(site): API 參考——TypeDoc 從 `dist/*.d.ts` 產生，放在說明網站的 `/api/`（ADR 0115）

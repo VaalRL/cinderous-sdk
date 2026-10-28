@@ -44,7 +44,7 @@ export const AUTH_MAX_AGE_SEC = 600;
 export const MAX_FUTURE_SKEW_SEC = 15 * 60;
 
 /**
- * 過去方向時鐘容忍（秒）。**必須大於 {@link TIMESTAMP_JITTER_SECONDS}**——NIP-59 刻意把外層
+ * 過去方向時鐘容忍（秒）。**必須大於 {@link "@cinderous/client/protocol"!TIMESTAMP_JITTER_SECONDS}**——NIP-59 刻意把外層
  * `created_at` 往前推最多 2 天以免中繼從時序關聯出社交圖譜，設小了會擋掉幾乎每一則 Gift Wrap。
  * 這條不變量由 `host-config.test.ts` 釘死。
  */

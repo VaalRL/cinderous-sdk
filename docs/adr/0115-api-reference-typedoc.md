@@ -29,12 +29,12 @@
 - ＋ 多 18 個開發相依套件；`npm audit` 沒有因此多出新的公告。只用來建網站，不進 `files`。
 - － API 參考的版面是 TypeDoc 的，和 VitePress 網站不一樣；搜尋也是分開的。
 - － 產出約 1,600 個檔案、23 MB（根模組重新匯出各子路徑，同一個符號會出現在多個模組下）；GitHub Pages 的上限是 1 GB。
-- － 目前有 17 個連不到的 `{@link}` 警告（連到 `INBOX_ACK_KIND`、`READONLY_LANES_MAX` 等沒有匯出的常數）。
+- ~~－ 目前有 17 個連不到的 `{@link}` 警告（連到 `INBOX_ACK_KIND`、`READONLY_LANES_MAX` 等沒有匯出的常數）。~~（已修，見〈補充〉）
 - － 註解是中文為主，API 參考沒有英文版。
 
 ## 後續（未做）
 
-- 修掉 17 個 `{@link}` 警告（匯出那些常數，或改成文字），之後把警告當錯誤（`treatWarningsAsErrors`）。
+- ~~修掉 17 個 `{@link}` 警告（匯出那些常數，或改成文字），之後把警告當錯誤（`treatWarningsAsErrors`）。~~（已做，見〈補充〉）
 - ~~ADR 0113 的 P2：從 `DEPLOY_OPTION_SPECS` 產生部署設定參考頁。~~（ADR 0116 已做）
 
 ## 驗證
@@ -42,3 +42,25 @@
 - `tests/site/api-docs.test.ts`：入口點的推導、真正的 `package.json` 每個有型別的子路徑都有入口點且檔案存在、模組改名後都是真的子路徑、產出位置（先失敗，實作後通過）。
 - `npm run docs:build`：VitePress 與 TypeDoc 都完成（0 個錯誤、17 個警告）。
 - 本機 `vitepress preview`：`/api/`、模組頁、`startNodeRelay` 函式頁（有 JSDoc 說明）、搜尋索引都是 200；導覽列的連結帶 `target="_self"`。
+
+## 補充：修掉 17 個 `{@link}` 警告，之後連不到就讓建置失敗（2026-10-28）
+
+使用者 2026-10-28：「修掉 API 參考的 17 個連結警告」。
+
+**原因**：那些常數幾乎都有公開匯出，問題在 `{@link X}` 的解析範圍。TypeDoc 用 TypeScript 解析連結，只看得到註解所在檔案 import 的名字；而 `tsc` 產生 `.d.ts` 時，只在值的位置用到的 import（例如 `MAX_PAST_SKEW_SEC = TIMESTAMP_JITTER_SECONDS + …`）會被拿掉。所以原始碼裡連得到，`dist/*.d.ts` 裡卻連不到。
+
+**做法**：
+
+1. 連到別的模組時，寫成使用方 import 的完整路徑：`{@link "@cinderous/client/protocol"!INBOX_ACK_KIND}`（TypeDoc 的宣告參照；模組名稱就是 `site/typedoc-plugin.mjs` 改過的名稱）。同一個檔案裡的連結維持 `{@link X}`。
+2. `addressableCeilingEvicts` 是舊名字，改成同一個介面裡的 `ceilingEvicts`。
+3. `BACKFILL_PAGE_TIMEOUT_MS`（補拉每頁的預設逾時）原本沒有從 `@cinderous/client/sync/vault` 匯出，現在匯出。它是 `backfillTimeoutMs` 的預設值，使用方可以拿來算自己的逾時。這是新增的匯出，沒有移除或改名任何東西。
+4. `treatWarningsAsErrors: true`：連不到的 `{@link}` 讓 TypeDoc 回傳非零，CI 的 `check` 工作與 Pages 部署都跑 `docs:build`，所以會被擋下。
+
+**取捨**：編輯器（VS Code）的滑鼠提示不認得 `"…"!X` 這種寫法，會顯示成文字而不是連結。改之前那些連結在 `.d.ts` 裡本來就連不到，所以對使用方沒有變差。
+
+**驗證**：
+
+- `tests/site/api-docs.test.ts` 新增「連不到的 `{@link}` 讓建置失敗」：設定裡 `invalidLink` 與 `treatWarningsAsErrors` 都開著（先失敗，改設定後通過）。
+- TypeDoc：0 個錯誤、0 個警告；連到 `INBOX_ACK_KIND` 的連結指向 `variables/_cinderous_client_protocol.INBOX_ACK_KIND.html`。
+- 故意把 `dist` 裡的一個連結改壞，TypeDoc 回傳 4；改回來後回傳 0。
+- `npm run typecheck` 通過；`vitest`：225 個檔案、3144 個測試全過；`npm run docs:build` 完成。

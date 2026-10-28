@@ -277,7 +277,7 @@ export interface RelaySiteOptions extends RelayFileOptions {
   privateLane?: string;
   /**
    * 唯讀寬限期的舊路徑（SDK ADR 0052；`READONLY_LANES`）：換了私人路徑之後，舊的車道 id 到 `expiresAt` 為止
-   * 只能讀（其他裝置從那裡收到搬家通知）。已經過期的項目直接略過（「過期的自動清掉」）；最多 {@link READONLY_LANES_MAX} 條、
+   * 只能讀（其他裝置從那裡收到搬家通知）。已經過期的項目直接略過（「過期的自動清掉」）；最多 {@link "@cinderous/client/relay"!READONLY_LANES_MAX} 條、
    * 最遠到現在＋31 天；不能與 `privateLane`／`appLanes` 重複。REST 部署另有 `retireLane` 自動算出這一項並保留線上還沒到期的。
    * 🔴 舊的 id 也是秘密：錯誤訊息不回顯；設定檔只能寫 `{ "$env": "NAME" }`（值是 `READONLY_LANES` 的格式）。
    */

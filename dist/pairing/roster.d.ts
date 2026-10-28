@@ -17,7 +17,7 @@ export declare const ROSTER_MAX_EPOCH: number;
  */
 export declare const LEGACY_MAX_RELAY_FILE_BYTES: number;
 /** 這一版 SDK 的版本號（`package.json` 的 version；測試釘住兩者一致） */
-export declare const SDK_VERSION = "0.77.7";
+export declare const SDK_VERSION = "0.77.8";
 /**
  * 這一版 SDK 的裝置能力（SDK ADR 0035 §G9）：
  * - `sdk`：SDK 版本；

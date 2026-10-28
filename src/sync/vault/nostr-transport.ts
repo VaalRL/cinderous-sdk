@@ -120,7 +120,7 @@ export interface NostrVaultTransportOptions {
    * 執行中可用 `setInboxAckRelays` 更新。省略＝還不知道，處理完的 id 先留著。
    */
   inboxAckRelays?: readonly string[];
-  /** 累積滿幾個就送一則確認（1–{@link INBOX_ACK_MAX_IDS}；預設 {@link INBOX_ACK_MAX_IDS}）。也是一則確認最多帶幾個 */
+  /** 累積滿幾個就送一則確認（1–{@link "@cinderous/client/protocol"!INBOX_ACK_MAX_IDS}；預設 {@link "@cinderous/client/protocol"!INBOX_ACK_MAX_IDS}）。也是一則確認最多帶幾個 */
   inboxAckBatch?: number;
   /**
    * 解得開、但不是同步訊框的外層事件（例如外層同為 1060 的名單、中繼搬家通知；SDK ADR 0082）：交給應用，每顆只交一次。
@@ -255,7 +255,7 @@ export class NostrVaultTransport implements VaultSyncTransport {
   }
 
   /**
-   * 現在就把處理完的 id 送出確認（SDK ADR 0067 §3）：每則最多 {@link INBOX_ACK_MAX_IDS} 個、只送給宣告了的中繼。
+   * 現在就把處理完的 id 送出確認（SDK ADR 0067 §3）：每則最多 {@link "@cinderous/client/protocol"!INBOX_ACK_MAX_IDS} 個、只送給宣告了的中繼。
    * 沒有宣告的中繼、或沒有一座收下時留著下次再送。同時呼叫多次共用同一輪。平常不必呼叫：滿 500 個、
    * 每 5 分鐘、補拉完成、`stop()` 時都會自動送。
    */
