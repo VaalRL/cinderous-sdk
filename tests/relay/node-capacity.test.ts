@@ -80,8 +80,14 @@ describe('nodeCapacityFrom（SDK ADR 0099）', () => {
   });
 });
 
-const port = () => 40_000 + Math.floor(Math.random() * 2_000);
 const handles: { close(): void }[] = [];
+
+/** 由系統分配埠（SDK ADR 0114）：固定範圍的隨機埠會和其他測試、Linux 的臨時埠撞在一起 */
+async function start(env: Record<string, string>): Promise<number> {
+  const relay = startNodeRelay({ PORT: '0', ...env }, { memory: true });
+  handles.push(relay);
+  return relay.ready;
+}
 afterEach(() => {
   for (const handle of handles.splice(0)) handle.close();
 });
@@ -121,20 +127,14 @@ function bigNote(sk: Uint8Array, to: string, n: number): ReturnType<typeof final
 
 describe('startNodeRelay：空間上限（SDK ADR 0099）', () => {
   it('NIP-11 照實公告天花板與 evict', async () => {
-    const p = port();
-    handles.push(
-      startNodeRelay({ PORT: String(p), REQUIRE_AUTH: '0', DO_CEILINGS_MIB: 'strict=2048/256', CEILING_MODE: 'evict' }, { memory: true }),
-    );
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    const p = await start({ REQUIRE_AUTH: '0', DO_CEILINGS_MIB: 'strict=2048/256', CEILING_MODE: 'evict' });
     const info = await relayInfo(p);
     expect(info.cinder_ceiling_policy).toBe('evict');
     expect(info.cinder_ceiling_bytes).toEqual({ offline: 2048 * MIB, addressable: 256 * MIB });
   });
 
   it('🔴 reject（預設）：滿了回 blocked: ceiling', async () => {
-    const p = port();
-    handles.push(startNodeRelay({ PORT: String(p), REQUIRE_AUTH: '0', MAX_EVENTS_PER_MINUTE: '0', DO_CEILINGS_MIB: 'strict=1/1' }, { memory: true }));
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    const p = await start({ REQUIRE_AUTH: '0', MAX_EVENTS_PER_MINUTE: '0', DO_CEILINGS_MIB: 'strict=1/1' });
     const sk = generateSecretKey();
     const to = getPublicKey(generateSecretKey());
     const oks = await publishAll(`ws://127.0.0.1:${p}`, [0, 1, 2, 3, 4, 5].map((n) => bigNote(sk, to, n)));
@@ -144,14 +144,7 @@ describe('startNodeRelay：空間上限（SDK ADR 0099）', () => {
   });
 
   it('🔴 evict：滿了照收，淘汰最舊的', async () => {
-    const p = port();
-    handles.push(
-      startNodeRelay(
-        { PORT: String(p), REQUIRE_AUTH: '0', MAX_EVENTS_PER_MINUTE: '0', DO_CEILINGS_MIB: 'strict=1/1', CEILING_MODE: 'evict' },
-        { memory: true },
-      ),
-    );
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    const p = await start({ REQUIRE_AUTH: '0', MAX_EVENTS_PER_MINUTE: '0', DO_CEILINGS_MIB: 'strict=1/1', CEILING_MODE: 'evict' });
     const sk = generateSecretKey();
     const to = getPublicKey(generateSecretKey());
     const oks = await publishAll(`ws://127.0.0.1:${p}`, [0, 1, 2, 3, 4, 5].map((n) => bigNote(sk, to, n)));

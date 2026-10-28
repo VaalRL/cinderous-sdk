@@ -58,6 +58,16 @@ function openDatabase(path: string): DatabaseSyncType {
 /** 宿主從環境變數讀設定（與原本的腳本同一組名稱；見 docs/self-hosting-raspberry-pi.md） */
 export type NodeRelayEnv = Record<string, string | undefined>;
 
+/** `startNodeRelay` 的回傳值。 */
+export interface NodeRelayHandle {
+  close(): void;
+  /**
+   * 開始監聽後給出實際的埠（`PORT=0` 時由系統分配）；監聽失敗（例如 `EADDRINUSE`）就 reject（SDK ADR 0114）。
+   * 不等它也可以：監聽失敗時沒人接住就是未處理的 rejection，與之前「沒人接的 error 事件」一樣讓程序結束。
+   */
+  readonly ready: Promise<number>;
+}
+
 /** 環境變數之外、由呼叫端（例如 CLI）決定的選項。 */
 export interface NodeRelayOptions {
   /**
@@ -76,7 +86,7 @@ export interface NodeRelayOptions {
  * 啟動 Node 版中繼（SDK ADR 0007：原本是一載入就開 server 的腳本，改成可呼叫的函式）。
  * 回傳 `close()`：停掉 HTTP／WebSocket 伺服器與清除排程、關掉 SQLite。
  */
-export function startNodeRelay(env: NodeRelayEnv = process.env, opts: NodeRelayOptions = {}): { close(): void } {
+export function startNodeRelay(env: NodeRelayEnv = process.env, opts: NodeRelayOptions = {}): NodeRelayHandle {
   const port = Number(env.PORT ?? 8787);
   const dbPath = opts.memory ? undefined : (env.DB_PATH ?? "cinder-relay.db");
   const requireAuth = env.REQUIRE_AUTH !== "0"; // 預設開 NIP-42 認證；設 REQUIRE_AUTH=0 可關
@@ -376,13 +386,21 @@ export function startNodeRelay(env: NodeRelayEnv = process.env, opts: NodeRelayO
   const pruneTimer = setInterval(() => store.prune(Math.floor(Date.now() / 1000)), PRUNE_INTERVAL_MS);
   const trafficTimer = meter === undefined ? undefined : setInterval(() => meter.flush(), TRAFFIC_FLUSH_MS);
 
-  httpServer.listen(port, () => {
-    const storage = dbPath === undefined ? "純記憶體" : `DB=${dbPath}`;
-    const writers = allowed ? `, 白名單 ${allowed.length} 人` : "";
-    console.log(`Cinderous node-relay：ws://0.0.0.0:${port}（${storage}, requireAuth=${requireAuth}${writers}）`);
+  const ready = new Promise<number>((resolve, reject) => {
+    httpServer.once("error", reject);
+    httpServer.listen(port, () => {
+      httpServer.off("error", reject);
+      const address = httpServer.address();
+      const actual = typeof address === "object" && address !== null ? address.port : port;
+      const storage = dbPath === undefined ? "純記憶體" : `DB=${dbPath}`;
+      const writers = allowed ? `, 白名單 ${allowed.length} 人` : "";
+      console.log(`Cinderous node-relay：ws://0.0.0.0:${actual}（${storage}, requireAuth=${requireAuth}${writers}）`);
+      resolve(actual);
+    });
   });
 
   return {
+    ready,
     close() {
       clearInterval(pruneTimer);
       if (trafficTimer !== undefined) clearInterval(trafficTimer);

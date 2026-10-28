@@ -344,12 +344,20 @@ export function startNodeRelay(env = process.env, opts = {}) {
     // 每小時清除已過期留言（NIP-40）；對應 Cloudflare 版的 DO alarm（ADR-0056/0059）。
     const pruneTimer = setInterval(() => store.prune(Math.floor(Date.now() / 1000)), PRUNE_INTERVAL_MS);
     const trafficTimer = meter === undefined ? undefined : setInterval(() => meter.flush(), TRAFFIC_FLUSH_MS);
-    httpServer.listen(port, () => {
-        const storage = dbPath === undefined ? "純記憶體" : `DB=${dbPath}`;
-        const writers = allowed ? `, 白名單 ${allowed.length} 人` : "";
-        console.log(`Cinderous node-relay：ws://0.0.0.0:${port}（${storage}, requireAuth=${requireAuth}${writers}）`);
+    const ready = new Promise((resolve, reject) => {
+        httpServer.once("error", reject);
+        httpServer.listen(port, () => {
+            httpServer.off("error", reject);
+            const address = httpServer.address();
+            const actual = typeof address === "object" && address !== null ? address.port : port;
+            const storage = dbPath === undefined ? "純記憶體" : `DB=${dbPath}`;
+            const writers = allowed ? `, 白名單 ${allowed.length} 人` : "";
+            console.log(`Cinderous node-relay：ws://0.0.0.0:${actual}（${storage}, requireAuth=${requireAuth}${writers}）`);
+            resolve(actual);
+        });
     });
     return {
+        ready,
         close() {
             clearInterval(pruneTimer);
             if (trafficTimer !== undefined)

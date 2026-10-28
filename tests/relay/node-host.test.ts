@@ -57,6 +57,25 @@ describe('startNodeRelay', () => {
   });
 });
 
+describe('startNodeRelay：ready（SDK ADR 0114）', () => {
+  it('PORT=0：由系統分配埠，ready 給出實際的埠，連得上', async () => {
+    const relay = startNodeRelay({ PORT: '0' }, { memory: true });
+    handles.push(relay);
+    const p = await relay.ready;
+    expect(p).toBeGreaterThan(0);
+    expect((await firstMessage(`ws://127.0.0.1:${p}`))[0]).toBe('AUTH');
+  });
+
+  it('🔴 埠被佔用：ready 以 EADDRINUSE 失敗，不會默默沒開', async () => {
+    const first = startNodeRelay({ PORT: '0' }, { memory: true });
+    handles.push(first);
+    const p = await first.ready;
+    const second = startNodeRelay({ PORT: String(p) }, { memory: true });
+    handles.push(second);
+    await expect(second.ready).rejects.toMatchObject({ code: 'EADDRINUSE' });
+  });
+});
+
 describe('startDevRelay', () => {
   it('純記憶體開發站：連得上、回得了查詢、關得掉', async () => {
     const p = port();
