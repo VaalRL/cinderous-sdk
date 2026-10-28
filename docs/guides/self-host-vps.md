@@ -244,7 +244,7 @@ journalctl -u cinderous-relay -f
 
 - **沒有在真的 VPS 上跑過**（見頁首）。
 - 產生的 `docker-compose.yml` 對所有網卡發布埠，要照第 3 步手改（ADR 0109〈後續〉）。
-- Docker 映像 `cinderous/relay-lite` 要等 SDK 公開才發布；在那之前都是在 VPS 上自己建（`--build`）。
+- Docker 映像還沒發布（之後的名稱是 `ghcr.io/vaalrl/cinderous-relay-lite`，SDK ADR 0112）；目前都是在 VPS 上自己建（`--build`）。
 - Node 主機沒有車道（`appLanes`、`fileLanes` 只有 Cloudflare 版）。
 - 經 Cloudflare 代理（橘色雲）時，中繼取 `X-Forwarded-For` 的第一段，而 Cloudflare 會保留客戶端自己帶的值，所以每個 IP 的限速可以被繞過；白名單仍然有效（寫入要認證）。請用 DNS only。
 - 純記憶體模式（`persist: false`）重啟就清空，每月流量的用量也會歸零；VPS 上建議一律 `persist: true`。
@@ -359,7 +359,7 @@ The same package runs on Node directly (Node **22.13+**; older 22.x needs `--exp
 
 - Not yet run on a real VPS.
 - The generated `docker-compose.yml` publishes on all interfaces; edit it as in step 3 (ADR 0109, follow-up).
-- The `cinderous/relay-lite` image ships once the SDK is public; until then you build it on the VPS.
+- No Docker image is published yet (it will be `ghcr.io/vaalrl/cinderous-relay-lite`, SDK ADR 0112); for now you build it on the VPS.
 - No lanes on the Node host (`appLanes` / `fileLanes` are Cloudflare-only).
 - Behind Cloudflare's orange-cloud proxy, the relay's first `X-Forwarded-For` entry can be forged, so per-IP limits can be bypassed. The allowlist still holds (writes require AUTH). Use DNS only.
 - Memory-only mode (`persist: false`) loses everything on restart, including this month's traffic count. Use `persist: true` on a VPS.

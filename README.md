@@ -526,7 +526,7 @@ Everything below is shipped and tested. Design records live in [`docs/adr/`](doc
 
 > ⚠ The crypto engines are **experimental**. The Double Ratchet is newly written code that has had one internal independent review but **no external audit**. The post-quantum hybrid protects encryption only — signatures are still secp256k1 — so it defends against "harvest now, decrypt later", and **this is not "quantum-safe"**.
 
-Install from the public GitHub repository, pinned to a tag: `npm install github:VaalRL/cinderous-sdk#v0.77.0` ([ADR 0110](docs/adr/0110-public-github-repo-not-npm.md)).
+Install from the public GitHub repository, pinned to a tag: `npm install github:VaalRL/cinderous-sdk#v0.77.1` ([ADR 0110](docs/adr/0110-public-github-repo-not-npm.md)).
 
 > ⚠ **Not published on npm.** The `@cinderous` scope on npm belongs to an unrelated account, so any `@cinderous/*` package on the npm registry is **not ours**. Always depend on the GitHub URL with a tag and keep your lockfile. Never write a version range such as `"@cinderous/client": "^0.76.1"`: npm would resolve it from the registry.
 
@@ -635,7 +635,7 @@ npx cinderous relay start --port 8080 --allowed-pubkeys="npub1alice...,npub1bob.
 # Keep offline messages across restarts with SQLite
 npx cinderous relay start --persist --db-path /data/relay.db
 ```
-A malformed allowlist entry stops the relay from starting instead of silently opening it up. Non-allowlisted keys are disconnected with close code 4003 right after AUTH; by default each pubkey may hold 5 connections and each IP may send 20 messages per second (tune with `MAX_CONNECTIONS_PER_PUBKEY` / `MAX_MESSAGES_PER_SECOND_PER_IP`; set `TRUST_PROXY=1` behind a reverse proxy). The `cinderous/relay-lite` Docker image will be published once the SDK is public.
+A malformed allowlist entry stops the relay from starting instead of silently opening it up. Non-allowlisted keys are disconnected with close code 4003 right after AUTH; by default each pubkey may hold 5 connections and each IP may send 20 messages per second (tune with `MAX_CONNECTIONS_PER_PUBKEY` / `MAX_MESSAGES_PER_SECOND_PER_IP`; set `TRUST_PROXY=1` behind a reverse proxy). No Docker image is published yet; it will be `ghcr.io/vaalrl/cinderous-relay-lite`.
 
 **Serving `wss://` from a VPS** (domain, automatic HTTPS with Caddy, localhost-only binding, firewall, systemd, maintenance): follow **[docs/guides/self-host-vps.md](docs/guides/self-host-vps.md)** ([ADR 0109](docs/adr/0109-vps-self-host-guide.md)).
 
@@ -804,3 +804,5 @@ If you find this open-source architecture helpful, please consider starring the 
 ## 📄 License
 
 This project is licensed under the [GNU AGPL-3.0](LICENSE) (changed from MIT on 2026-09-27; see [ADR 0001](docs/adr/0001-v0-1-client-scope-agpl-and-git-distribution.md)). Applications that use this SDK must provide corresponding source under the AGPL when distributed or offered over a network.
+
+Contributions are welcome under the DCO; see [CONTRIBUTING.md](CONTRIBUTING.md). Release notes are in [CHANGELOG.md](CHANGELOG.md).

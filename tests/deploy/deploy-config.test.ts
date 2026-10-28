@@ -122,6 +122,13 @@ describe('JSON Schema', () => {
     expect(readFileSync(`${root}schema/cinderous.config.schema.json`, 'utf8').replace(/\r\n/g, '\n')).toBe(renderDeployConfigJsonSchema());
   });
 
+  it('$id 是公開 repo 裡這份檔案打得開的網址（SDK ADR 0112）', () => {
+    const schema = JSON.parse(renderDeployConfigJsonSchema()) as Record<string, any>;
+    const pkg = JSON.parse(readFileSync(`${root}package.json`, 'utf8')) as { exports: Record<string, string> };
+    const file = pkg.exports['./config.schema.json']!.replace(/^\.\//, '');
+    expect(schema.$id).toBe(`https://raw.githubusercontent.com/VaalRL/cinderous-sdk/main/${file}`);
+  });
+
   it('所有層級都不接受未知的鍵；home-tunnel 必填 hostname 與 tunnelToken', () => {
     const schema = JSON.parse(renderDeployConfigJsonSchema()) as Record<string, any>;
     expect(schema.additionalProperties).toBe(false);

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:cinderous:deploy-config:1",
+  "$id": "https://raw.githubusercontent.com/VaalRL/cinderous-sdk/main/schema/cinderous.config.schema.json",
   "title": "cinderous.config.json",
   "description": "Cinderous 中繼的部署設定（SDK ADR 0050）：所有選擇的單一真實來源；秘密只以 { \"$env\": \"NAME\" } 引用。\n\nDeployment settings for a Cinderous relay (SDK ADR 0050): the single source of truth for every choice; secrets are referenced as { \"$env\": \"NAME\" } only.",
   "type": "object",

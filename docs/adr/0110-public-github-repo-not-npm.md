@@ -66,14 +66,14 @@
 - 驗證：
   - 匯出的副本 `npm ci`、typecheck、測試：215 個測試檔、3,030 個測試，`node-capacity` 一個在全套負載下失敗，單獨重跑 3 次都過（時間相關的測試，dev repo 的完整檢查也過）；少掉的 5 個測試檔在 `poc/`。
   - 空專案 `npm install github:VaalRL/cinderous-sdk#v0.76.1` 裝得起來，主入口與 `./relay` 載得到，NIP-11 `software` 是公開 repo。
-- 之後每次發版都要重做一樣的匯出：建議寫成腳本（排除清單與連結改寫放在同一處）。
+- 之後每次發版都要重做一樣的匯出：建議寫成腳本（排除清單與連結改寫放在同一處）。v0.77.0 起用 `scripts/export-public.py`（排除清單與改寫的檔案都在腳本開頭；完整步驟寫在腳本說明裡）。公開 repo 的改寫不另外存一份：腳本拿「上一版匯出→公開 repo HEAD」的差異逐段套到新匯出，dev repo 改到同一段時直接中止。
 
 ## 後續（未做）
 
 **公開時要做：**
 - ADR 0094：發布流程把 `relayWorkerSource` 上傳成 release asset，外掛改用 `fetchRelayWorker`。
-- ADR 0050：部署包預設從內嵌 `sdk/` 改成 `github:VaalRL/cinderous-sdk#vX.Y.Z`；JSON Schema 的 `$id` 從 URN 改成可解析的網址。
-- Docker 映像改名 `ghcr.io/vaalrl/cinderous-relay-lite`（`cinderous/relay-lite` 也被佔了）。
+- ADR 0050：部署包預設從內嵌 `sdk/` 改成 `github:VaalRL/cinderous-sdk#vX.Y.Z`；JSON Schema 的 `$id` 從 URN 改成可解析的網址（`$id` 已改，ADR 0112）。
+- Docker 映像改名 `ghcr.io/vaalrl/cinderous-relay-lite`（`cinderous/relay-lite` 也被佔了）。（文件已改名、映像尚未發布，ADR 0112）
 - 使用方（四款遊戲、CinderSync、Coffice、Cinderous PR #9）的相依網址從 dev repo 換成公開 repo。PR #9 照使用者的規則，要在 SDK 公開之後才合併。
 - `THIRD-PARTY-NOTICES.md` 在相依升版時要重新產生；`relay build` 產出的部署包（內嵌 `sdk/` 或 `relay.mjs`）要附上它。
-- 補 `CONTRIBUTING.md`（貢獻條款：DCO 或 CLA）與 `CHANGELOG.md`（版本紀錄目前散在 ADR 裡）。
+- 補 `CONTRIBUTING.md`（貢獻條款：DCO 或 CLA）與 `CHANGELOG.md`（版本紀錄目前散在 ADR 裡）。（已補，DCO，ADR 0112）

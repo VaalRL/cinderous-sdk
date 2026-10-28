@@ -55,8 +55,8 @@ function schemaFor(spec) {
 export function deployConfigJsonSchema() {
     const root = {
         $schema: 'https://json-schema.org/draft/2020-12/schema',
-        // SDK 公開前沒有可解析的網址：用 URN（編輯器以 $schema 的相對路徑找到檔案）
-        $id: `urn:cinderous:deploy-config:${DEPLOY_CONFIG_VERSION}`,
+        // 公開 repo 裡這份檔案的網址（SDK ADR 0112；之前是 URN，ADR 0050 §8）
+        $id: 'https://raw.githubusercontent.com/VaalRL/cinderous-sdk/main/schema/cinderous.config.schema.json',
         title: 'cinderous.config.json',
         description: 'Cinderous 中繼的部署設定（SDK ADR 0050）：所有選擇的單一真實來源；秘密只以 { "$env": "NAME" } 引用。\n\n' +
             'Deployment settings for a Cinderous relay (SDK ADR 0050): the single source of truth for every choice; secrets are referenced as { "$env": "NAME" } only.',
