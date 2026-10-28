@@ -4,6 +4,10 @@ Releases are git tags; install one with `npm install github:VaalRL/cinderous-sdk
 
 每個版本是一個 git tag，安裝方式是 `npm install github:VaalRL/cinderous-sdk#vX.Y.Z`。每一版列出那一版的改動（取自 commit 紀錄）；每項改動的理由寫在它引用的 ADR 裡（[docs/adr/](docs/adr/README.md)）。
 
+## v0.77.5 — 2026-10-28
+
+- test(star): 灌量者被請離開後就停止送（GitHub runner 較快時的測試競態）
+
 ## v0.77.4 — 2026-10-28
 
 - fix(relay): `startDevRelay` 也回傳 `ready`；所有開中繼的測試改由系統分配埠（`tests/node-relay-harness.ts`）——v0.77.3 的公開 CI 出現 `EADDRINUSE`，證實隨機埠會撞（SDK ADR 0114）

@@ -50,7 +50,8 @@ describe('H1：灌量的人被請離開，不是無辜的慢成員', () => {
     const slow = await joinMember(h);
     const bystander = await joinMember(h);
     slow.hostSide.stalled = true;
-    for (let i = 0; i < 60; i += 1) {
+    // 被請離開之後就不能再送（send 會丟 closed）：機器快時迴圈還沒跑完就會發生
+    for (let i = 0; i < 60 && !flooder.member.closed; i += 1) {
       flooder.member.send(new Uint8Array(2_000));
       if (i % 10 === 9) await sleep(5);
     }
