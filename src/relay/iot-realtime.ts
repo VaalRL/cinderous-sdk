@@ -17,28 +17,42 @@ import {
   parseIotAcl,
   parseIotAclOp,
   type IotAcl,
-  type IotAclInput,
-  type IotRole,
 } from '../iot/acl.js';
 import { IOT_ACL_TOPIC, IOT_QUOTA_TOPIC } from '../iot/topic.js';
-import { newIotMsgId, parseIotBody, type IotAckBody, type IotAckStatus, type IotBody, type IotDeviceReportBody, type IotStateBody } from '../iot/content.js';
+import { newIotMsgId, parseIotBody, type IotAckBody, type IotAckStatus, type IotAclBody, type IotBody, type IotDeviceReportBody, type IotStateBody } from '../iot/content.js';
 import { encodeIotDeviceFrame, IOT_DEVICE_HEARTBEAT_ACK, parseIotDeviceFrame, verifyIotDeviceToken } from '../iot/device-frame.js';
 import { IotUpCounterGuard, parseIotKid, type IotDeviceEnvelope } from '../iot/envelope.js';
-import { IOT_BLIND_LENGTH } from '../iot/keys.js';
 import { IOT_KIND_ACK, IOT_KIND_COMMAND, IOT_KIND_QUERY, IOT_KIND_RETAINED, IOT_KIND_STATE, IOT_STATE_KINDS } from '../iot/kinds.js';
 import type { NostrEvent } from '../protocol/event.js';
 import { getPublicKey, type PubkeyHex, type SecretKey } from '../protocol/keys.js';
 import { decryptDM, encryptDM } from '../protocol/nip44.js';
 import { finalizeEvent } from '../protocol/sign.js';
 import type { Outbound } from './relay-core.js';
+import {
+  checkIotRealtimeConfig,
+  IOT_REALTIME_DEFAULT_HEARTBEAT_SEC,
+  IOT_REALTIME_DEFAULT_TTL_MAX_SEC,
+  IOT_REALTIME_MAX_DEVICES,
+  type IotRealtimeDeviceConfig,
+  type IotRealtimeHomeConfig,
+  type IotRealtimeIssue,
+} from './iot-realtime-config.js';
 
-/** 門鎖類設備必填的本地開啟方式（ADR 0049 §10.5） */
-export const IOT_LOCAL_FALLBACKS = ['key', 'keypad', 'lan', 'ble', 'button'] as const;
-export type IotLocalFallback = (typeof IOT_LOCAL_FALLBACKS)[number];
-/** 每個家庭最多幾台設備（§9.6 `maxDevicesPerHome`） */
-export const IOT_REALTIME_MAX_DEVICES = 64;
-export const IOT_REALTIME_DEFAULT_HEARTBEAT_SEC = 30;
-export const IOT_REALTIME_DEFAULT_TTL_MAX_SEC = 60;
+export {
+  checkIotRealtimeAclShape,
+  checkIotRealtimeConfig,
+  IOT_LOCAL_FALLBACKS,
+  IOT_REALTIME_BLIND_LENGTH,
+  IOT_REALTIME_DEFAULT_HEARTBEAT_SEC,
+  IOT_REALTIME_DEFAULT_TTL_MAX_SEC,
+  IOT_REALTIME_MAX_DEVICES,
+  IOT_REALTIME_MAX_HOMES,
+  type IotLocalFallback,
+  type IotRealtimeDeviceConfig,
+  type IotRealtimeHomeConfig,
+  type IotRealtimeIssue,
+} from './iot-realtime-config.js';
+
 /** retained 每台最少隔多久寫一次（SQLite 每日寫入列是最可能先到頂的額度，§9.4） */
 export const IOT_REALTIME_RETAINED_MIN_INTERVAL_SEC = 300;
 
@@ -57,38 +71,6 @@ export const IOT_REALTIME_REJECT = {
   msgTime: 'invalid: iot: message timestamp outside the realtime window',
   duplicate: 'duplicate: iot-msgid: already delivered to the device',
 } as const;
-
-export interface IotRealtimeDeviceConfig {
-  /** 設備 id（設定裡有；relay 以它核對信封的 kid） */
-  readonly id: string;
-  /** `blind("dev:" + id)`：URL 與事件的 `d`／`dv`（CLI 以家庭秘密預先算好） */
-  readonly blindId: string;
-  /** 目前的金鑰版本（kid 的 epoch） */
-  readonly epoch: number;
-  /** 設備權杖的 SHA-256 hex（relay 只存雜湊） */
-  readonly tokenHash: string;
-  readonly class?: 'lock' | 'general';
-  /** 操作這台設備至少要哪個角色（門鎖常設 `owner`） */
-  readonly minRole?: IotRole;
-  /** 門鎖類必填：不依賴 relay 的開啟方式（§10.5） */
-  readonly localFallback?: readonly IotLocalFallback[];
-  /** 輪換寬限：舊 epoch 在 `until`（unix 秒）之前照收（§2.6 `keyGraceSec`） */
-  readonly previousEpoch?: { readonly epoch: number; readonly until: number };
-}
-
-export interface IotRealtimeHomeConfig {
-  readonly homeTag: string;
-  /** 全家的 NIP-44 收件者（公開值） */
-  readonly homePub: PubkeyHex;
-  /** 閘道公鑰（手機以它加密外層、以它過濾 ack／狀態的作者） */
-  readonly gatewayPubkey: PubkeyHex;
-  readonly acl: IotAclInput;
-  readonly devices: readonly IotRealtimeDeviceConfig[];
-  /** 設備心跳間隔提示（秒，預設 30）；超過 3 倍沒有心跳視為 `stale` */
-  readonly heartbeatSec?: number;
-  /** 即時等級的時間窗（秒，預設 60）：外層訊息與信封的 ts 都要在這之內 */
-  readonly realtimeTtlMaxSec?: number;
-}
 
 /** 宿主提供的設備連線（Workers：`getWebSockets(tag)`＋`getWebSocketAutoResponseTimestamp`；Node：記憶體） */
 export interface IotRealtimeSockets {
@@ -149,6 +131,9 @@ export class IotRealtimeHome {
   readonly #lastRetained = new Map<string, number>();
   readonly #heartbeatMs: number;
   readonly #windowMs: number;
+  #aclAnnounced = false;
+  /** 上一次名單公告的 created_at（秒）：下一次一定要更晚，否則同一秒內的兩則由 id 決勝，新名單可能被舊的蓋掉 */
+  #aclAt = 0;
 
   constructor(config: IotRealtimeHomeConfig, gatewaySecret: SecretKey | string, opts: IotRealtimeHomeOptions) {
     this.config = config;
@@ -292,6 +277,19 @@ export class IotRealtimeHome {
   }
 
   /**
+   * 角色名單公告（SDK ADR 0121）：31170、`d`＝設定的 `aclBlindId`（＝blind("sys:acl")）、內容加密給全家，手機的 `getAcl()`／`myRole()` 讀它。
+   * 設定沒有 `aclBlindId` 回 undefined。宿主在手機連上時呼叫（這個實例只公告一次；名單一改另外重發）。
+   */
+  aclAnnouncement(opts: { force?: boolean } = {}): NostrEvent | undefined {
+    const d = this.config.aclBlindId;
+    if (d === undefined || (this.#aclAnnounced && opts.force !== true)) return undefined;
+    this.#aclAnnounced = true;
+    this.#aclAt = Math.max(Math.floor(this.#now() / 1000), this.#aclAt + 1);
+    const body: IotAclBody = { v: 1, type: 'acl', msgId: newIotMsgId(), ts: this.#aclAt * 1000, acl: this.#acl };
+    return this.#sign(IOT_KIND_RETAINED, [['d', d], ['h', this.config.homeTag]], body);
+  }
+
+  /**
    * 額度預警與狀態（ADR 0049 §10.3）：25172、topic `$sys/quota`，`p`＝名單上的 owner（只給 owner，§10.4），內容加密給全家。
    * `payload` 是 JSON `{ state, used, limit, reset }`（reset＝下一個 UTC 00:00 的 unix 秒）。
    */
@@ -330,7 +328,9 @@ export class IotRealtimeHome {
       return { outbound: [ok], publish: [this.#ack(event, msgId, undefined, 'rejected', { reason: String(error instanceof Error ? error.message : error).slice(0, 200) })] };
     }
     this.#aclStore?.save(this.#acl);
-    return { outbound: [ok], publish: [this.#ack(event, msgId, undefined, 'ok')] };
+    // 先發新的名單公告再回 ack：手機收到 ok 之後讀 getAcl() 就是新的
+    const announce = this.aclAnnouncement({ force: true });
+    return { outbound: [ok], publish: [...(announce ? [announce] : []), this.#ack(event, msgId, undefined, 'ok')] };
   }
 
   #ack(
@@ -384,100 +384,54 @@ function uniq<T>(items: T[]): T[] {
 
 // ── 設定 ─────────────────────────────────────────────────────────────────────────────────
 
-export interface IotRealtimeIssue {
-  readonly path: string;
-  readonly code:
-    | 'shape'
-    | 'home-tag'
-    | 'home-duplicate'
-    | 'pubkey'
-    | 'acl'
-    | 'too-many-devices'
-    | 'device-id'
-    | 'blind-id'
-    | 'device-duplicate'
-    | 'epoch'
-    | 'token-hash'
-    | 'role'
-    | 'lock-local-fallback'
-    | 'gateway-key-missing'
-    | 'gateway-key-mismatch';
-  readonly message: string;
-}
-
 export interface ParsedIotRealtime {
   readonly homes: Map<string, { readonly config: IotRealtimeHomeConfig; readonly gatewaySecret: SecretKey }>;
   readonly issues: IotRealtimeIssue[];
 }
 
-const BLIND_PATTERN = new RegExp(`^[A-Za-z0-9_-]{${IOT_BLIND_LENGTH}}$`);
 const HEX64 = /^[0-9a-f]{64}$/;
-const ROLES: readonly IotRole[] = ['viewer', 'operator', 'owner'];
 
 /**
  * 解析 C′ 的設定（`IOT_REALTIME`，JSON；非秘密）與閘道金鑰（`IOT_GATEWAY_KEYS`，JSON `{homeTag: 64 位 hex}`；Worker secret）。
- * 收集式：一次列出所有問題，有問題的家庭不啟用（不默默套用一半）。
+ * 收集式：一次列出所有問題，有問題的家庭不啟用（不默默套用一半）。形狀的檢查與部署設定器共用（`checkIotRealtimeConfig`）。
  */
 export function parseIotRealtimeConfig(raw: unknown, gatewayKeys: Record<string, string>): ParsedIotRealtime {
-  const issues: IotRealtimeIssue[] = [];
+  const checked = checkIotRealtimeConfig(raw, (acl) => void parseIotAcl(acl));
+  const issues = [...checked.issues];
   const homes: ParsedIotRealtime['homes'] = new Map();
-  const add = (path: string, code: IotRealtimeIssue['code'], message: string): void => void issues.push({ path, code, message });
-  const list = (raw as { homes?: unknown } | null)?.homes;
-  if (!Array.isArray(list)) {
-    add('homes', 'shape', '需要 { "homes": [ … ] }');
-    return { homes, issues };
-  }
-  list.forEach((h: unknown, i: number) => {
-    const at = `homes[${i}]`;
-    const before = issues.length;
-    const home = (h ?? {}) as Record<string, unknown>;
+  for (const { index, home, ok } of checked.homes) {
     const homeTag = home.homeTag;
-    if (typeof homeTag !== 'string' || !BLIND_PATTERN.test(homeTag)) add(`${at}.homeTag`, 'home-tag', `homeTag 必須是 ${IOT_BLIND_LENGTH} 個 base64url 字元`);
-    else if (homes.has(homeTag)) add(`${at}.homeTag`, 'home-duplicate', '同一個 homeTag 出現兩次');
-    for (const key of ['homePub', 'gatewayPubkey'] as const) {
-      if (typeof home[key] !== 'string' || !HEX64.test(home[key] as string)) add(`${at}.${key}`, 'pubkey', `${key} 必須是 64 位小寫 hex`);
-    }
-    try {
-      parseIotAcl(home.acl ?? []);
-    } catch (error) {
-      add(`${at}.acl`, 'acl', String(error instanceof Error ? error.message : error));
-    }
-    const devices = Array.isArray(home.devices) ? (home.devices as unknown[]) : [];
-    if (!Array.isArray(home.devices)) add(`${at}.devices`, 'shape', 'devices 必須是陣列');
-    if (devices.length > IOT_REALTIME_MAX_DEVICES) add(`${at}.devices`, 'too-many-devices', `每個家庭最多 ${IOT_REALTIME_MAX_DEVICES} 台設備`);
-    const ids = new Set<string>();
-    const blinds = new Set<string>();
-    devices.forEach((d: unknown, j: number) => {
-      const p = `${at}.devices[${j}]`;
-      const dev = (d ?? {}) as Record<string, unknown>;
-      if (typeof dev.id !== 'string' || !/^[A-Za-z0-9._-]{1,64}$/.test(dev.id)) add(`${p}.id`, 'device-id', '設備 id 只能用英數、點、底線、連字號（1–64 字）');
-      if (typeof dev.blindId !== 'string' || !BLIND_PATTERN.test(dev.blindId)) add(`${p}.blindId`, 'blind-id', `blindId 必須是 ${IOT_BLIND_LENGTH} 個 base64url 字元`);
-      if (typeof dev.id === 'string' && typeof dev.blindId === 'string' && (ids.has(dev.id) || blinds.has(dev.blindId))) add(p, 'device-duplicate', '設備 id 或 blindId 重複');
-      if (typeof dev.id === 'string') ids.add(dev.id);
-      if (typeof dev.blindId === 'string') blinds.add(dev.blindId);
-      if (!Number.isSafeInteger(dev.epoch) || (dev.epoch as number) < 0) add(`${p}.epoch`, 'epoch', 'epoch 必須是非負整數');
-      if (typeof dev.tokenHash !== 'string' || !HEX64.test(dev.tokenHash)) add(`${p}.tokenHash`, 'token-hash', 'tokenHash 必須是權杖的 SHA-256（64 位小寫 hex）——不要把權杖本身寫進設定');
-      if (dev.minRole !== undefined && !ROLES.includes(dev.minRole as IotRole)) add(`${p}.minRole`, 'role', 'minRole 必須是 viewer／operator／owner');
-      if (dev.class === 'lock') {
-        const fb = dev.localFallback;
-        if (!Array.isArray(fb) || fb.length === 0 || !fb.every((x) => (IOT_LOCAL_FALLBACKS as readonly unknown[]).includes(x))) {
-          add(`${p}.localFallback`, 'lock-local-fallback', `門鎖類設備必須列出不依賴 relay 的開啟方式（${IOT_LOCAL_FALLBACKS.join('／')}），ADR 0049 §10.5`);
-        }
-      }
-      const prev = dev.previousEpoch as { epoch?: unknown; until?: unknown } | undefined;
-      if (prev !== undefined && (!Number.isSafeInteger(prev.epoch) || !Number.isSafeInteger(prev.until))) add(`${p}.previousEpoch`, 'epoch', 'previousEpoch 需要整數 epoch 與 until（unix 秒）');
-    });
-    if (typeof homeTag !== 'string') return;
+    if (typeof homeTag !== 'string') continue;
+    const at = `homes[${index}]`;
     const key = gatewayKeys[homeTag];
     let secret: SecretKey | undefined;
-    if (typeof key !== 'string' || !HEX64.test(key)) add(`${at}.gatewayKey`, 'gateway-key-missing', `IOT_GATEWAY_KEYS 沒有這個家庭（${homeTag}）的閘道私鑰`);
+    let keyOk = false;
+    if (typeof key !== 'string' || !HEX64.test(key)) issues.push({ path: `${at}.gatewayKey`, code: 'gateway-key-missing', message: `IOT_GATEWAY_KEYS 沒有這個家庭（${homeTag}）的閘道私鑰` });
     else {
       secret = hexToBytes(key);
-      if (typeof home.gatewayPubkey === 'string' && getPublicKey(secret) !== home.gatewayPubkey) add(`${at}.gatewayKey`, 'gateway-key-mismatch', '閘道私鑰與 gatewayPubkey 不符');
+      keyOk = typeof home.gatewayPubkey !== 'string' || getPublicKey(secret) === home.gatewayPubkey;
+      if (!keyOk) issues.push({ path: `${at}.gatewayKey`, code: 'gateway-key-mismatch', message: '閘道私鑰與 gatewayPubkey 不符' });
     }
-    if (issues.length === before && secret) homes.set(homeTag, { config: home as unknown as IotRealtimeHomeConfig, gatewaySecret: secret });
-  });
+    if (ok && keyOk && secret && !homes.has(homeTag)) homes.set(homeTag, { config: home as unknown as IotRealtimeHomeConfig, gatewaySecret: secret });
+  }
   return { homes, issues };
+}
+
+/**
+ * NIP-11 `cinder_iot.realtime` 要宣告的內容（SDK ADR 0120）：至少一個家庭有效才有；心跳取各家庭最短的那個。
+ * 兩個宿主都從環境變數算（與實際啟用的家庭同一個解析函式），壞 JSON＝沒開。
+ */
+export function iotRealtimeAnnouncement(env: { IOT_REALTIME?: string | undefined; IOT_GATEWAY_KEYS?: string | undefined }): { heartbeatSec: number } | undefined {
+  if (!env.IOT_REALTIME) return undefined;
+  let parsed: ParsedIotRealtime;
+  try {
+    parsed = parseIotRealtimeConfig(JSON.parse(env.IOT_REALTIME), env.IOT_GATEWAY_KEYS ? (JSON.parse(env.IOT_GATEWAY_KEYS) as Record<string, string>) : {});
+  } catch {
+    return undefined;
+  }
+  if (parsed.homes.size === 0) return undefined;
+  const heartbeatSec = Math.min(...[...parsed.homes.values()].map((h) => h.config.heartbeatSec ?? IOT_REALTIME_DEFAULT_HEARTBEAT_SEC));
+  return { heartbeatSec };
 }
 
 /** 給 CLI 與測試：把閘道私鑰轉成 `IOT_GATEWAY_KEYS` 的值 */

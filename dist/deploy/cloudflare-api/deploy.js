@@ -10,20 +10,20 @@
 // 7. 打 `/healthz` 直到回 `ok`，回傳 `wss://<name>.<subdomain>.workers.dev`
 import { knownLanes, lanesOnlyFrom, READONLY_LANES_MAX, readOnlyLanesFrom } from '../../relay/host-config.js';
 import { LANE_ID_PATTERN } from '../../relay/shard.js';
-import { assertCompatibilityDate, assertRelayName, checkCompatibilityDate, checkRelayName, collectRelaySiteIssues, DEFAULT_COMPATIBILITY_DATE, DEFAULT_WORKER_NAME, privateLaneEndpoint, READ_ONLY_GRACE_DAYS, RELAY_DO_BINDING, RELAY_DO_MIGRATIONS, relayWorkerSecrets, relayWorkerVars, sameLaneList, waitForHealthy, } from '../shared.js';
+import { assertCompatibilityDate, assertRelayName, checkCompatibilityDate, checkRelayName, collectRelaySiteIssues, DEFAULT_COMPATIBILITY_DATE, DEFAULT_WORKER_NAME, privateLaneEndpoint, READ_ONLY_GRACE_DAYS, RELAY_DO_BINDINGS, RELAY_DO_MIGRATIONS, relayWorkerSecrets, relayWorkerVars, sameLaneList, waitForHealthy, } from '../shared.js';
 import { listAccounts, verifyToken } from './auth.js';
 import { CloudflareApiError, cloudflareRequest, defaultHttp } from './http.js';
 import { relayWorkerSdkVersion } from './relay-worker-info.js';
 export const WORKER_ENTRY_MODULE = 'entry.mjs';
 export const WORKER_RELAY_MODULE = 'relay.mjs';
-/** 主模組：注入版號後轉出打包好的 Worker 與 `RelayRoom`（與 wrangler 路徑的 `renderWorkerEntry` 同一個做法）。 */
+/** 主模組：注入版號後轉出打包好的 Worker 與兩個 Durable Object 類別（與 wrangler 路徑的 `renderWorkerEntry` 同一個做法）。 */
 export function renderApiWorkerEntry(version) {
     const relay = JSON.stringify(`./${WORKER_RELAY_MODULE}`);
     return [
         '// 由 @cinderous/client/deploy/cloudflare-api 產生（SDK ADR 0021）。',
         `import { setRelayVersion } from ${relay};`,
         `setRelayVersion(${JSON.stringify(version)});`,
-        `export { default, ${RELAY_DO_BINDING.className} } from ${relay};`,
+        `export { default, ${RELAY_DO_BINDINGS.map((b) => b.className).join(', ')} } from ${relay};`,
         '',
     ].join('\n');
 }
@@ -52,7 +52,7 @@ export function buildWorkerMetadata(opts) {
         main_module: WORKER_ENTRY_MODULE,
         compatibility_date: opts.compatibilityDate,
         bindings: [
-            { type: 'durable_object_namespace', name: RELAY_DO_BINDING.name, class_name: RELAY_DO_BINDING.className },
+            ...RELAY_DO_BINDINGS.map((b) => ({ type: 'durable_object_namespace', name: b.name, class_name: b.className })),
             ...Object.entries(opts.vars).map(([name, text]) => ({ type: 'plain_text', name, text })),
             ...Object.entries(opts.secrets ?? {}).map(([name, text]) => ({ type: 'secret_text', name, text })),
         ],

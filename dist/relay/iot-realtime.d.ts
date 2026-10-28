@@ -1,14 +1,9 @@
-import { type IotAcl, type IotAclInput, type IotRole } from '../iot/acl.js';
+import { type IotAcl } from '../iot/acl.js';
 import type { NostrEvent } from '../protocol/event.js';
-import { type PubkeyHex, type SecretKey } from '../protocol/keys.js';
+import { type SecretKey } from '../protocol/keys.js';
 import type { Outbound } from './relay-core.js';
-/** 門鎖類設備必填的本地開啟方式（ADR 0049 §10.5） */
-export declare const IOT_LOCAL_FALLBACKS: readonly ["key", "keypad", "lan", "ble", "button"];
-export type IotLocalFallback = (typeof IOT_LOCAL_FALLBACKS)[number];
-/** 每個家庭最多幾台設備（§9.6 `maxDevicesPerHome`） */
-export declare const IOT_REALTIME_MAX_DEVICES = 64;
-export declare const IOT_REALTIME_DEFAULT_HEARTBEAT_SEC = 30;
-export declare const IOT_REALTIME_DEFAULT_TTL_MAX_SEC = 60;
+import { type IotRealtimeDeviceConfig, type IotRealtimeHomeConfig, type IotRealtimeIssue } from './iot-realtime-config.js';
+export { checkIotRealtimeAclShape, checkIotRealtimeConfig, IOT_LOCAL_FALLBACKS, IOT_REALTIME_BLIND_LENGTH, IOT_REALTIME_DEFAULT_HEARTBEAT_SEC, IOT_REALTIME_DEFAULT_TTL_MAX_SEC, IOT_REALTIME_MAX_DEVICES, IOT_REALTIME_MAX_HOMES, type IotLocalFallback, type IotRealtimeDeviceConfig, type IotRealtimeHomeConfig, type IotRealtimeIssue, } from './iot-realtime-config.js';
 /** retained 每台最少隔多久寫一次（SQLite 每日寫入列是最可能先到頂的額度，§9.4） */
 export declare const IOT_REALTIME_RETAINED_MIN_INTERVAL_SEC = 300;
 /** 拒收訊息（ADR 0040 詞元句：「前綴: 詞元: 說明」） */
@@ -26,39 +21,6 @@ export declare const IOT_REALTIME_REJECT: {
     readonly msgTime: "invalid: iot: message timestamp outside the realtime window";
     readonly duplicate: "duplicate: iot-msgid: already delivered to the device";
 };
-export interface IotRealtimeDeviceConfig {
-    /** 設備 id（設定裡有；relay 以它核對信封的 kid） */
-    readonly id: string;
-    /** `blind("dev:" + id)`：URL 與事件的 `d`／`dv`（CLI 以家庭秘密預先算好） */
-    readonly blindId: string;
-    /** 目前的金鑰版本（kid 的 epoch） */
-    readonly epoch: number;
-    /** 設備權杖的 SHA-256 hex（relay 只存雜湊） */
-    readonly tokenHash: string;
-    readonly class?: 'lock' | 'general';
-    /** 操作這台設備至少要哪個角色（門鎖常設 `owner`） */
-    readonly minRole?: IotRole;
-    /** 門鎖類必填：不依賴 relay 的開啟方式（§10.5） */
-    readonly localFallback?: readonly IotLocalFallback[];
-    /** 輪換寬限：舊 epoch 在 `until`（unix 秒）之前照收（§2.6 `keyGraceSec`） */
-    readonly previousEpoch?: {
-        readonly epoch: number;
-        readonly until: number;
-    };
-}
-export interface IotRealtimeHomeConfig {
-    readonly homeTag: string;
-    /** 全家的 NIP-44 收件者（公開值） */
-    readonly homePub: PubkeyHex;
-    /** 閘道公鑰（手機以它加密外層、以它過濾 ack／狀態的作者） */
-    readonly gatewayPubkey: PubkeyHex;
-    readonly acl: IotAclInput;
-    readonly devices: readonly IotRealtimeDeviceConfig[];
-    /** 設備心跳間隔提示（秒，預設 30）；超過 3 倍沒有心跳視為 `stale` */
-    readonly heartbeatSec?: number;
-    /** 即時等級的時間窗（秒，預設 60）：外層訊息與信封的 ts 都要在這之內 */
-    readonly realtimeTtlMaxSec?: number;
-}
 /** 宿主提供的設備連線（Workers：`getWebSockets(tag)`＋`getWebSocketAutoResponseTimestamp`；Node：記憶體） */
 export interface IotRealtimeSockets {
     isConnected(blindId: string): boolean;
@@ -122,15 +84,17 @@ export declare class IotRealtimeHome {
         reply?: string;
     };
     /**
+     * 角色名單公告（SDK ADR 0121）：31170、`d`＝設定的 `aclBlindId`（＝blind("sys:acl")）、內容加密給全家，手機的 `getAcl()`／`myRole()` 讀它。
+     * 設定沒有 `aclBlindId` 回 undefined。宿主在手機連上時呼叫（這個實例只公告一次；名單一改另外重發）。
+     */
+    aclAnnouncement(opts?: {
+        force?: boolean;
+    }): NostrEvent | undefined;
+    /**
      * 額度預警與狀態（ADR 0049 §10.3）：25172、topic `$sys/quota`，`p`＝名單上的 owner（只給 owner，§10.4），內容加密給全家。
      * `payload` 是 JSON `{ state, used, limit, reset }`（reset＝下一個 UTC 00:00 的 unix 秒）。
      */
     quotaNotice(state: 'warn' | 'shed' | 'exhausted', used: number, limit: number, reset: number): NostrEvent;
-}
-export interface IotRealtimeIssue {
-    readonly path: string;
-    readonly code: 'shape' | 'home-tag' | 'home-duplicate' | 'pubkey' | 'acl' | 'too-many-devices' | 'device-id' | 'blind-id' | 'device-duplicate' | 'epoch' | 'token-hash' | 'role' | 'lock-local-fallback' | 'gateway-key-missing' | 'gateway-key-mismatch';
-    readonly message: string;
 }
 export interface ParsedIotRealtime {
     readonly homes: Map<string, {
@@ -141,9 +105,19 @@ export interface ParsedIotRealtime {
 }
 /**
  * 解析 C′ 的設定（`IOT_REALTIME`，JSON；非秘密）與閘道金鑰（`IOT_GATEWAY_KEYS`，JSON `{homeTag: 64 位 hex}`；Worker secret）。
- * 收集式：一次列出所有問題，有問題的家庭不啟用（不默默套用一半）。
+ * 收集式：一次列出所有問題，有問題的家庭不啟用（不默默套用一半）。形狀的檢查與部署設定器共用（`checkIotRealtimeConfig`）。
  */
 export declare function parseIotRealtimeConfig(raw: unknown, gatewayKeys: Record<string, string>): ParsedIotRealtime;
+/**
+ * NIP-11 `cinder_iot.realtime` 要宣告的內容（SDK ADR 0120）：至少一個家庭有效才有；心跳取各家庭最短的那個。
+ * 兩個宿主都從環境變數算（與實際啟用的家庭同一個解析函式），壞 JSON＝沒開。
+ */
+export declare function iotRealtimeAnnouncement(env: {
+    IOT_REALTIME?: string | undefined;
+    IOT_GATEWAY_KEYS?: string | undefined;
+}): {
+    heartbeatSec: number;
+} | undefined;
 /** 給 CLI 與測試：把閘道私鑰轉成 `IOT_GATEWAY_KEYS` 的值 */
 export declare function iotGatewayKeysJson(entries: Record<string, SecretKey>): string;
 //# sourceMappingURL=iot-realtime.d.ts.map

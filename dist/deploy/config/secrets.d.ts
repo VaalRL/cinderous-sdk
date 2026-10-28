@@ -7,6 +7,11 @@ export declare function resolveSecret(ref: SecretRef | undefined, env: Readonly<
 /** 字串或引用（例如 Account ID）：字串原樣、引用從環境讀。 */
 export declare function resolveStringOrSecret(value: string | SecretRef | undefined, env: Readonly<Record<string, string | undefined>>, defaultEnv?: string): string | undefined;
 /**
+ * C′ 的閘道私鑰（SDK ADR 0121）：環境變數的值是 JSON `{ "<homeTag>": "<64 位 hex>" }`。沒有回 undefined。
+ * 這裡只檢查形狀；與 `site.iotRealtime` 的比對在部署函式（`iotGatewayKeysSecret`）。🔴 訊息只有變數名稱，不含值。
+ */
+export declare function resolveIotGatewayKeys(ref: SecretRef | undefined, env: Readonly<Record<string, string | undefined>>, defaultEnv: string): Record<string, string> | undefined;
+/**
  * 私人路徑（SDK ADR 0051）的佔位值：驗證設定檔與產生部署包時用它代替真正的值（部署包不含秘密）。
  * 一個合法的車道 id，產生器會把用到它的變數改寫成從環境讀。
  */

@@ -12,7 +12,7 @@ export { DEFAULT_CLOUDFLARED_IMAGE, renderDockerignore } from './render.js';
 export * from './config/index.js';
 export * from './docker.js';
 export * from './fly.js';
-export { assertCompatibilityDate, collectRelaySiteIssues, generatePrivateLaneId, isPrivateLaneId, laneListVar, maxFileMbVar, PRIVATE_LANE_MIN_LENGTH, privateLaneEndpoint, privateLaneFromUrl, RELAY_SITE_LIMITS, relaySiteVars, relayWorkerSecrets, relayWorkerVars, VAULT_SYNC_MAX_FILE_MB, WORKER_ONLY_SITE_OPTIONS, } from './shared.js';
+export { assertCompatibilityDate, collectRelaySiteIssues, generatePrivateLaneId, iotGatewayKeysSecret, isPrivateLaneId, laneListVar, maxFileMbVar, PRIVATE_LANE_MIN_LENGTH, privateLaneEndpoint, privateLaneFromUrl, RELAY_SITE_LIMITS, relaySiteVars, relayWorkerSecrets, relayWorkerVars, VAULT_SYNC_MAX_FILE_MB, WORKER_ONLY_SITE_OPTIONS, } from './shared.js';
 // 帳號儲存預算的守門工具（SDK ADR 0042）：部署者把它放進自己的測試
 export { ACCOUNT_STORAGE_BUDGET_BYTES, computeCeilingBudget } from '../relay/host-config.js';
 //# sourceMappingURL=index.js.map

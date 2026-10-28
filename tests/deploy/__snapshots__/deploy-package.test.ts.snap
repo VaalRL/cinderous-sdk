@@ -7,7 +7,7 @@ exports[`renderDeployPackage：每個目標的檔案（快照） > cloudflare > 
   "target": "cloudflare",
   "files": {
     "cinderous.config.json": "4e68a35239524dfd6e29e62ea73e78244eca2e21d8326270d8fec8d06bf48064",
-    "wrangler.toml": "151f151e66dd1726b1ea2f09c7f6fc681d4091baa9c98f0da67c1cd609d035d0",
+    "wrangler.toml": "1ffef7ac7eb45a050fd19ed67ca9aa87a5e0dc5dd17e838bd206ff37d6ee43db",
     "src/entry.mjs": "6a2597a2b72f4fa2b3967bdaba7b2bee89dd96c352083b3ba50bf353017cb0eb",
     "package.json": "cffdb35b468ecbec44f6cc06520eadd1a3feb95e0ffc6fbff650cfb40d7f766d",
     ".dev.vars.example": "3ff72cb043dc3813e748fa40511a09743d01e1c6d3091861b350b0bb0158fd87",
@@ -517,9 +517,17 @@ account_id = "0123456789abcdef0123456789abcdef"
 name = "RELAY_ROOM"
 class_name = "RelayRoom"
 
+[[durable_objects.bindings]]
+name = "IOT_HOME"
+class_name = "IotHomeRoom"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RelayRoom"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["IotHomeRoom"]
 
 [observability]
 enabled = true
@@ -541,7 +549,7 @@ exports[`renderDeployPackage：每個目標的檔案（快照） > cloudflare-ap
   "target": "cloudflare-api",
   "files": {
     "cinderous.config.json": "b02799e25d993c2a39ae321c18663b0c87659bf38bdc040ecd9d41b6b4cf9bf9",
-    "wrangler.toml": "e631c8ba671416fbfa633aed5910d469a2b6743862d0ea359c9d2b64988ea977",
+    "wrangler.toml": "413657ac3e54facb68746fdbd25d43c99e733781072ac93127103dc90d99ba09",
     "src/entry.mjs": "6a2597a2b72f4fa2b3967bdaba7b2bee89dd96c352083b3ba50bf353017cb0eb",
     "package.json": "27d32660ffcf8cdb4fa0ae6d8d63a2ea94b609ae43ebd51fd9a8d6a507e770ea",
     ".dev.vars.example": "3ff72cb043dc3813e748fa40511a09743d01e1c6d3091861b350b0bb0158fd87",
@@ -1033,9 +1041,17 @@ compatibility_date = "2026-09-01"
 name = "RELAY_ROOM"
 class_name = "RelayRoom"
 
+[[durable_objects.bindings]]
+name = "IOT_HOME"
+class_name = "IotHomeRoom"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RelayRoom"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["IotHomeRoom"]
 
 [observability]
 enabled = true

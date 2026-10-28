@@ -78,6 +78,13 @@ export interface Nip11Config {
     donations?: CinderDonations | undefined;
     /** 節點自報（ADR-0092）：已簽章的 `CinderNodeDeclaration` 事件（JSON 字串）。 */
     nodeAttestation?: string | undefined;
+    /**
+     * IoT 即時通道（SDK ADR 0049 §9.6、SDK ADR 0120）：這座站有沒有開 C′（`IOT_REALTIME` 至少一個家庭有效）。
+     * 只宣告能力與心跳間隔，**不列家庭**（homeTag 是路由標籤，列出來等於公開這座站服務哪些家）。
+     */
+    iotRealtime?: {
+        heartbeatSec: number;
+    } | undefined;
     software?: string | undefined;
     version?: string | undefined;
 }

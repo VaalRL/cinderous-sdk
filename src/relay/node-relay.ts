@@ -47,6 +47,7 @@ import {
 import { TRAFFIC_FLUSH_MS, type TrafficBudget, trafficBudgetFrom, TrafficMeter } from "./traffic-budget.js";
 import { routeForPath } from "./shard.js";
 import { createIotNodeHub } from "./iot-node.js";
+import { iotRealtimeAnnouncement } from "./iot-realtime.js";
 
 // node:sqlite 太新、打包器的內建模組表未收錄 → 以 createRequire 動態載入（型別走 type-only）。
 // 只在真的要寫檔時才載入：純記憶體模式不該因為 Node 版本沒有 node:sqlite 而開不起來。
@@ -209,6 +210,8 @@ export function startNodeRelay(env: NodeRelayEnv = process.env, opts: NodeRelayO
       lightning: env.DONATE_LIGHTNING,
     },
     nodeAttestation: env.NODE_ATTESTATION,
+    // C′ 即時通道（SDK ADR 0120）：與 `/iot/` 實際啟用的家庭同一個解析
+    iotRealtime: iotRealtimeAnnouncement(env),
   });
 
   const sockets = new Map<string, WebSocket>();

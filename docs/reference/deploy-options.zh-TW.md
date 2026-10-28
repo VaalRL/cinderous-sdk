@@ -41,6 +41,7 @@ npx cinderous relay deploy --config deploy/cinderous.config.json
 | `secrets.flyApiToken` | `--api-token` | — |
 | `secrets.tunnelToken` | — | — |
 | `secrets.turnApiToken` | — | — |
+| `secrets.iotGatewayKeys` | — | — |
 | `pushGateway.android` | — | `PUSH_ANDROID` |
 | `pushGateway.ios` | — | `PUSH_IOS` |
 | `pushGateway.iosLocKey` | — | `PUSH_IOS_LOC_KEY` |
@@ -88,6 +89,8 @@ npx cinderous relay deploy --config deploy/cinderous.config.json
 | `site.storageBudgetBytes` | — | — |
 | `site.turnKeyId` | — | `TURN_KEY_ID` |
 | `site.turnTtlSeconds` | — | `TURN_TTL_SECONDS` |
+| `site.iotRealtime` | — | `IOT_REALTIME` |
+| `site.iotHomeDailyRequests` | — | `IOT_HOME_DAILY_REQUESTS` |
 
 ## 基本
 
@@ -708,3 +711,30 @@ token 封包最長能活幾天（ADR-0272：30 天；App 啟動時續期）。�
 - 預設：`30`
 - 環境變數：`PUSH_MAX_REGISTRATION_DAYS`
 - 服務：`push-gateway`
+
+## iot
+
+### `secrets.iotGatewayKeys`
+
+C′ 閘道私鑰的環境變數名稱（沒給讀 IOT_GATEWAY_KEYS）。值是 JSON {"&lt;homeTag&gt;": "&lt;64 位 hex&gt;"}，要涵蓋 site.iotRealtime 的每個家庭。Cloudflare 以 Worker secret 上傳（REST 是 secret_text，wrangler 是 wrangler secret put）；Node 主機放 .env。
+
+- 型別：秘密參照 `{ "$env": "NAME" }`
+- 秘密：設定檔只能寫 `{ "$env": "NAME" }`; 沒給時讀 `IOT_GATEWAY_KEYS`
+- 服務：`relay`
+
+### `site.iotRealtime`
+
+IoT 即時通道 C′（SDK ADR 0049 §9、0120、0121）：這座站服務的家庭與設備，用 cinderous iot realtime home／device 產生。只有公開值與雜湊（設備權杖存 SHA-256）；閘道私鑰另外放 secrets.iotGatewayKeys。門鎖類設備必須列 localFallback。
+
+- 型別：物件（見 JSON Schema）
+- 環境變數：`IOT_REALTIME`
+- 服務：`relay`
+
+### `site.iotHomeDailyRequests`
+
+C′ 每個家庭每天最多幾次請求。沒給＝帳號每日 10 萬 ÷ 家庭數 × 0.5。超過時設備收到 4429、手機收到 quota，到 UTC 午夜恢復。要有 iotRealtime。
+
+- 型別：整數，1–10000000
+- 環境變數：`IOT_HOME_DAILY_REQUESTS`
+- 中繼宿主：Cloudflare（Worker）
+- 服務：`relay`

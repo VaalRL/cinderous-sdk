@@ -41,6 +41,7 @@ npx cinderous relay deploy --config deploy/cinderous.config.json
 | `secrets.flyApiToken` | `--api-token` | — |
 | `secrets.tunnelToken` | — | — |
 | `secrets.turnApiToken` | — | — |
+| `secrets.iotGatewayKeys` | — | — |
 | `pushGateway.android` | — | `PUSH_ANDROID` |
 | `pushGateway.ios` | — | `PUSH_IOS` |
 | `pushGateway.iosLocKey` | — | `PUSH_IOS_LOC_KEY` |
@@ -88,6 +89,8 @@ npx cinderous relay deploy --config deploy/cinderous.config.json
 | `site.storageBudgetBytes` | — | — |
 | `site.turnKeyId` | — | `TURN_KEY_ID` |
 | `site.turnTtlSeconds` | — | `TURN_TTL_SECONDS` |
+| `site.iotRealtime` | — | `IOT_REALTIME` |
+| `site.iotHomeDailyRequests` | — | `IOT_HOME_DAILY_REQUESTS` |
 
 ## Basics
 
@@ -708,3 +711,30 @@ Maximum lifetime of a token envelope in days (ADR-0272: 30 days; apps renew on l
 - Default: `30`
 - Environment variable: `PUSH_MAX_REGISTRATION_DAYS`
 - Service: `push-gateway`
+
+## iot
+
+### `secrets.iotGatewayKeys`
+
+Environment variable holding the C′ gateway private keys (defaults to IOT_GATEWAY_KEYS). The value is JSON {"&lt;homeTag&gt;": "&lt;64 hex&gt;"} covering every home in site.iotRealtime. On Cloudflare it is uploaded as a Worker secret (secret_text over REST, wrangler secret put with wrangler); Node hosts read it from .env.
+
+- Type: secret reference `{ "$env": "NAME" }`
+- Secret: only `{ "$env": "NAME" }` in the config file; read from `IOT_GATEWAY_KEYS`
+- Service: `relay`
+
+### `site.iotRealtime`
+
+IoT realtime channel C′ (SDK ADR 0049 §9, 0120, 0121): the homes and devices this relay serves, generated with cinderous iot realtime home / device. Only public values and hashes (device tokens are stored as SHA-256); the gateway private keys go in secrets.iotGatewayKeys. Lock-class devices must list localFallback.
+
+- Type: object (see the JSON Schema)
+- Environment variable: `IOT_REALTIME`
+- Service: `relay`
+
+### `site.iotHomeDailyRequests`
+
+Maximum requests per C′ home per day. Defaults to the account's 100,000 daily requests ÷ homes × 0.5. Beyond it devices get 4429 and phones get quota until UTC midnight. Needs iotRealtime.
+
+- Type: integer, 1–10000000
+- Environment variable: `IOT_HOME_DAILY_REQUESTS`
+- Relay host: Cloudflare (Worker)
+- Service: `relay`

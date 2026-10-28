@@ -13,6 +13,7 @@ import { parseIotAcl, type IotAcl } from '../iot/acl.js';
 import { IOT_KIND_ACK, IOT_KIND_COMMAND, IOT_KIND_HEARTBEAT, IOT_KIND_QUERY, IOT_KIND_RETAINED, IOT_KIND_STATE } from '../iot/kinds.js';
 import { firstHost } from './host-config.js';
 import { IotRealtimeHome, IOT_REALTIME_REJECT, parseIotRealtimeConfig, type IotRealtimeSockets } from './iot-realtime.js';
+import { IOT_REALTIME_ADDRESSABLE_PER_AUTHOR } from './iot-realtime-config.js';
 import { MessageStore } from './message-store.js';
 import { closeSignalOf, RelayCore, type Outbound } from './relay-core.js';
 import type { SqlExec } from './sql-message-store.js';
@@ -100,7 +101,7 @@ export function createIotNodeHub(env: Record<string, string | undefined>, opts: 
         : undefined;
       const rt = new IotRealtimeHome(entry.config, entry.gatewaySecret, { sockets, ...(aclStore ? { aclStore } : {}) });
       const core: RelayCore = new RelayCore({
-        store: new MessageStore(),
+        store: new MessageStore({ addressablePerAuthor: IOT_REALTIME_ADDRESSABLE_PER_AUTHOR }),
         allowedKinds: IOT_PHONE_KINDS,
         maxEventsPerMinute: 60,
         maxFutureSkewSec: 60,
@@ -173,6 +174,9 @@ export function createIotNodeHub(env: Record<string, string | undefined>, opts: 
         h.phones.set(id, ws);
         const host = (req.headers['x-forwarded-host'] ?? req.headers.host) as string | undefined;
         dispatch(h, h.core.connect(id, firstHost(host), req.socket.remoteAddress ?? undefined));
+        // 名單公告（SDK ADR 0121）：重啟後 retained 在記憶體裡沒了，第一位手機連上時補發
+        const announce = h.rt.aclAnnouncement();
+        if (announce) dispatch(h, h.core.publishLocal(announce));
         ws.on('message', (data) => dispatch(h, h.core.handle(id, data.toString())));
         const gone = (): void => {
           h.core.disconnect(id);

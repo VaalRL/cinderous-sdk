@@ -26,6 +26,7 @@ export {
   type DeployIssue,
   type DeployIssueSeverity,
   generatePrivateLaneId,
+  iotGatewayKeysSecret,
   isPrivateLaneId,
   laneListVar,
   maxFileMbVar,

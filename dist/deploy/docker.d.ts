@@ -1,5 +1,5 @@
 import { type CommandRunner, type DeployProgress, type RelayDeployment } from './common.js';
-import { type RelaySiteOptions } from './shared.js';
+import { type RelaySiteOptions, type RelayWorkerSecrets } from './shared.js';
 export { DEFAULT_DOCKER_PORT, renderCompose } from './render.js';
 /**
  * 家中主機＋Cloudflare Tunnel（SDK ADR 0050 §5 的 `home-tunnel`）：relay 不發布埠，同一個 compose 裡的 cloudflared
@@ -19,7 +19,7 @@ export interface DockerTunnelOptions {
  * 站台參數（白名單、站名、防濫用、保存期、檔案塊……）見 `RelaySiteOptions`（SDK ADR 0036、0037）；
  * 只有 Cloudflare 版支援的參數（`appLanes` 等）在這裡會丟例外——Node 主機沒有車道。
  */
-export interface DockerDeployOptions extends RelaySiteOptions {
+export interface DockerDeployOptions extends RelaySiteOptions, Pick<RelayWorkerSecrets, 'iotGatewayKeys'> {
     /** compose 專案與容器名稱；預設 cinderous-relay */
     name?: string;
     /** 對外的埠（對應容器的 8080）；預設 8080 */

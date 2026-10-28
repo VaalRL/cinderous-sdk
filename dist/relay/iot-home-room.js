@@ -14,6 +14,7 @@ import { IOT_KIND_ACK, IOT_KIND_COMMAND, IOT_KIND_HEARTBEAT, IOT_KIND_QUERY, IOT
 import { parseIotAcl } from '../iot/acl.js';
 import { ConnPersistence } from './conn-persistence.js';
 import { storeOptions } from './host-config.js';
+import { IOT_REALTIME_ADDRESSABLE_PER_AUTHOR } from './iot-realtime-config.js';
 import { IotRealtimeHome, IOT_REALTIME_REJECT, parseIotRealtimeConfig } from './iot-realtime.js';
 import { IotHomeQuota, iotDefaultHomeDailyRequests, nextUtcMidnightSec } from './iot-quota.js';
 import { closeSignalOf, RelayCore } from './relay-core.js';
@@ -144,7 +145,8 @@ export class IotHomeRoom {
         const sql = ctx.storage.sql;
         this.exec = (query, ...bindings) => sql.exec(query, ...bindings).toArray();
         this.exec('CREATE TABLE IF NOT EXISTS iot_acl (id INTEGER PRIMARY KEY CHECK (id = 1), acl TEXT NOT NULL)');
-        this.store = new SqlMessageStore(this.exec, storeOptions(env.MAX_TTL_DAYS));
+        // 閘道公鑰替每台設備存一顆 retained：可尋址上限要放到設備數＋名單（SDK ADR 0121）
+        this.store = new SqlMessageStore(this.exec, { ...storeOptions(env.MAX_TTL_DAYS), addressablePerAuthor: IOT_REALTIME_ADDRESSABLE_PER_AUTHOR });
         this.conns = new ConnPersistence(this.exec);
         // 平台自動回覆心跳：字串必須與設備送的逐位元組相同，否則每則都喚醒 DO、悄悄變成計費（R0 實測結果一）
         ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(IOT_DEVICE_HEARTBEAT, IOT_DEVICE_HEARTBEAT_ACK));
@@ -306,7 +308,9 @@ export class IotHomeRoom {
         const restored = this.ensureHydrated();
         const out = this.core.connect(connId, hostOf(request), request.headers.get('CF-Connecting-IP') ?? undefined);
         this.conns.save(server, this.core.exportConn(connId));
-        this.dispatch([...restored, ...out]);
+        // 名單公告（SDK ADR 0121）：這個實例第一次有手機連上時發一次（休眠喚醒後是新實例，會再發一次——可取代事件，只多一列寫入）
+        const announce = this.rt.aclAnnouncement();
+        this.dispatch([...restored, ...out, ...(announce ? this.core.publishLocal(announce) : [])]);
         return new Response(null, { status: 101, webSocket: client });
     }
     webSocketMessage(ws, message) {

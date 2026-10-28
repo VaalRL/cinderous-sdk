@@ -14,12 +14,12 @@ import {
   IOT_DEVICE_HEARTBEAT_ACK,
   parseIotDeviceFrame,
 } from '../../src/iot/device-frame.js';
-import { IOT_KIND_ACK, IOT_KIND_COMMAND, IOT_KIND_STATE } from '../../src/iot/kinds.js';
+import { IOT_KIND_ACK, IOT_KIND_COMMAND, IOT_KIND_RETAINED, IOT_KIND_STATE } from '../../src/iot/kinds.js';
 import { newIotMsgId, parseIotBody } from '../../src/iot/content.js';
 import { sealIotEnvelope } from '../../src/iot/envelope.js';
 import { decryptDM, encryptDM } from '../../src/protocol/nip44.js';
 import { finalizeEvent, generateSecretKey, getPublicKey, type NostrEvent } from '../../src/protocol/index.js';
-import worker, { IotHomeRoom, type Env } from '../../src/relay/worker.js';
+import worker, { IotHomeRoom, relayInfoFrom, type Env } from '../../src/relay/worker.js';
 
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as { DatabaseSync: typeof DatabaseSyncType };
 
@@ -173,6 +173,19 @@ const upgrade = (path: string, headers: Record<string, string> = {}) =>
 async function bodyOf(res: Response): Promise<{ status: number; json: { error?: string }; relay: string | null }> {
   return { status: res.status, json: JSON.parse(await res.text()), relay: res.headers.get('Cinder-Relay') };
 }
+
+describe('NIP-11 cinder_iot.realtime（SDK ADR 0120）', () => {
+  it('有 IOT_HOME 綁定、至少一個家庭有效才宣告；不列家庭', () => {
+    const ns = namespace(() => {
+      throw new Error('不該碰 DO');
+    }).ns as unknown as Env['IOT_HOME'];
+    const doc = relayInfoFrom(env({ IOT_HOME: ns }));
+    expect(doc.cinder_iot).toEqual({ realtime: { ws: true, longpoll: false, heartbeat_sec: 30 } });
+    expect(JSON.stringify(doc)).not.toContain(home.homeTag);
+    expect(relayInfoFrom(env()).cinder_iot).toBeUndefined(); // 沒有綁定
+    expect(relayInfoFrom(env({ IOT_HOME: ns, IOT_GATEWAY_KEYS: '{}' })).cinder_iot).toBeUndefined(); // 家庭無效
+  });
+});
 
 describe('Worker 路由（碰 DO 之前就擋）', () => {
   it('沒有開 C′（沒有 IOT_HOME 綁定或設定）→ 404 blocked: iot-disabled:，帶 Cinder-Relay', async () => {
@@ -373,5 +386,69 @@ describe('Worker 捕捉 DO 超量例外（ADR 0049 §10.3 第 2 點）', () => {
     const generic = await worker.fetch(upgrade(`/iot/v1/home/${home.homeTag}`), env({ IOT_HOME: other as unknown as Env['IOT_HOME'] }));
     expect(generic.status).toBe(503);
     expect(generic.headers.get('Cinder-Quota')).toBeNull();
+  });
+});
+
+describe('名單公告與每家的可尋址上限（SDK ADR 0121）', () => {
+  const lamps = ['l1', 'l2', 'l3', 'l4', 'l5', 'l6'].map((id) => ({ id, token: generateIotDeviceToken(), blind: home.blind(`dev:${id}`) }));
+  const aclBlindId = home.blind('sys:acl');
+  const wideEnv = (): Env =>
+    env({
+      IOT_REALTIME: JSON.stringify({
+        homes: [
+          {
+            homeTag: home.homeTag,
+            homePub: home.homePub,
+            gatewayPubkey: getPublicKey(gwSk),
+            aclBlindId,
+            acl: [{ pubkey: getPublicKey(operator), role: 'operator' }],
+            devices: lamps.map((l) => ({ id: l.id, blindId: l.blind, epoch: 0, tokenHash: hashIotDeviceToken(l.token) })),
+          },
+        ],
+      }),
+    });
+  const query = (room: IotHomeRoom, phone: FakeWs, filter: Record<string, unknown>): NostrEvent[] => {
+    phone.drain();
+    phoneSend(room, phone, ['REQ', 'q', filter]);
+    return phone
+      .drain()
+      .map((m) => JSON.parse(m) as unknown[])
+      .filter((m) => m[0] === 'EVENT')
+      .map((m) => m[2] as NostrEvent);
+  };
+
+  it('手機連上後 relay 以 31170 公告角色名單（d＝aclBlindId、加密給全家、閘道簽名）', async () => {
+    const state = new FakeState();
+    const room = new IotHomeRoom(state as unknown as DurableObjectState, wideEnv());
+    const phone = await connectPhone(room, state);
+    const [announce] = query(room, phone, { kinds: [IOT_KIND_RETAINED], '#d': [aclBlindId] });
+    expect(announce?.pubkey).toBe(getPublicKey(gwSk));
+    expect(announce?.tags).toEqual(expect.arrayContaining([['d', aclBlindId], ['h', home.homeTag]]));
+    const body = JSON.parse(decryptDM(announce!.content, home.homeKey, announce!.pubkey)) as { type: string; acl: { entries: { pubkey: string; role: string }[] } };
+    expect(body.type).toBe('acl');
+    expect(body.acl.entries).toEqual([expect.objectContaining({ pubkey: getPublicKey(operator), role: 'operator' })]);
+  });
+
+  it('沒有 aclBlindId 就不公告', async () => {
+    const state = new FakeState();
+    const room = new IotHomeRoom(state as unknown as DurableObjectState, env());
+    const phone = await connectPhone(room, state);
+    expect(query(room, phone, { kinds: [IOT_KIND_RETAINED] })).toEqual([]);
+  });
+
+  it('🔴 六台設備的 retained 全部留下（嚴格平面的 5 筆上限不適用於家庭）', async () => {
+    const state = new FakeState();
+    const room = new IotHomeRoom(state as unknown as DurableObjectState, wideEnv());
+    for (const l of lamps) {
+      const before = state.sockets.length;
+      const res = await room.fetch(upgrade(`/iot/v1/dev/${home.homeTag}/${l.blind}`, { Authorization: `Bearer ${l.token}` }));
+      expect(res.status).toBe(101);
+      const dev = state.sockets[before]!;
+      const up = sealIotEnvelope({ key: home.deviceKey(l.id, 0), kid: `${l.id}.0`, dir: 'up', ctr: 1, ts: Math.floor(Date.now() / 1000), plaintext: JSON.stringify({ type: 'state', topics: { [`home/${l.id}`]: 'ON' } }) });
+      room.webSocketMessage(dev as unknown as WebSocket, encodeIotDeviceFrame({ t: 'state', env: up }));
+    }
+    const phone = await connectPhone(room, state);
+    const retained = query(room, phone, { kinds: [IOT_KIND_RETAINED], '#d': lamps.map((l) => l.blind) });
+    expect(new Set(retained.map((e) => e.tags.find((t) => t[0] === 'd')![1]))).toEqual(new Set(lamps.map((l) => l.blind)));
   });
 });

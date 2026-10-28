@@ -20,6 +20,26 @@ export function resolveStringOrSecret(value, env, defaultEnv) {
     return resolveSecret(value, env, defaultEnv);
 }
 /**
+ * C′ 的閘道私鑰（SDK ADR 0121）：環境變數的值是 JSON `{ "<homeTag>": "<64 位 hex>" }`。沒有回 undefined。
+ * 這裡只檢查形狀；與 `site.iotRealtime` 的比對在部署函式（`iotGatewayKeysSecret`）。🔴 訊息只有變數名稱，不含值。
+ */
+export function resolveIotGatewayKeys(ref, env, defaultEnv) {
+    const raw = resolveSecret(ref, env, defaultEnv);
+    if (raw === undefined)
+        return undefined;
+    let parsed;
+    try {
+        parsed = JSON.parse(raw);
+    }
+    catch {
+        parsed = undefined;
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed) || !Object.values(parsed).every((v) => typeof v === 'string')) {
+        throw new Error(`環境變數 ${ref?.$env ?? defaultEnv} 必須是 JSON 物件 {"<homeTag>": "<64 位 hex>"}（C′ 的閘道私鑰，SDK ADR 0121）`);
+    }
+    return parsed;
+}
+/**
  * 私人路徑（SDK ADR 0051）的佔位值：驗證設定檔與產生部署包時用它代替真正的值（部署包不含秘密）。
  * 一個合法的車道 id，產生器會把用到它的變數改寫成從環境讀。
  */

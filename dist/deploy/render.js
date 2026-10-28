@@ -4,7 +4,7 @@
 // 都用這裡的同一份產生器，原本的模組照舊轉出這些名字。環境變數一律經過 `relaySiteVars` 驗證。
 // 🔴 本檔不得出現 `node:*`：部署包的產生器要能在瀏覽器（網頁設定器，P3）與外掛的行動版執行。
 // 守門測試：tests/deploy/deploy-config-guard.test.ts。
-import { RELAY_DO_BINDING, RELAY_DO_MIGRATIONS, relaySiteVars } from './shared.js';
+import { RELAY_DO_BINDINGS, RELAY_DO_MIGRATIONS, relaySiteVars } from './shared.js';
 /** 容器內中繼聽的埠 */
 export const CONTAINER_PORT = 8080;
 /** 保存模式的 SQLite 檔（掛 volume 的目錄） */
@@ -40,11 +40,10 @@ export function renderWranglerToml(opts) {
         `compatibility_date = "${opts.compatibilityDate}"`,
         // Account ID 不是秘密（部署包可以寫死它，wrangler 就不會用錯帳號）；沒給＝交給 CLOUDFLARE_ACCOUNT_ID 或登入狀態
         ...(opts.pinAccountId !== undefined ? [`account_id = ${JSON.stringify(opts.pinAccountId)}`] : []),
-        '',
-        '[[durable_objects.bindings]]',
-        `name = "${RELAY_DO_BINDING.name}"`,
-        `class_name = "${RELAY_DO_BINDING.className}"`,
     ];
+    for (const binding of RELAY_DO_BINDINGS) {
+        lines.push('', '[[durable_objects.bindings]]', `name = "${binding.name}"`, `class_name = "${binding.className}"`);
+    }
     for (const migration of RELAY_DO_MIGRATIONS) {
         const classes = migration.newSqliteClasses.map((c) => `"${c}"`).join(', ');
         lines.push('', '[[migrations]]', `tag = "${migration.tag}"`, `new_sqlite_classes = [${classes}]`);
@@ -64,7 +63,7 @@ export function renderWranglerToml(opts) {
     return `${lines.join('\n')}\n`;
 }
 const forwardSlashes = (path) => path.split('\\').join('/');
-/** Worker 入口：注入部署者的版號（NIP-11 `version`），轉出 SDK 的 Worker 與 `RelayRoom`。 */
+/** Worker 入口：注入部署者的版號（NIP-11 `version`），轉出 SDK 的 Worker 與 Durable Object 類別（`RelayRoom`、`IotHomeRoom`）。 */
 export function renderWorkerEntry(opts) {
     const dist = forwardSlashes(opts.sdkDistDir).replace(/\/$/, '');
     const worker = JSON.stringify(`${dist}/relay/worker.js`);
@@ -131,6 +130,12 @@ export function renderDockerignore() {
     return ['node_modules', '.env', '.env.*', '!.env.example', '.secrets', '.dev.vars', '*.db', ''].join('\n');
 }
 const yamlString = (value) => JSON.stringify(value); // JSON 字串就是合法的 YAML 雙引號字串
+/** C′ 閘道私鑰的環境變數（relay 讀的名字；SDK ADR 0121） */
+export const IOT_GATEWAY_KEYS_ENV = 'IOT_GATEWAY_KEYS';
+/** compose 的必填代入：`${NAME:?…}`——沒設就拒絕啟動，而不是帶著空值跑起來 */
+export function composeRequiredEnv(name, why) {
+    return `\${${name}:?set ${name} in .env (${why})}`;
+}
 export function renderCompose(opts) {
     const persist = opts.environment.PERSIST === '1';
     const bind = opts.bindAddress === undefined ? '' : opts.bindAddress.includes(':') ? `[${opts.bindAddress}]:` : `${opts.bindAddress}:`;

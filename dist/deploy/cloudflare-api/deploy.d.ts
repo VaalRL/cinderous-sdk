@@ -74,7 +74,7 @@ export interface CloudflareApiDeployment {
 }
 export declare const WORKER_ENTRY_MODULE = "entry.mjs";
 export declare const WORKER_RELAY_MODULE = "relay.mjs";
-/** 主模組：注入版號後轉出打包好的 Worker 與 `RelayRoom`（與 wrangler 路徑的 `renderWorkerEntry` 同一個做法）。 */
+/** 主模組：注入版號後轉出打包好的 Worker 與兩個 Durable Object 類別（與 wrangler 路徑的 `renderWorkerEntry` 同一個做法）。 */
 export declare function renderApiWorkerEntry(version: string): string;
 export interface MigrationPayload {
     old_tag?: string;

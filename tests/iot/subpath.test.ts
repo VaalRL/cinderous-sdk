@@ -77,6 +77,19 @@ describe('./iot/bridge 子路徑', () => {
   });
 });
 
+describe('./iot/device 子路徑（SDK ADR 0120）', () => {
+  it('中立：零 Node 內建模組、零外部引用；只帶設備需要的協定層（不帶手機端、閘道、推播、連線池、中繼）', async () => {
+    const metafile = await bundle('src/iot/device.ts');
+    const external: string[] = [];
+    for (const [file, input] of Object.entries(metafile.inputs)) for (const i of input.imports) if (i.external) external.push(`${file} → ${i.path}`);
+    expect(external).toEqual([]);
+    const allowed = ['device.ts', 'device-message.ts', 'device-frame.ts', 'envelope.ts', 'keys.ts', 'topic.ts', 'content.ts', 'kinds.ts'].map((f) => `src/iot/${f}`);
+    const inputs = Object.keys(metafile.inputs).filter((f) => f.startsWith('src/'));
+    expect(inputs.filter((f) => f.startsWith('src/iot/') && !allowed.some((a) => f.endsWith(a)))).toEqual([]);
+    expect(inputs.filter((f) => f.endsWith('src/relay-pool.ts') || f.includes('src/relay/') || f.includes('src/deploy/'))).toEqual([]);
+  });
+});
+
 describe('package.json', () => {
   const pkg = JSON.parse(readFileSync(`${root}package.json`, 'utf8')) as {
     exports: Record<string, unknown>;
@@ -88,6 +101,7 @@ describe('package.json', () => {
   it('宣告了 ./iot 與 ./iot/bridge', () => {
     expect(pkg.exports['./iot']).toEqual({ types: './dist/iot/index.d.ts', import: './dist/iot/index.js' });
     expect(pkg.exports['./iot/bridge']).toEqual({ types: './dist/iot/bridge/index.d.ts', import: './dist/iot/bridge/index.js' });
+    expect(pkg.exports['./iot/device']).toEqual({ types: './dist/iot/device.d.ts', import: './dist/iot/device.js' });
   });
 
   it('mqtt 是選用 peer 相依、不是一般相依；aedes 不在任何執行期相依裡', () => {
@@ -105,5 +119,7 @@ describe('package.json', () => {
     expect(iot.IOT_KIND_COMMAND).toBe(25170);
     const bridge = await import('@cinderous/client/iot/bridge');
     expect(typeof bridge.startIotBridge).toBe('function');
+    const device = await import('@cinderous/client/iot/device');
+    expect(typeof device.connectIotDevice).toBe('function');
   }, 30_000); // 第一次載入打包後的 dist，整套平行跑、機器忙時超過預設 5 秒
 });

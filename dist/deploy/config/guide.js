@@ -79,6 +79,8 @@ export function renderDeployGuide(config, locale, ctx) {
     const readOnlyEnv = isSecretRef(site.readOnlyLanes) ? site.readOnlyLanes.$env : undefined;
     // TURN（SDK ADR 0118）：Key ID 在 [vars]，Token 是 Worker secret、值在 .env
     const turnEnv = worker && site.turnKeyId !== undefined ? secretEnvName(config, 'turnApiToken') : undefined;
+    // C′（SDK ADR 0121）：家庭與設備在設定裡（公開值與雜湊），閘道私鑰是秘密、值在 .env
+    const iotEnv = site.iotRealtime !== undefined ? secretEnvName(config, 'iotGatewayKeys') : undefined;
     // docker 的發布位址（SDK ADR 0119）：trustProxy 時沒指定就只發布在 127.0.0.1
     const dockerBind = target === 'docker' ? composeBindAddress(config.node?.bindAddress, config.node?.trustProxy === true) : undefined;
     const out = [];
@@ -201,6 +203,10 @@ export function renderDeployGuide(config, locale, ctx) {
             out.push('', t(`TURN 的 Token 設成 Worker secret（指令會要你貼上 \`.env\` 裡 \`${turnEnv}\` 的值；之後重新部署會保留，Token 換了才要再設）。\`relay deploy --config\` 會自己做這一步：`, `Set the TURN token as a Worker secret (the command asks you to paste the value of \`${turnEnv}\` from \`.env\`; later redeployments keep it, so set it again only when the token changes). \`relay deploy --config\` does this step for you:`), '');
             code('bash', 'npx wrangler@4 secret put TURN_API_TOKEN');
         }
+        if (iotEnv !== undefined) {
+            out.push('', t(`**IoT 即時通道 C′**（SDK ADR 0121）：閘道私鑰設成 Worker secret（指令會要你貼上 \`.env\` 裡 \`${iotEnv}\` 的 JSON；之後重新部署會保留，加了家庭才要再設）。設好之前家庭不會啟用（\`/iot/\` 回 403）。\`relay deploy --config\` 會自己做這一步：`, `**IoT realtime channel C′** (SDK ADR 0121): set the gateway private keys as a Worker secret (the command asks you to paste the JSON of \`${iotEnv}\` from \`.env\`; later redeployments keep it, so set it again only when you add a home). Until then no home is enabled (\`/iot/\` returns 403). \`relay deploy --config\` does this step for you:`), '');
+            code('bash', 'npx wrangler@4 secret put IOT_GATEWAY_KEYS');
+        }
     }
     if (target === 'docker' || target === 'home-tunnel') {
         if (privateEnv !== undefined) {
@@ -208,6 +214,9 @@ export function renderDeployGuide(config, locale, ctx) {
         }
         if (readOnlyEnv !== undefined) {
             out.push(t(`唯讀寬限期從 \`.env\` 的 \`${readOnlyEnv}\` 代入 \`READONLY_LANES\`（沒設＝沒有；SDK ADR 0052）。`, `The read-only grace period comes from \`${readOnlyEnv}\` in \`.env\` into \`READONLY_LANES\` (unset means none; SDK ADR 0052).`), '');
+        }
+        if (iotEnv !== undefined) {
+            out.push(t(`C′ 的閘道私鑰從 \`.env\` 的 \`${iotEnv}\` 代入 \`IOT_GATEWAY_KEYS\`；沒設就不會啟動（SDK ADR 0121）。`, `The C′ gateway private keys come from \`${iotEnv}\` in \`.env\` into \`IOT_GATEWAY_KEYS\`; compose refuses to start without them (SDK ADR 0121).`), '');
         }
         code('bash', 'docker compose up -d --build', target === 'home-tunnel' ? t('docker compose logs -f cloudflared   # 看到 "Registered tunnel connection" 就通了', 'docker compose logs -f cloudflared   # "Registered tunnel connection" means it is up') : 'docker compose ps');
         if (target === 'docker') {
@@ -228,6 +237,8 @@ export function renderDeployGuide(config, locale, ctx) {
             ? [`fly secrets set APP_LANES="$${privateEnv}" --app ${name} --stage   # ${t('私人路徑（不寫進 fly.toml）', 'private path (kept out of fly.toml)')}`]
             : []), ...(readOnlyEnv !== undefined
             ? [`fly secrets set READONLY_LANES="$${readOnlyEnv}" --app ${name} --stage   # ${t('唯讀寬限期（換過私人路徑時；SDK ADR 0052）', 'read-only grace period (after a path change; SDK ADR 0052)')}`]
+            : []), ...(iotEnv !== undefined
+            ? [`fly secrets set IOT_GATEWAY_KEYS="$${iotEnv}" --app ${name} --stage   # ${t('C′ 的閘道私鑰（不寫進 fly.toml；SDK ADR 0121）', 'C′ gateway private keys (kept out of fly.toml; SDK ADR 0121)')}`]
             : []), `fly deploy --app ${name} --remote-only --ha=false`);
         out.push('', t('`--ha=false`：純記憶體或單一 SQLite 檔的中繼只能跑一台。', '`--ha=false`: a memory-only or single-SQLite-file relay can only run on one machine.'));
     }

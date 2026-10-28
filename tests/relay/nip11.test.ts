@@ -152,3 +152,10 @@ describe("收件確認（SDK ADR 0067 §2）", () => {
     expect("cinder_inbox_ack" in buildRelayInfo({ inboxAck: false })).toBe(false);
   });
 });
+
+describe("cinder_iot（SDK ADR 0120）", () => {
+  it("沒開 C′ 不出現；開了宣告 ws、還沒實作的 longpoll 寫 false、心跳間隔", () => {
+    expect("cinder_iot" in buildRelayInfo()).toBe(false);
+    expect(buildRelayInfo({ iotRealtime: { heartbeatSec: 20 } }).cinder_iot).toEqual({ realtime: { ws: true, longpoll: false, heartbeat_sec: 20 } });
+  });
+});

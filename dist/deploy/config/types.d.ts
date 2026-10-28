@@ -53,6 +53,8 @@ export interface DeploySecrets {
     tunnelToken?: SecretRef;
     /** Cloudflare TURN 的 API Token（Worker secret `TURN_API_TOKEN`；SDK ADR 0118） */
     turnApiToken?: SecretRef;
+    /** C′ 的閘道私鑰（`IOT_GATEWAY_KEYS`，JSON `{ homeTag: 64 位 hex }`；SDK ADR 0121） */
+    iotGatewayKeys?: SecretRef;
     /** 推播閘道私鑰（`push-gateway`；執行期秘密 `PUSH_GATEWAY_KEY`）。 */
     pushGatewayKey?: SecretRef;
     /** Firebase 服務帳號 JSON（`push-gateway`；執行期秘密 `FCM_SERVICE_ACCOUNT`）。 */

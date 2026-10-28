@@ -13,7 +13,15 @@ export declare const IOT_DEFAULT_TTL_SEC = 30;
 export declare const IOT_DEFAULT_CLIENT_QUERY_TIMEOUT_MS = 8000;
 /** retained 多久沒更新就視為不可信（秒）：閘道每 6 小時刷新一次，留兩輪＋一小時 */
 export declare const IOT_DEFAULT_STALE_AFTER_SEC: number;
-export type IotCommandStatus = IotAckStatus | 'relay-rejected';
+/** 即時等級（ADR 0049 §9.4 裁示 5）：ttl 預設 15 秒、夾 5–60；等 ack 預設 5 秒、不重送 */
+export declare const IOT_REALTIME_DEFAULT_TTL_SEC = 15;
+export declare const IOT_REALTIME_MAX_TTL_SEC = 60;
+export declare const IOT_REALTIME_DEFAULT_ACK_TIMEOUT_MS = 5000;
+/**
+ * `unknown`＝即時等級逾時沒有 ack：**結果未知，不是失敗**（設備可能已經執行、只是 ack 沒回來），SDK 已自動查一次、結果在 `after`。
+ * `quota`＝中繼今日額度用完（ADR 0049 §10），有的話附 `reset`。
+ */
+export type IotCommandStatus = IotAckStatus | 'relay-rejected' | 'unknown';
 export interface IotCommandResult {
     readonly status: IotCommandStatus;
     readonly msgId: string;
@@ -23,16 +31,29 @@ export interface IotCommandResult {
     readonly reason?: string;
     /** `relay-rejected`：每一座中繼的拒收（ADR 0040 詞元分類） */
     readonly rejected?: readonly ClassifiedRejection[];
+    /** C′ 設備的 ack 附帶的狀態（執行後的值） */
+    readonly state?: IotDeviceState;
+    /** `unknown`：自動查詢的結果 */
+    readonly after?: IotQueryResult;
+    /** `quota`：額度重置時間（unix 秒） */
+    readonly reset?: number;
 }
 export interface IotCommandOptions {
     /** 0＝送一次、等 ack 一次；1（預設）＝逾時以指數退避重送 */
     qos?: 0 | 1;
-    /** 第一次等 ack 多久（毫秒），預設 3,000；之後每次加倍 */
+    /** 第一次等 ack 多久（毫秒），預設 3,000（即時等級 5,000）；之後每次加倍 */
     timeoutMs?: number;
-    /** QoS 1 最多重送幾次（不含第一次），預設 2；超過指令存活時間就不再送 */
+    /** QoS 1 最多重送幾次（不含第一次），預設 2（即時等級 0）；超過指令存活時間就不再送 */
     retries?: number;
-    /** 指令存活（秒），預設 30，夾 5–300（NIP-40 `expiration`） */
+    /** 指令存活（秒），預設 30，夾 5–300（NIP-40 `expiration`）；即時等級預設 15、夾 5–60 */
     ttlSec?: number;
+    /**
+     * `realtime`（門、車庫門、警報解除）：不排隊、等 ack `ackTimeoutMs`（預設 5 秒），逾時回 `unknown` 並自動查詢一次（ADR 0049 §9.4）。
+     * 預設 `normal`。
+     */
+    urgency?: 'normal' | 'realtime';
+    /** 即時等級等 ack 多久（毫秒）；與 `timeoutMs` 同義，兩個都給以這個為準 */
+    ackTimeoutMs?: number;
     /** 設備 id（角色名單依設備細分時閘道會用；不給由閘道的 topic 對照表推出） */
     device?: string;
     enc?: IotEncoding;
@@ -95,6 +116,36 @@ export interface IotGatewayStatus {
     /** 最後一次心跳（毫秒）；沒有心跳＝undefined */
     readonly lastSeen?: number;
 }
+/** C′ 設備（ADR 0049 §9）：手機端只需要知道它的金鑰版本與類別 */
+export interface IotRealtimeDeviceRef {
+    /** 金鑰版本（kid 的 epoch），預設 0；設備輪換金鑰後跟著改 */
+    readonly epoch?: number;
+    /** `lock`（門、門鎖、車庫門、門禁）：指令的 down 金鑰由 `operatorSecret` 導出（§9.5），viewer＋被攻破的 relay 也開不了 */
+    readonly class?: 'lock' | 'general';
+    /** 非門鎖類也選用 `operatorSecret`（§9.5） */
+    readonly operatorSecret?: boolean;
+}
+export interface IotRealtimeClientOptions {
+    /** 設備 id → 設定。不在這裡的設備照原本的閘道路線（A／B） */
+    readonly devices: Readonly<Record<string, IotRealtimeDeviceRef>>;
+    /** 只發給 operator／owner 的秘密（ADR 0028 配對時交付）；沒有它就送不出門鎖類的指令 */
+    readonly operatorSecret?: Uint8Array | string;
+    /** 連到 relay 家庭端點 `/iot/v1/home/<homeTag>` 的連線池；沒給＝與 `pool` 相同 */
+    readonly pool?: IotTransport;
+    /** relay 的閘道公鑰（`IOT_REALTIME` 的 `gatewayPubkey`）；沒給＝與 `gateway` 相同 */
+    readonly gateway?: string;
+}
+/** `deviceLink()` 的結果：C′ 由 relay 即時回答（不落庫）；其他路線看 retained 的 `online` */
+export interface IotDeviceLink {
+    readonly transport: 'ws' | 'gateway';
+    /** 問到了沒：`ok`，或 relay 的拒絕（`not-allowed`）、`unknown`（沒回）、`quota`… */
+    readonly status: IotCommandStatus;
+    readonly online?: boolean;
+    /** C′：設備最後一次心跳（毫秒） */
+    readonly lastHeartbeat?: number;
+    /** 閘道路線：retained 的時間（毫秒） */
+    readonly lastSeen?: number;
+}
 export interface IotClientOptions {
     pool: IotTransport;
     /** 成員自己的 Nostr 身分（ADR 0023） */
@@ -109,6 +160,8 @@ export interface IotClientOptions {
     staleAfterSec?: number;
     /** 一次性查詢（retained、名單）等多久（毫秒），預設 5,000 */
     readTimeoutMs?: number;
+    /** C′ 即時通道的設備（ADR 0049 §9） */
+    realtime?: IotRealtimeClientOptions;
     now?: () => number;
     onError?: (error: unknown) => void;
 }
@@ -125,6 +178,13 @@ export declare class IotClient {
         timeoutMs?: number;
         ttlSec?: number;
     }): Promise<IotQueryResult>;
+    /**
+     * 設備現在連著嗎（ADR 0049 §9.4）。C′：relay 以當下的連線即時回答（`dev-link`，不打擾設備、不落庫），`viewer` 以上；
+     * 其他路線：retained 的 `online`（閘道最後一次知道的）。
+     */
+    deviceLink(device: string, opts?: {
+        timeoutMs?: number;
+    }): Promise<IotDeviceLink>;
     /** 改角色名單（只有 owner 會成功；ADR 0049 §2.5） */
     updateAcl(op: {
         op: 'add';

@@ -9,7 +9,7 @@
 export { DEPLOY_CONFIG_VERSION, DEPLOY_SERVICES, DEPLOY_TARGETS, type DeployConfig, type DeploySecrets, type DeploySiteOptions, type DeployService, type DeployTarget, hostOfTarget, isSecretRef, type PushGatewayDeployOptions, type RelayHost, type SecretRef, serviceOfConfig, } from './types.js';
 export { dangerConfirmWord, dangerousChoices, DEPLOY_OPTION_SPECS, PUSH_GATEWAY_LIMIT_SPECS, type DeployOptionGroup, type DeployOptionSpec, type DeployOptionType, deployOptionSpec, isDangerousValue, SITE_OPTION_KEYS, specAppliesTo, } from './specs.js';
 export { deployConfigJsonSchema, renderDeployConfigJsonSchema } from './schema.js';
-export { ENV_NAME_PATTERN, findSecretLiterals, PRIVATE_LANE_PLACEHOLDER, READ_ONLY_LANE_PLACEHOLDER, resolveSecret, resolveSiteSecrets, resolveStringOrSecret, siteWithPlaceholders, } from './secrets.js';
+export { ENV_NAME_PATTERN, findSecretLiterals, PRIVATE_LANE_PLACEHOLDER, READ_ONLY_LANE_PLACEHOLDER, resolveIotGatewayKeys, resolveSecret, resolveSiteSecrets, resolveStringOrSecret, siteWithPlaceholders, } from './secrets.js';
 export { assertDeployConfig, compareVersions, DEPLOY_AFFECTING_CHANGES, type DeployConfigValidation, validateDeployConfig, type ValidateDeployConfigOptions, } from './validate.js';
 export { DEPLOY_GUIDE_FILES, DEPLOY_GUIDE_LOCALES, type DeployGuideContext, type DeployGuideLocale, deployEndpoints, renderDeployGuide, SDK_SOURCE_REPO, secretEnvName, } from './guide.js';
 export { contentHash, DEPLOY_CONFIG_FILE, type DeployPackage, type DeployPackageContext, type DeployPackageFile, type DeployPackageLicense, GENERATED_MANIFEST, type GeneratedManifest, modifiedGeneratedFiles, privateLaneEnvName, readOnlyLanesEnvName, renderDeployConfigFile, renderDeployPackage, } from './package.js';

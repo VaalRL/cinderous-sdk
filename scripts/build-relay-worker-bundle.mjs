@@ -22,7 +22,7 @@ export async function bundleRelayWorker() {
   const result = await build({
     stdin: {
       contents: [
-        "export { default, RelayRoom } from './worker.js';",
+        "export { default, RelayRoom, IotHomeRoom } from './worker.js';",
         "export { setRelayVersion } from './version.js';",
       ].join('\n'),
       resolveDir: `${root}src/relay`,
@@ -69,7 +69,7 @@ export async function renderRelayWorkerBundleModule(source) {
     '',
     '/**',
     ' * 中繼 Worker（`src/relay/worker.ts`）打包成的單一 ES module 原始碼。',
-    ' * 轉出 `default`（Worker）、`RelayRoom`（Durable Object）與 `setRelayVersion`。',
+    ' * 轉出 `default`（Worker）、`RelayRoom`／`IotHomeRoom`（Durable Object）與 `setRelayVersion`。',
     ' */',
     `export const relayWorkerSource: string = ${JSON.stringify(source)};`,
     '',

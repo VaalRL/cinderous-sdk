@@ -80,6 +80,11 @@ export const DEPLOY_AFFECTING_CHANGES = [
         adr: '0119',
         'zh-TW': 'Node 中繼取 X-Forwarded-For 改為從右邊數（TRUST_PROXY=<層數>；原本取第一段，客戶端可以偽造）；docker 開了 node.trustProxy 時 compose 只發布在 127.0.0.1（反向代理在別台要設 node.bindAddress）；新增 HOST／relay start --host',
         en: 'The Node relay now reads X-Forwarded-For from the right (TRUST_PROXY=<hops>; it used the first entry, which clients can forge); with node.trustProxy, the docker compose file publishes on 127.0.0.1 only (set node.bindAddress if the reverse proxy is on another host); new HOST / relay start --host',
+    }, {
+        version: '0.81.0',
+        adr: '0121',
+        'zh-TW': 'Cloudflare Worker 一律帶 IOT_HOME 綁定，重新部署會套用 Durable Object 遷移 v2（新增 IotHomeRoom，沒有資料）；沒設 site.iotRealtime 時行為不變。IoT 即時通道（C′）可從設定檔開（site.iotRealtime，閘道私鑰是 secrets.iotGatewayKeys）',
+        en: 'Cloudflare Workers always carry the IOT_HOME binding, so a redeploy applies Durable Object migration v2 (adds IotHomeRoom, no data); nothing changes without site.iotRealtime. The IoT realtime channel (C′) can be turned on from the config (site.iotRealtime; gateway keys are secrets.iotGatewayKeys)',
     },
 ];
 /** 比較 x.y.z（預發行標記忽略）：a < b 回負數 */

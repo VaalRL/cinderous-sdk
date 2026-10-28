@@ -41,6 +41,7 @@ export {
   findSecretLiterals,
   PRIVATE_LANE_PLACEHOLDER,
   READ_ONLY_LANE_PLACEHOLDER,
+  resolveIotGatewayKeys,
   resolveSecret,
   resolveSiteSecrets,
   resolveStringOrSecret,

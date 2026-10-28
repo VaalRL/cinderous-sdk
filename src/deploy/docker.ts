@@ -16,8 +16,8 @@ import {
   waitForHealthy,
 } from './common.js';
 import { prepareNodeRelayContext } from './container.js';
-import { BIND_ADDRESS_PATTERN, composeBindAddress, DEFAULT_DOCKER_PORT, relayEnvironment, renderCompose, WILDCARD_BIND_ADDRESSES } from './render.js';
-import { privateLaneEndpoint, type RelaySiteOptions } from './shared.js';
+import { BIND_ADDRESS_PATTERN, composeBindAddress, composeRequiredEnv, DEFAULT_DOCKER_PORT, IOT_GATEWAY_KEYS_ENV, relayEnvironment, renderCompose, WILDCARD_BIND_ADDRESSES } from './render.js';
+import { iotGatewayKeysSecret, privateLaneEndpoint, type RelaySiteOptions, type RelayWorkerSecrets } from './shared.js';
 
 // 產生器搬到不碰 Node 的 render.ts（SDK ADR 0050），這裡轉出以維持原本的匯出
 export { DEFAULT_DOCKER_PORT, renderCompose } from './render.js';
@@ -41,7 +41,7 @@ export interface DockerTunnelOptions {
  * 站台參數（白名單、站名、防濫用、保存期、檔案塊……）見 `RelaySiteOptions`（SDK ADR 0036、0037）；
  * 只有 Cloudflare 版支援的參數（`appLanes` 等）在這裡會丟例外——Node 主機沒有車道。
  */
-export interface DockerDeployOptions extends RelaySiteOptions {
+export interface DockerDeployOptions extends RelaySiteOptions, Pick<RelayWorkerSecrets, 'iotGatewayKeys'> {
   /** compose 專案與容器名稱；預設 cinderous-relay */
   name?: string;
   /** 對外的埠（對應容器的 8080）；預設 8080 */
@@ -91,6 +91,9 @@ export async function deployDockerRelay(opts: DockerDeployOptions = {}): Promise
     // Tunnel 模式所有連線都經過 cloudflared：一定要信 X-Forwarded-For，IP 限速才不會把所有人算成同一個來源
     trustProxy,
   });
+  // C′ 的閘道私鑰（SDK ADR 0121）：compose 從環境代入、沒設就不啟動；值只交給 docker compose 的環境，不寫檔
+  const gatewayKeys = opts.iotGatewayKeys !== undefined ? iotGatewayKeysSecret(opts.iotGatewayKeys, opts.iotRealtime) : undefined;
+  if (opts.iotRealtime !== undefined) environment.IOT_GATEWAY_KEYS = composeRequiredEnv(IOT_GATEWAY_KEYS_ENV, 'C′ gateway keys, SDK ADR 0121');
   const workDir = opts.workDir ?? join(process.cwd(), '.cinderous', name);
   prepareNodeRelayContext({ workDir, ...(opts.sdkRoot ? { sdkRoot: opts.sdkRoot } : {}), ...(opts.version ? { version: opts.version } : {}) });
   const configPath = join(workDir, 'docker-compose.yml');
@@ -110,6 +113,7 @@ export async function deployDockerRelay(opts: DockerDeployOptions = {}): Promise
   progress({ step: 'deploy', message: '以 docker compose 建置並啟動' });
   // Token 只放進 docker compose 的環境（compose 以它代入 cloudflared 的 TUNNEL_TOKEN），不寫檔
   const runEnv: Record<string, string | undefined> = tunnel?.token !== undefined ? { [tunnel.tokenEnv]: tunnel.token } : {};
+  if (gatewayKeys !== undefined) runEnv[IOT_GATEWAY_KEYS_ENV] = gatewayKeys;
   const result = await (opts.run ?? defaultRunner)('docker', ['compose', '-f', configPath, '-p', name, 'up', '-d', '--build'], runEnv);
   if (result.code !== 0) throw commandFailure('docker compose', result);
 

@@ -380,3 +380,16 @@ describe('$sys/acl（只有 owner 能改；名單以 relay 本地為準）', () 
     void core;
   });
 });
+
+describe('名單公告（SDK ADR 0121）', () => {
+  it('同一秒內連發兩則：第二則的 created_at 一定更晚（否則由 id 決勝，新名單可能被舊的蓋掉）', () => {
+    const rt = new IotRealtimeHome(config({ aclBlindId: 'a'.repeat(22) }), gwSk, { sockets: fakeSockets().sockets, now: () => T0 });
+    const first = rt.aclAnnouncement()!;
+    expect(rt.aclAnnouncement()).toBeUndefined(); // 一個實例只主動公告一次
+    const second = rt.aclAnnouncement({ force: true })!;
+    const third = rt.aclAnnouncement({ force: true })!;
+    expect(second.created_at).toBeGreaterThan(first.created_at);
+    expect(third.created_at).toBeGreaterThan(second.created_at);
+    expect(first.created_at).toBe(Math.floor(T0 / 1000));
+  });
+});

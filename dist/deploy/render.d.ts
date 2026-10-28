@@ -34,7 +34,7 @@ export declare function renderWranglerToml(opts: {
      */
     secretVars?: readonly string[];
 } & RelaySiteOptions): string;
-/** Worker 入口：注入部署者的版號（NIP-11 `version`），轉出 SDK 的 Worker 與 `RelayRoom`。 */
+/** Worker 入口：注入部署者的版號（NIP-11 `version`），轉出 SDK 的 Worker 與 Durable Object 類別（`RelayRoom`、`IotHomeRoom`）。 */
 export declare function renderWorkerEntry(opts: {
     sdkDistDir: string;
     version: string;
@@ -59,6 +59,10 @@ export declare function relayEnvironment(opts: RelaySiteOptions & {
 }): Record<string, string>;
 /** 建置內容的 .dockerignore：不把相依、秘密與資料庫送進建置內容（部署包的 `.env` 也在同一個資料夾）。 */
 export declare function renderDockerignore(): string;
+/** C′ 閘道私鑰的環境變數（relay 讀的名字；SDK ADR 0121） */
+export declare const IOT_GATEWAY_KEYS_ENV = "IOT_GATEWAY_KEYS";
+/** compose 的必填代入：`${NAME:?…}`——沒設就拒絕啟動，而不是帶著空值跑起來 */
+export declare function composeRequiredEnv(name: string, why: string): string;
 /** 家中主機＋Cloudflare Tunnel（SDK ADR 0050 §5）：relay 不發布埠，`cloudflared` 從環境變數（`.env`）讀 Token。 */
 export interface ComposeTunnelOptions {
     /** 放 Tunnel Token 的環境變數名稱（設定檔 `secrets.tunnelToken.$env`），例如 `TUNNEL_TOKEN` */

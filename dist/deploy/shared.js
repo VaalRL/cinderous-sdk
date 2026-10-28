@@ -4,7 +4,10 @@
 // 名稱驗證、健康檢查、Worker 的預設值、Durable Object 綁定與遷移、中繼的環境變數。
 // 🔴 本檔與它引用的模組不得出現 `node:*`：外掛的行動版（iOS／Android）沒有 Node，
 // 只要模組圖裡有一個就會在載入時崩潰。守門測試：tests/deploy/cloudflare-api-guard.test.ts。
+import { hexToBytes } from '@noble/hashes/utils.js';
+import { getPublicKey } from '../protocol/keys.js';
 import { allowedPubkeysFrom, ceilingClassOf, computeCeilingBudget, DO_CEILING_MAX_MIB, doCapacityFor, doCapacitySettings, knownLanes, NODE_CEILING_MAX_MIB, nodeCapacityFrom, PRD_MAX_CONNECTIONS_PER_PUBKEY, PRD_MAX_MESSAGES_PER_SECOND_PER_IP, READONLY_LANES_MAX, } from '../relay/host-config.js';
+import { checkIotRealtimeAclShape, checkIotRealtimeConfig } from '../relay/iot-realtime-config.js';
 import { allDoNames, LANE_ID_PATTERN } from '../relay/shard.js';
 import { TRAFFIC_LIMITS } from '../relay/traffic-budget.js';
 export const DEFAULT_WORKER_NAME = 'cinderous-relay';
@@ -12,11 +15,21 @@ export const DEFAULT_COMPATIBILITY_DATE = '2026-09-01';
 /** Worker 裡 Durable Object 的綁定名稱與類別（`src/relay/worker.ts` 的 `Env.RELAY_ROOM`／`RelayRoom`）。 */
 export const RELAY_DO_BINDING = { name: 'RELAY_ROOM', className: 'RelayRoom' };
 /**
+ * IoT 即時通道（C′）每個家庭一顆的 Durable Object（`src/relay/iot-home-room.ts`；SDK ADR 0121）。
+ * 每座站都帶這個綁定：沒設 `IOT_REALTIME` 時整條 `/iot/` 回 404，類別不會被叫到，也不佔儲存。
+ * 一律帶（而不是開了 C′ 才帶）是為了不必處理「開了又關」的刪除遷移。
+ */
+export const IOT_HOME_DO_BINDING = { name: 'IOT_HOME', className: 'IotHomeRoom' };
+/** Worker 的所有 Durable Object 綁定（REST 與 wrangler 共用） */
+export const RELAY_DO_BINDINGS = [RELAY_DO_BINDING, IOT_HOME_DO_BINDING];
+/**
  * Durable Object 遷移，依序套用。wrangler.toml 與 REST 上傳共用這一份。
  * 🔴 已發出去的項目**不能改也不能刪**：已部署的站記得最後一個 tag，重新部署只送它之後的新項目。
  */
 export const RELAY_DO_MIGRATIONS = [
     { tag: 'v1', newSqliteClasses: [RELAY_DO_BINDING.className] },
+    // SDK ADR 0121：C′ 的家庭 DO
+    { tag: 'v2', newSqliteClasses: [IOT_HOME_DO_BINDING.className] },
 ];
 /** 名稱限制（Cloudflare Worker、Fly app、compose 專案都吃這個形狀）：小寫英數與連字號、不以連字號開頭、最長 63。 */
 export const RELAY_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/;
@@ -153,6 +166,8 @@ export const WORKER_ONLY_SITE_OPTIONS = [
     // TURN 換發端點只在 Worker（Cinderous ADR-0243）
     'turnKeyId',
     'turnTtlSeconds',
+    // 每日請求額度是 Cloudflare 的計費概念（SDK ADR 0121）
+    'iotHomeDailyRequests',
 ];
 /** 只有 Node 主機會讀的選項（SDK ADR 0099）。 */
 export const NODE_ONLY_SITE_OPTIONS = [
@@ -200,6 +215,8 @@ export const RELAY_SITE_LIMITS = {
     /** TURN Key ID 的長度上限；短期憑證秒數（SDK ADR 0118） */
     turnKeyId: 64,
     turnTtlSeconds: { min: 60, max: 172_800 },
+    /** C′ 每個家庭每天的請求額度（SDK ADR 0121） */
+    iotHomeDailyRequests: { min: 1, max: 10_000_000 },
 };
 /** 收集問題的小工具；`throwFirst` 讓「有錯就丟第一個」的舊介面沿用同一份規則。 */
 export class IssueList {
@@ -481,6 +498,27 @@ function siteVarsInto(issues, opts, host, vars) {
     if (software !== undefined)
         vars.RELAY_SOFTWARE_URL = software;
     turnIn(issues, opts, vars);
+    iotRealtimeIn(issues, opts, vars, host);
+}
+/** C′ 即時通道（SDK ADR 0121）：與 relay 同一份檢查；名單只看形狀（這裡不能帶進 `./iot`） */
+function iotRealtimeIn(issues, opts, vars, host) {
+    if (opts.iotRealtime !== undefined) {
+        const checked = checkIotRealtimeConfig(opts.iotRealtime, checkIotRealtimeAclShape);
+        for (const issue of checked.issues) {
+            issues.error(`iotRealtime.${issue.path}`, `iot-${issue.code}`, `iotRealtime.${issue.path}：${issue.message}`, `iotRealtime.${issue.path} is invalid (${issue.code}); see SDK ADR 0049 §9 and ADR 0121`);
+        }
+        if (checked.issues.length === 0)
+            vars.IOT_REALTIME = JSON.stringify(opts.iotRealtime);
+    }
+    if (opts.iotHomeDailyRequests !== undefined && host === 'worker') {
+        const daily = intIn(issues, 'iotHomeDailyRequests', opts.iotHomeDailyRequests, RELAY_SITE_LIMITS.iotHomeDailyRequests);
+        if (opts.iotRealtime === undefined) {
+            issues.error('iotHomeDailyRequests', 'iot-needs-realtime', 'iotHomeDailyRequests 要搭配 iotRealtime（沒有家庭就沒有額度要分）', 'iotHomeDailyRequests needs iotRealtime (without homes there is no quota to split)');
+        }
+        else if (daily !== undefined) {
+            vars.IOT_HOME_DAILY_REQUESTS = daily;
+        }
+    }
 }
 /** TURN（SDK ADR 0118）：Key ID 與憑證秒數寫成 Worker 變數；Token 是秘密，不在這裡 */
 function turnIn(issues, opts, vars) {
@@ -708,7 +746,39 @@ export function relayWorkerSecrets(opts) {
         }
         out.TURN_API_TOKEN = opts.turnApiToken;
     }
+    if (opts.iotGatewayKeys !== undefined)
+        out.IOT_GATEWAY_KEYS = iotGatewayKeysSecret(opts.iotGatewayKeys, opts.iotRealtime);
     return out;
+}
+/**
+ * 檢查 C′ 的閘道私鑰並寫成 `IOT_GATEWAY_KEYS` 的值（SDK ADR 0121；Node 主機的 `.env` 也用它）。
+ * 🔴 例外訊息只有 homeTag（公開值），不含私鑰。
+ */
+export function iotGatewayKeysSecret(keys, realtime) {
+    if (realtime === undefined)
+        throw new Error('有 C′ 的閘道私鑰（iotGatewayKeys）卻沒有 iotRealtime：relay 不知道要服務哪些家庭，請在站台參數加上 iotRealtime');
+    const homes = new Map((Array.isArray(realtime.homes) ? realtime.homes : []).map((home) => [home.homeTag, home]));
+    for (const tag of Object.keys(keys)) {
+        if (!homes.has(tag))
+            throw new Error(`iotGatewayKeys 有 iotRealtime 裡沒有的家庭：${tag}`);
+    }
+    for (const [tag, home] of homes) {
+        const key = keys[tag];
+        if (key === undefined)
+            throw new Error(`iotGatewayKeys 缺家庭 ${tag} 的閘道私鑰（secret 是整份換掉，要給全部家庭）`);
+        if (typeof key !== 'string' || !/^[0-9a-f]{64}$/.test(key))
+            throw new Error(`iotGatewayKeys.${tag} 必須是 64 位小寫 hex`);
+        let pub;
+        try {
+            pub = getPublicKey(hexToBytes(key));
+        }
+        catch {
+            pub = undefined;
+        }
+        if (pub !== home.gatewayPubkey)
+            throw new Error(`iotGatewayKeys.${tag} 與 iotRealtime 裡這個家庭的 gatewayPubkey 不符`);
+    }
+    return JSON.stringify(keys);
 }
 /** `compatibility_date` 的形狀（YYYY-MM-DD）；寫錯的日期 Cloudflare 會在上傳時才拒絕，這裡先擋。 */
 export function assertCompatibilityDate(date) {

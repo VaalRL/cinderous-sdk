@@ -2,6 +2,8 @@ import { encryptWithKey } from '../protocol/nip44.js';
 import { RelayEventBudget, sharedRelayEventBudget } from '../relay-budget.js';
 import { iotPubkeyOf, iotRoleOf, parseIotAcl } from './acl.js';
 import { buildIotEvent, expirationOf, IotKeyring, newIotMsgId, tagValue, } from './content.js';
+import { parseIotUpMessage } from './device-message.js';
+import { deriveIotDeviceKeyDown, iotKid, openIotEnvelope, parseIotKid, sealIotEnvelope } from './envelope.js';
 import { iotBlindNames } from './keys.js';
 import { iotPushEndpointId, parseIotPushEndpoint, parseIotPushSubscriptions, } from './push.js';
 import { IOT_KIND_ACK, IOT_KIND_COMMAND, IOT_KIND_HEARTBEAT, IOT_KIND_QUERY, IOT_KIND_RETAINED, IOT_KIND_STATE, IOT_MAX_TTL_SEC } from './kinds.js';
@@ -15,6 +17,12 @@ export const IOT_DEFAULT_TTL_SEC = 30;
 export const IOT_DEFAULT_CLIENT_QUERY_TIMEOUT_MS = 8_000;
 /** retained 多久沒更新就視為不可信（秒）：閘道每 6 小時刷新一次，留兩輪＋一小時 */
 export const IOT_DEFAULT_STALE_AFTER_SEC = 13 * 3600;
+/** 中繼的額度拒收（ADR 0049 §10）：`…iot-quota:<重置 unix 秒>` 或只有詞元 */
+const QUOTA_REJECTION = /\biot-quota:\s*(\d{1,12})?/;
+/** 即時等級（ADR 0049 §9.4 裁示 5）：ttl 預設 15 秒、夾 5–60；等 ack 預設 5 秒、不重送 */
+export const IOT_REALTIME_DEFAULT_TTL_SEC = 15;
+export const IOT_REALTIME_MAX_TTL_SEC = 60;
+export const IOT_REALTIME_DEFAULT_ACK_TIMEOUT_MS = 5_000;
 export class IotClient {
     #o;
     #gateway;
@@ -22,8 +30,15 @@ export class IotClient {
     #budget;
     #now;
     #ackGuard;
+    /** C′ up 信封的重放保護（`kid#ctr` × 信封時間）：ack 與狀態走不同的訂閱、可能亂序，所以不用「嚴格遞增」 */
+    #upGuard;
     #waiters = new Map();
-    #acks;
+    #main;
+    #rt;
+    #rtDevices = new Map();
+    #operatorSecret;
+    /** down 信封的 ctr：發送端自己的序號（只進 AAD） */
+    #downCtr = 0;
     #subs = new Set();
     #wakers = new Set();
     #closed = false;
@@ -34,14 +49,33 @@ export class IotClient {
         this.#budget = opts.budget ?? sharedRelayEventBudget(opts.signer.pubkey);
         this.#now = opts.now ?? Date.now;
         this.#ackGuard = new IotReplayGuard({ maxSkewSec: opts.maxSkewSec, now: this.#now });
+        this.#upGuard = new IotReplayGuard({ maxSkewSec: opts.maxSkewSec, now: this.#now });
+        this.#main = { pool: opts.pool, gateway: this.#gateway };
+        const rt = opts.realtime;
+        if (rt) {
+            const gateway = rt.gateway !== undefined ? iotPubkeyOf(rt.gateway) : this.#gateway;
+            const pool = rt.pool ?? opts.pool;
+            this.#rt = pool === opts.pool && gateway === this.#gateway ? this.#main : { pool, gateway };
+            for (const [id, ref] of Object.entries(rt.devices)) {
+                if (!isValidIotDeviceId(id))
+                    throw new RangeError(`設備 id 不合法：${id}`);
+                const epoch = ref.epoch ?? 0;
+                iotKid(id, epoch); // 檢查 epoch
+                this.#rtDevices.set(id, { id, epoch, downByOperator: ref.class === 'lock' || ref.operatorSecret === true });
+            }
+            this.#operatorSecret = rt.operatorSecret;
+        }
     }
     get gateway() {
         return this.#gateway;
     }
     /** 關掉所有訂閱 */
     close() {
-        this.#acks?.close();
-        this.#acks = undefined;
+        for (const route of [this.#main, this.#rt]) {
+            route?.acks?.close();
+            if (route)
+                route.acks = undefined;
+        }
         for (const sub of this.#subs)
             sub.close();
         this.#subs.clear();
@@ -55,34 +89,63 @@ export class IotClient {
         assertIotTopic(topic);
         if (opts.device !== undefined && !isValidIotDeviceId(opts.device))
             throw new RangeError(`設備 id 不合法：${opts.device}`);
+        const realtime = opts.urgency === 'realtime';
         const qos = opts.qos ?? 1;
-        const timeoutMs = Math.max(1, opts.timeoutMs ?? IOT_DEFAULT_COMMAND_TIMEOUT_MS);
-        const retries = qos === 1 ? Math.max(0, Math.floor(opts.retries ?? IOT_DEFAULT_COMMAND_RETRIES)) : 0;
-        const ttlSec = clampIot(opts.ttlSec, IOT_DEFAULT_TTL_SEC, 5, IOT_MAX_TTL_SEC);
+        const timeoutMs = Math.max(1, opts.ackTimeoutMs ?? opts.timeoutMs ?? (realtime ? IOT_REALTIME_DEFAULT_ACK_TIMEOUT_MS : IOT_DEFAULT_COMMAND_TIMEOUT_MS));
+        const retries = qos === 1 ? Math.max(0, Math.floor(opts.retries ?? (realtime ? 0 : IOT_DEFAULT_COMMAND_RETRIES))) : 0;
+        const ttlSec = realtime
+            ? clampIot(opts.ttlSec, IOT_REALTIME_DEFAULT_TTL_SEC, 5, IOT_REALTIME_MAX_TTL_SEC)
+            : clampIot(opts.ttlSec, IOT_DEFAULT_TTL_SEC, 5, IOT_MAX_TTL_SEC);
         const msgId = newIotMsgId();
         const ts = this.#now();
         const expiration = Math.floor(ts / 1000) + ttlSec;
-        const body = {
-            v: 1,
-            type: 'cmd',
-            msgId,
-            ts,
-            topic,
-            ...(opts.device !== undefined ? { device: opts.device } : {}),
-            payload,
-            enc: opts.enc ?? 'utf8',
-            qos,
-            ...(opts.confirmed !== undefined ? { confirmed: opts.confirmed } : {}),
-        };
-        const tags = [
-            ['h', this.#o.home.homeTag],
-            ['t', this.#o.home.blind(topic)],
-            ['p', this.#gateway],
-            ['expiration', String(expiration)],
-        ];
+        const rtDevice = opts.device !== undefined ? this.#rtDevices.get(opts.device) : undefined;
+        let sent;
+        if (rtDevice) {
+            // C′：門鎖類沒有 operatorSecret 就做不出設備解得開的指令——不送（relay 也擋不了偽造，設備會直接丟掉）
+            if (rtDevice.downByOperator && this.#operatorSecret === undefined)
+                return { status: 'not-allowed', msgId, attempts: 0, reason: 'operator-secret' };
+            const inner = { type: 'cmd', msgId, topic, payload, enc: opts.enc ?? 'utf8', ...(opts.confirmed !== undefined ? { confirmed: opts.confirmed } : {}), exp: expiration };
+            const key = rtDevice.downByOperator ? deriveIotDeviceKeyDown(this.#operatorSecret, rtDevice.id, rtDevice.epoch) : this.#o.home.deviceKey(rtDevice.id, rtDevice.epoch);
+            const env = this.#sealDown(rtDevice, key, ts, inner);
+            const body = { v: 1, type: 'dev-cmd', msgId, ts, device: rtDevice.id, env, ...(opts.confirmed !== undefined ? { confirmed: opts.confirmed } : {}) };
+            sent = await this.#sendAndWait(this.#rt, IOT_KIND_COMMAND, this.#rtTags(rtDevice, expiration), body, { msgId, timeoutMs, retries, expiration, toGateway: true });
+        }
+        else {
+            const body = {
+                v: 1,
+                type: 'cmd',
+                msgId,
+                ts,
+                topic,
+                ...(opts.device !== undefined ? { device: opts.device } : {}),
+                payload,
+                enc: opts.enc ?? 'utf8',
+                qos,
+                ...(opts.confirmed !== undefined ? { confirmed: opts.confirmed } : {}),
+            };
+            const tags = [
+                ['h', this.#o.home.homeTag],
+                ['t', this.#o.home.blind(topic)],
+                ['p', this.#gateway],
+                ['expiration', String(expiration)],
+            ];
+            // C′ 與閘道是同一條路線（relay 就是這個家的閘道）：`$sys/acl` 由 relay 處理，外層要加密給它（SDK ADR 0121）
+            const toGateway = topic === IOT_ACL_TOPIC && this.#rt === this.#main;
+            sent = await this.#sendAndWait(this.#main, IOT_KIND_COMMAND, tags, body, { msgId, timeoutMs, retries, expiration, toGateway });
+        }
         // ack 原文只給 query() 用；command() 的結果不帶它
-        const { ack: _ack, ...result } = await this.#sendAndWait(IOT_KIND_COMMAND, tags, body, { msgId, timeoutMs, retries, expiration });
-        return result;
+        const { ack, ...result } = sent;
+        const out = {
+            ...result,
+            ...(ack?.topics !== undefined ? { state: { topics: ack.topics, ts: ack.ts } } : {}),
+            ...(ack?.reset !== undefined ? { reset: ack.reset } : {}),
+        };
+        if (!realtime || out.status !== 'timeout')
+            return out;
+        // 即時等級逾時：結果未知（不是失敗）——查一次設備實際的狀態（ADR 0049 §9.4）
+        const after = opts.device !== undefined ? await this.query(opts.device, { timeoutMs }).catch(() => undefined) : undefined;
+        return { ...out, status: 'unknown', ...(after ? { after } : {}) };
     }
     /** 要求設備立刻回報（kind 25173，`viewer` 以上）；閘道節流或逾時時回 retained */
     async query(device, opts = {}) {
@@ -90,16 +153,26 @@ export class IotClient {
             throw new RangeError(`設備 id 不合法：${device}`);
         const msgId = newIotMsgId();
         const ts = this.#now();
-        const ttlSec = clampIot(opts.ttlSec, IOT_DEFAULT_TTL_SEC, 5, IOT_MAX_TTL_SEC);
+        const rtDevice = this.#rtDevices.get(device);
+        const ttlSec = clampIot(opts.ttlSec, rtDevice ? IOT_REALTIME_DEFAULT_TTL_SEC : IOT_DEFAULT_TTL_SEC, 5, rtDevice ? IOT_REALTIME_MAX_TTL_SEC : IOT_MAX_TTL_SEC);
         const expiration = Math.floor(ts / 1000) + ttlSec;
-        const tags = [
-            ['h', this.#o.home.homeTag],
-            ['dv', this.#o.home.blind(iotBlindNames.device(device))],
-            ['p', this.#gateway],
-            ['expiration', String(expiration)],
-        ];
         const timeoutMs = Math.max(1, opts.timeoutMs ?? IOT_DEFAULT_CLIENT_QUERY_TIMEOUT_MS);
-        const result = await this.#sendAndWait(IOT_KIND_QUERY, tags, { v: 1, type: 'query', msgId, ts, device }, { msgId, timeoutMs, retries: 0, expiration });
+        let result;
+        if (rtDevice) {
+            // 查詢一律用 deviceKey（門鎖類也是）：viewer 也能查；設備只執行 `cmd` 幀
+            const env = this.#sealDown(rtDevice, this.#o.home.deviceKey(rtDevice.id, rtDevice.epoch), ts, { type: 'query', msgId, exp: expiration });
+            const body = { v: 1, type: 'dev-query', msgId, ts, device, env };
+            result = await this.#sendAndWait(this.#rt, IOT_KIND_QUERY, this.#rtTags(rtDevice, expiration), body, { msgId, timeoutMs, retries: 0, expiration, toGateway: true });
+        }
+        else {
+            const tags = [
+                ['h', this.#o.home.homeTag],
+                ['dv', this.#o.home.blind(iotBlindNames.device(device))],
+                ['p', this.#gateway],
+                ['expiration', String(expiration)],
+            ];
+            result = await this.#sendAndWait(this.#main, IOT_KIND_QUERY, tags, { v: 1, type: 'query', msgId, ts, device }, { msgId, timeoutMs, retries: 0, expiration });
+        }
         if (result.ack) {
             const ack = result.ack;
             return {
@@ -112,10 +185,37 @@ export class IotClient {
         // 閘道沒回（或中繼沒收）：退回 retained
         const retained = await this.getRetained(device).catch(() => undefined);
         return {
-            status: 'timeout',
+            status: result.status === 'quota' ? 'quota' : 'timeout',
             ...(retained ? { state: { topics: retained.topics, ts: retained.ts } } : {}),
             fromRetained: true,
             ...(result.status === 'relay-rejected' ? { reason: 'relay-rejected' } : {}),
+        };
+    }
+    /**
+     * 設備現在連著嗎（ADR 0049 §9.4）。C′：relay 以當下的連線即時回答（`dev-link`，不打擾設備、不落庫），`viewer` 以上；
+     * 其他路線：retained 的 `online`（閘道最後一次知道的）。
+     */
+    async deviceLink(device, opts = {}) {
+        if (!isValidIotDeviceId(device))
+            throw new RangeError(`設備 id 不合法：${device}`);
+        const rtDevice = this.#rtDevices.get(device);
+        if (!rtDevice) {
+            const retained = await this.getRetained(device).catch(() => undefined);
+            return { transport: 'gateway', status: 'ok', ...(retained?.online !== undefined ? { online: retained.online } : {}), ...(retained ? { lastSeen: retained.ts } : {}) };
+        }
+        const msgId = newIotMsgId();
+        const ts = this.#now();
+        const expiration = Math.floor(ts / 1000) + IOT_REALTIME_DEFAULT_TTL_SEC;
+        const timeoutMs = Math.max(1, opts.timeoutMs ?? IOT_REALTIME_DEFAULT_ACK_TIMEOUT_MS);
+        const r = await this.#sendAndWait(this.#rt, IOT_KIND_QUERY, this.#rtTags(rtDevice, expiration), { v: 1, type: 'dev-link', msgId, ts, device }, { msgId, timeoutMs, retries: 0, expiration, toGateway: true });
+        const ack = r.ack;
+        if (!ack)
+            return { transport: 'ws', status: r.status === 'timeout' ? 'unknown' : r.status };
+        return {
+            transport: 'ws',
+            status: ack.status,
+            ...(ack.status === 'ok' ? { online: ack.online === true } : {}),
+            ...(ack.lastHeartbeat !== undefined ? { lastHeartbeat: ack.lastHeartbeat } : {}),
         };
     }
     /** 改角色名單（只有 owner 會成功；ADR 0049 §2.5） */
@@ -153,8 +253,27 @@ export class IotClient {
         const id = typeof endpointOrId === 'string' ? endpointOrId : iotPushEndpointId(parseIotPushEndpoint(endpointOrId, { allowPrivateHttp: true }));
         return this.command(IOT_PUSH_TOPIC, JSON.stringify({ op: 'remove', id }), opts);
     }
-    async #sendAndWait(kind, tags, body, p) {
-        this.#ensureAcks();
+    #sealDown(device, key, tsMs, inner) {
+        this.#downCtr += 1;
+        return sealIotEnvelope({ key, kid: iotKid(device.id, device.epoch), dir: 'down', ctr: this.#downCtr, ts: Math.floor(tsMs / 1000), plaintext: JSON.stringify(inner) });
+    }
+    #rtTags(device, expiration) {
+        return [
+            ['h', this.#o.home.homeTag],
+            ['p', this.#rt.gateway],
+            ['dv', this.#o.home.blind(iotBlindNames.device(device.id))],
+            ['expiration', String(expiration)],
+        ];
+    }
+    /** 包成事件：閘道路線加密給全家（homePub）；C′ 的外層加密給 relay 的閘道公鑰（relay 要剝掉外層才能轉給設備） */
+    #build(route, kind, tags, body, toGateway) {
+        if (!toGateway)
+            return buildIotEvent(this.#keyring, this.#o.signer, kind, tags, body);
+        const content = encryptWithKey(JSON.stringify(body), this.#o.signer.conversationKey(route.gateway));
+        return this.#o.signer.sign({ kind, created_at: Math.floor(body.ts / 1000), tags, content });
+    }
+    async #sendAndWait(route, kind, tags, body, p) {
+        this.#ensureAcks(route);
         let acked;
         let wake;
         const waiter = {
@@ -173,12 +292,15 @@ export class IotClient {
                 if (attempt > 0 && Math.floor(this.#now() / 1000) >= p.expiration)
                     break; // 指令已過期：不再送
                 // 每次重新簽章（新的 created_at 與 NIP-44 nonce ⇒ 新 id），內容的 msgId 與 ts 不變
-                const event = buildIotEvent(this.#keyring, this.#o.signer, kind, tags, body);
+                const event = this.#build(route, kind, tags, body, p.toGateway === true);
                 attempts += 1;
-                const outcome = await iotPublish(this.#o.pool, this.#budget, event);
+                const outcome = await iotPublish(route.pool, this.#budget, event);
                 if (acked)
                     break;
                 lastRejected = outcome.ok ? undefined : outcome.rejected;
+                // 中繼說今日額度用完（ADR 0049 §10）：重送也一樣，不必等
+                if (lastRejected?.some((r) => QUOTA_REJECTION.test(r.reason)))
+                    break;
                 await this.#pause(p.timeoutMs * 2 ** attempt, (w) => {
                     wake = w;
                 });
@@ -196,8 +318,12 @@ export class IotClient {
         if (ack) {
             return { status: ack.status, msgId: p.msgId, attempts, ackedAt: ack.ts, ...(ack.reason !== undefined ? { reason: ack.reason } : {}), ack };
         }
-        if (lastRejected)
+        if (lastRejected) {
+            const quota = lastRejected.map((r) => QUOTA_REJECTION.exec(r.reason)).find((m) => m !== null);
+            if (quota)
+                return { status: 'quota', msgId: p.msgId, attempts, rejected: lastRejected, ...(quota[1] !== undefined ? { reset: Number(quota[1]) } : {}) };
             return { status: 'relay-rejected', msgId: p.msgId, attempts, rejected: lastRejected };
+        }
         return { status: 'timeout', msgId: p.msgId, attempts };
     }
     /** 等 `ms` 毫秒，或被叫醒（收到 ack、`close()`） */
@@ -213,19 +339,39 @@ export class IotClient {
             register(finish);
         });
     }
-    #ensureAcks() {
-        if (this.#acks)
+    #ensureAcks(route) {
+        if (route.acks)
             return;
-        const filter = { kinds: [IOT_KIND_ACK], authors: [this.#gateway], '#p': [this.#o.signer.pubkey], '#h': [this.#o.home.homeTag] };
-        this.#acks = this.#o.pool.subscribe([filter], { onEvent: (event) => this.#onAck(event) });
+        const filter = { kinds: [IOT_KIND_ACK], authors: [route.gateway], '#p': [this.#o.signer.pubkey], '#h': [this.#o.home.homeTag] };
+        route.acks = route.pool.subscribe([filter], { onEvent: (event) => this.#onAck(route, event) });
     }
-    #onAck(event) {
-        if (event.kind !== IOT_KIND_ACK || event.pubkey !== this.#gateway || !iotVerified(event))
+    #onAck(route, event) {
+        if (event.kind !== IOT_KIND_ACK || event.pubkey !== route.gateway || !iotVerified(event))
             return;
         if (tagValue(event, 'h') !== this.#o.home.homeTag)
             return;
-        const body = this.#keyring.open(event.content, event.pubkey);
-        if (!body || body.type !== 'ack')
+        const opened = this.#keyring.open(event.content, event.pubkey);
+        let body;
+        if (opened?.type === 'ack')
+            body = opened;
+        else if (opened?.type === 'dev-ack' && route === this.#rt) {
+            // C′ 設備的 ack：回覆哪一則指令寫在信封裡面（relay 看不到）
+            const up = this.#openUp(opened, true);
+            if (up?.type !== 'ack')
+                return;
+            body = {
+                v: 1,
+                type: 'ack',
+                msgId: opened.msgId,
+                ts: opened.ts,
+                inReplyTo: up.inReplyTo,
+                status: up.status,
+                device: opened.device,
+                ...(up.reason !== undefined ? { reason: up.reason } : {}),
+                ...(up.topics !== undefined ? { topics: up.topics } : {}),
+            };
+        }
+        else
             return;
         const waiters = this.#waiters.get(body.inReplyTo);
         if (!waiters)
@@ -235,6 +381,26 @@ export class IotClient {
             return;
         for (const w of waiters)
             w.resolve(body);
+    }
+    /**
+     * 解開 C′ 設備的 up 信封（以 `deviceKey`；只認設定的 epoch）。`live`：即時的 ack／狀態要在時間窗內、沒看過（`kid#ctr`）；
+     * retained 是舊值，不做這兩項檢查。
+     */
+    #openUp(body, live) {
+        const device = this.#rtDevices.get(body.device);
+        const kid = parseIotKid(body.env.kid);
+        if (!device || !kid || kid.deviceId !== device.id || kid.epoch !== device.epoch)
+            return undefined;
+        let plaintext;
+        try {
+            plaintext = openIotEnvelope(body.env, this.#o.home.deviceKey(device.id, device.epoch));
+        }
+        catch {
+            return undefined;
+        }
+        if (live && this.#upGuard.check(`${body.env.kid}#${body.env.ctr}`, body.env.ts * 1000).verdict !== 'fresh')
+            return undefined;
+        return parseIotUpMessage(plaintext);
     }
     // ── 狀態 ─────────────────────────────────────────────────────────
     /** 訂閱即時狀態（kind 25172）；`pattern` 是 MQTT 樣式（`+`、`#`） */
@@ -275,19 +441,51 @@ export class IotClient {
                 }
             },
         });
-        this.#subs.add(sub);
+        const subs = [sub];
+        // C′ 設備的狀態：relay 看不到 topic，事件只以 `d`＝盲化設備 id 標記；topic 在信封裡，解開後才比對
+        const rt = this.#rt;
+        if (rt && this.#rtDevices.size > 0) {
+            const blinds = [...this.#rtDevices.keys()].map((id) => blind(iotBlindNames.device(id)));
+            const rtSub = rt.pool.subscribe([{ kinds: [IOT_KIND_STATE], authors: [rt.gateway], '#h': [this.#o.home.homeTag], '#d': blinds }], {
+                onEvent: (event) => {
+                    if (event.kind !== IOT_KIND_STATE || event.pubkey !== rt.gateway || !iotVerified(event))
+                        return;
+                    const body = this.#keyring.open(event.content, event.pubkey);
+                    if (body?.type !== 'dev-state' || tagValue(event, 'd') !== blind(iotBlindNames.device(body.device)))
+                        return;
+                    const up = this.#openUp(body, true);
+                    if (up?.type !== 'state')
+                        return;
+                    for (const [topic, value] of Object.entries(up.topics)) {
+                        if (!topicMatches(pattern, topic))
+                            continue;
+                        try {
+                            onMessage({ topic, payload: value.payload, enc: value.enc ?? 'utf8', ts: value.ts, device: body.device, live: true, ...(up.will !== undefined ? { will: up.will } : {}) });
+                        }
+                        catch (error) {
+                            this.#o.onError?.(error);
+                        }
+                    }
+                },
+            });
+            subs.push(rtSub);
+        }
+        for (const s of subs)
+            this.#subs.add(s);
         return {
             close: () => {
-                sub.close();
-                this.#subs.delete(sub);
+                for (const s of subs) {
+                    s.close();
+                    this.#subs.delete(s);
+                }
             },
         };
     }
-    async #readRetained(filter) {
-        const events = await iotQuery(this.#o.pool, [filter], this.#o.readTimeoutMs ?? 5_000);
+    async #readRetained(filter, route = this.#main) {
+        const events = await iotQuery(route.pool, [filter], this.#o.readTimeoutMs ?? 5_000);
         const out = [];
         for (const event of events) {
-            if (event.kind !== IOT_KIND_RETAINED || event.pubkey !== this.#gateway || !iotVerified(event))
+            if (event.kind !== IOT_KIND_RETAINED || event.pubkey !== route.gateway || !iotVerified(event))
                 continue;
             if (tagValue(event, 'h') !== this.#o.home.homeTag)
                 continue;
@@ -305,6 +503,21 @@ export class IotClient {
     async getRetained(device) {
         if (!isValidIotDeviceId(device))
             throw new RangeError(`設備 id 不合法：${device}`);
+        const rt = this.#rt;
+        if (rt && this.#rtDevices.has(device)) {
+            // C′：relay 保存的是最後一個狀態幀（每台至少隔 5 分鐘寫一次），只有那一幀帶到的 topic
+            const blindId = this.#o.home.blind(iotBlindNames.device(device));
+            const rows = await this.#readRetained({ kinds: [IOT_KIND_RETAINED], authors: [rt.gateway], '#d': [blindId] }, rt);
+            const newest = rows
+                .map((r) => r.body)
+                .filter((b) => b?.type === 'dev-state' && b.device === device)
+                .sort((a, b) => b.env.ts - a.env.ts)[0];
+            const up = newest ? this.#openUp(newest, false) : undefined;
+            if (up?.type !== 'state')
+                return undefined;
+            const ts = newest.env.ts * 1000;
+            return { device, topics: up.topics, ts, stale: this.#stale(ts), complete: false };
+        }
         const rows = await this.#readRetained({ kinds: [IOT_KIND_RETAINED], authors: [this.#gateway], '#dv': [this.#o.home.blind(iotBlindNames.device(device))] });
         const parts = rows.map((r) => r.body).filter((b) => b?.type === 'retained' && b.device === device);
         const merged = mergeIotRetained(parts);

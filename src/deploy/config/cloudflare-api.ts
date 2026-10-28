@@ -1,7 +1,7 @@
 // 設定檔 → REST 一鍵部署的參數（SDK ADR 0118）：外掛與 CLI 的 `relay deploy --config` 用同一份。
 // 只有型別依賴 REST 部署本體（不會把它或打包好的 Worker 拉進 ./deploy/config）。
 import type { CloudflareApiDeployOptions } from '../cloudflare-api/deploy.js';
-import { resolveSecret, resolveSiteSecrets, resolveStringOrSecret } from './secrets.js';
+import { resolveIotGatewayKeys, resolveSecret, resolveSiteSecrets, resolveStringOrSecret } from './secrets.js';
 import { secretEnvName } from './guide.js';
 import { type DeployConfig, serviceOfConfig } from './types.js';
 
@@ -40,5 +40,7 @@ export function cloudflareApiOptionsFromConfig(
   Object.assign(options, resolveSiteSecrets(config.site, env));
   const turnApiToken = resolveSecret(config.secrets?.turnApiToken, env, secretEnvName(config, 'turnApiToken'));
   if (turnApiToken !== undefined) options.turnApiToken = turnApiToken;
+  const gatewayKeys = resolveIotGatewayKeys(config.secrets?.iotGatewayKeys, env, secretEnvName(config, 'iotGatewayKeys'));
+  if (gatewayKeys !== undefined) options.iotGatewayKeys = gatewayKeys;
   return options;
 }

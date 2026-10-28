@@ -155,6 +155,10 @@
           "$ref": "#/$defs/secretRef",
           "description": "Cloudflare TURN 金鑰的 API Token 的環境變數名稱（沒給讀 TURN_API_TOKEN）。部署時以 Worker secret 上傳：REST 是 secret_text 綁定，wrangler 是 wrangler secret put。沒有值就沿用線上已經有的 secret。\n\nEnvironment variable holding the API token of the Cloudflare TURN key (defaults to TURN_API_TOKEN). It is uploaded as a Worker secret when deploying: a secret_text binding over REST, wrangler secret put with wrangler. Without a value, the secret already on the Worker is kept."
         },
+        "iotGatewayKeys": {
+          "$ref": "#/$defs/secretRef",
+          "description": "C′ 閘道私鑰的環境變數名稱（沒給讀 IOT_GATEWAY_KEYS）。值是 JSON {\"<homeTag>\": \"<64 位 hex>\"}，要涵蓋 site.iotRealtime 的每個家庭。Cloudflare 以 Worker secret 上傳（REST 是 secret_text，wrangler 是 wrangler secret put）；Node 主機放 .env。\n\nEnvironment variable holding the C′ gateway private keys (defaults to IOT_GATEWAY_KEYS). The value is JSON {\"<homeTag>\": \"<64 hex>\"} covering every home in site.iotRealtime. On Cloudflare it is uploaded as a Worker secret (secret_text over REST, wrangler secret put with wrangler); Node hosts read it from .env."
+        },
         "pushGatewayKey": {
           "$ref": "#/$defs/secretRef",
           "description": "推播閘道私鑰的環境變數名稱（cinderous iot push-keygen 產生）。換掉它＝所有 App 的 token 封包作廢，要重新登記。\n\nEnvironment variable holding the push gateway's private key (generate with cinderous iot push-keygen). Rotating it invalidates every app's token envelope; apps must re-register."
@@ -498,6 +502,157 @@
           "minimum": 60,
           "maximum": 172800,
           "description": "短期 TURN 憑證的有效秒數（中繼預設 86400＝1 天；客戶端在一半時間前換新）。要有 turnKeyId。\n\nLifetime of the short-lived TURN credentials in seconds (relay default 86400 = 1 day; clients renew before half of it). Needs turnKeyId."
+        },
+        "iotRealtime": {
+          "type": "object",
+          "required": [
+            "homes"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "homes": {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "type": "object",
+                "required": [
+                  "homeTag",
+                  "homePub",
+                  "gatewayPubkey",
+                  "acl",
+                  "devices"
+                ],
+                "properties": {
+                  "homeTag": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{22}$"
+                  },
+                  "homePub": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "gatewayPubkey": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "aclBlindId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{22}$"
+                  },
+                  "heartbeatSec": {
+                    "type": "integer",
+                    "minimum": 5,
+                    "maximum": 300
+                  },
+                  "realtimeTtlMaxSec": {
+                    "type": "integer",
+                    "minimum": 5,
+                    "maximum": 300
+                  },
+                  "acl": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "pubkey",
+                        "role"
+                      ],
+                      "properties": {
+                        "pubkey": {
+                          "type": "string"
+                        },
+                        "role": {
+                          "enum": [
+                            "viewer",
+                            "operator",
+                            "owner"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "devices": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "blindId",
+                        "epoch",
+                        "tokenHash"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9._-]{1,64}$"
+                        },
+                        "blindId": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9_-]{22}$"
+                        },
+                        "epoch": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "tokenHash": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "class": {
+                          "enum": [
+                            "lock",
+                            "general"
+                          ]
+                        },
+                        "minRole": {
+                          "enum": [
+                            "viewer",
+                            "operator",
+                            "owner"
+                          ]
+                        },
+                        "localFallback": {
+                          "type": "array",
+                          "items": {
+                            "enum": [
+                              "key",
+                              "keypad",
+                              "lan",
+                              "ble",
+                              "button"
+                            ]
+                          }
+                        },
+                        "previousEpoch": {
+                          "type": "object",
+                          "required": [
+                            "epoch",
+                            "until"
+                          ],
+                          "properties": {
+                            "epoch": {
+                              "type": "integer"
+                            },
+                            "until": {
+                              "type": "integer"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "description": "IoT 即時通道 C′（SDK ADR 0049 §9、0120、0121）：這座站服務的家庭與設備，用 cinderous iot realtime home／device 產生。只有公開值與雜湊（設備權杖存 SHA-256）；閘道私鑰另外放 secrets.iotGatewayKeys。門鎖類設備必須列 localFallback。\n\nIoT realtime channel C′ (SDK ADR 0049 §9, 0120, 0121): the homes and devices this relay serves, generated with cinderous iot realtime home / device. Only public values and hashes (device tokens are stored as SHA-256); the gateway private keys go in secrets.iotGatewayKeys. Lock-class devices must list localFallback."
+        },
+        "iotHomeDailyRequests": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000000,
+          "description": "C′ 每個家庭每天最多幾次請求。沒給＝帳號每日 10 萬 ÷ 家庭數 × 0.5。超過時設備收到 4429、手機收到 quota，到 UTC 午夜恢復。要有 iotRealtime。\n\nMaximum requests per C′ home per day. Defaults to the account's 100,000 daily requests ÷ homes × 0.5. Beyond it devices get 4429 and phones get quota until UTC midnight. Needs iotRealtime."
         }
       }
     }

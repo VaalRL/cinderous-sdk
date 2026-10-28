@@ -5,11 +5,58 @@
 import { DEFAULT_COMPATIBILITY_DATE, DEFAULT_WORKER_NAME, RELAY_NAME_PATTERN, RELAY_SITE_LIMITS } from '../shared.js';
 import { LANE_ID_PATTERN } from '../../relay/shard.js';
 import { PRD_MAX_CONNECTIONS_PER_PUBKEY, PRD_MAX_MESSAGES_PER_SECOND_PER_IP } from '../../relay/host-config.js';
+import { IOT_LOCAL_FALLBACKS, IOT_REALTIME_BLIND_LENGTH, IOT_REALTIME_MAX_DEVICES, IOT_REALTIME_MAX_HOMES } from '../../relay/iot-realtime-config.js';
 import { BIND_ADDRESS_PATTERN, DEFAULT_CLOUDFLARED_IMAGE, DEFAULT_DOCKER_PORT, DEFAULT_FLY_REGION } from '../render.js';
 import { DEPLOY_SERVICES } from './types.js';
 const limits = RELAY_SITE_LIMITS;
 const CONTAINER_TARGETS = ['docker', 'fly', 'home-tunnel'];
 const WORKER_TARGETS = ['cloudflare', 'cloudflare-api'];
+const BLIND_ID = { type: 'string', pattern: `^[A-Za-z0-9_-]{${IOT_REALTIME_BLIND_LENGTH}}$` };
+const HEX64 = { type: 'string', pattern: '^[0-9a-f]{64}$' };
+const IOT_ROLE = { enum: ['viewer', 'operator', 'owner'] };
+/** `site.iotRealtime` 的 JSON Schema（給編輯器提示；完整規則在 `checkIotRealtimeConfig`） */
+const IOT_REALTIME_SCHEMA = {
+    type: 'object',
+    required: ['homes'],
+    additionalProperties: false,
+    properties: {
+        homes: {
+            type: 'array',
+            maxItems: IOT_REALTIME_MAX_HOMES,
+            items: {
+                type: 'object',
+                required: ['homeTag', 'homePub', 'gatewayPubkey', 'acl', 'devices'],
+                properties: {
+                    homeTag: BLIND_ID,
+                    homePub: HEX64,
+                    gatewayPubkey: HEX64,
+                    aclBlindId: BLIND_ID,
+                    heartbeatSec: { type: 'integer', minimum: 5, maximum: 300 },
+                    realtimeTtlMaxSec: { type: 'integer', minimum: 5, maximum: 300 },
+                    acl: { type: 'array', items: { type: 'object', required: ['pubkey', 'role'], properties: { pubkey: { type: 'string' }, role: IOT_ROLE } } },
+                    devices: {
+                        type: 'array',
+                        maxItems: IOT_REALTIME_MAX_DEVICES,
+                        items: {
+                            type: 'object',
+                            required: ['id', 'blindId', 'epoch', 'tokenHash'],
+                            properties: {
+                                id: { type: 'string', pattern: '^[A-Za-z0-9._-]{1,64}$' },
+                                blindId: BLIND_ID,
+                                epoch: { type: 'integer', minimum: 0 },
+                                tokenHash: HEX64,
+                                class: { enum: ['lock', 'general'] },
+                                minRole: IOT_ROLE,
+                                localFallback: { type: 'array', items: { enum: [...IOT_LOCAL_FALLBACKS] } },
+                                previousEpoch: { type: 'object', required: ['epoch', 'until'], properties: { epoch: { type: 'integer' }, until: { type: 'integer' } } },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    },
+};
 const intRecord = (range) => ({
     type: 'object',
     additionalProperties: { type: 'integer', minimum: range.min, maximum: range.max },
@@ -349,6 +396,27 @@ const SITE_OPTION_SPECS = {
             en: 'Lifetime of the short-lived TURN credentials in seconds (relay default 86400 = 1 day; clients renew before half of it). Needs turnKeyId.',
         },
     },
+    iotRealtime: {
+        type: 'record',
+        env: 'IOT_REALTIME',
+        group: 'iot',
+        schema: IOT_REALTIME_SCHEMA,
+        description: {
+            'zh-TW': 'IoT 即時通道 C′（SDK ADR 0049 §9、0120、0121）：這座站服務的家庭與設備，用 cinderous iot realtime home／device 產生。只有公開值與雜湊（設備權杖存 SHA-256）；閘道私鑰另外放 secrets.iotGatewayKeys。門鎖類設備必須列 localFallback。',
+            en: 'IoT realtime channel C′ (SDK ADR 0049 §9, 0120, 0121): the homes and devices this relay serves, generated with cinderous iot realtime home / device. Only public values and hashes (device tokens are stored as SHA-256); the gateway private keys go in secrets.iotGatewayKeys. Lock-class devices must list localFallback.',
+        },
+    },
+    iotHomeDailyRequests: {
+        type: 'integer',
+        range: limits.iotHomeDailyRequests,
+        hosts: ['worker'],
+        env: 'IOT_HOME_DAILY_REQUESTS',
+        group: 'iot',
+        description: {
+            'zh-TW': 'C′ 每個家庭每天最多幾次請求。沒給＝帳號每日 10 萬 ÷ 家庭數 × 0.5。超過時設備收到 4429、手機收到 quota，到 UTC 午夜恢復。要有 iotRealtime。',
+            en: 'Maximum requests per C′ home per day. Defaults to the account\'s 100,000 daily requests ÷ homes × 0.5. Beyond it devices get 4429 and phones get quota until UTC midnight. Needs iotRealtime.',
+        },
+    },
 };
 const TOP_LEVEL_SPECS = [
     {
@@ -565,6 +633,18 @@ const TOP_LEVEL_SPECS = [
         description: {
             'zh-TW': 'Cloudflare TURN 金鑰的 API Token 的環境變數名稱（沒給讀 TURN_API_TOKEN）。部署時以 Worker secret 上傳：REST 是 secret_text 綁定，wrangler 是 wrangler secret put。沒有值就沿用線上已經有的 secret。',
             en: 'Environment variable holding the API token of the Cloudflare TURN key (defaults to TURN_API_TOKEN). It is uploaded as a Worker secret when deploying: a secret_text binding over REST, wrangler secret put with wrangler. Without a value, the secret already on the Worker is kept.',
+        },
+    },
+    {
+        path: 'secrets.iotGatewayKeys',
+        type: 'secret-ref',
+        secret: true,
+        defaultEnv: 'IOT_GATEWAY_KEYS',
+        services: ['relay'],
+        group: 'iot',
+        description: {
+            'zh-TW': 'C′ 閘道私鑰的環境變數名稱（沒給讀 IOT_GATEWAY_KEYS）。值是 JSON {"<homeTag>": "<64 位 hex>"}，要涵蓋 site.iotRealtime 的每個家庭。Cloudflare 以 Worker secret 上傳（REST 是 secret_text，wrangler 是 wrangler secret put）；Node 主機放 .env。',
+            en: 'Environment variable holding the C′ gateway private keys (defaults to IOT_GATEWAY_KEYS). The value is JSON {"<homeTag>": "<64 hex>"} covering every home in site.iotRealtime. On Cloudflare it is uploaded as a Worker secret (secret_text over REST, wrangler secret put with wrangler); Node hosts read it from .env.',
         },
     },
 ];

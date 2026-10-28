@@ -3,11 +3,13 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 
-import { DEFAULT_COMPATIBILITY_DATE, DEFAULT_WORKER_NAME, RELAY_DO_BINDING, type RelaySiteOptions } from '../shared.js';
+import { DEFAULT_COMPATIBILITY_DATE, DEFAULT_WORKER_NAME, RELAY_DO_BINDINGS, type RelaySiteOptions } from '../shared.js';
 import {
   DEFAULT_DOCKER_PORT,
   DEFAULT_FLY_REGION,
   composeBindAddress,
+  composeRequiredEnv,
+  IOT_GATEWAY_KEYS_ENV,
   relayEnvironment,
   renderCompose,
   renderDockerfile,
@@ -54,7 +56,7 @@ export interface DeployPackageContext {
   /**
    * SDK 怎麼進到部署包：
    * - `embed`（預設，公開前）：複製到 `sdk/`，以 `file:./sdk` 安裝——由寫檔的一方（CLI）複製，這裡只回報 `copySdk`；
-   * - `spec`：以套件相依安裝，例如 `github:VaalRL/cinderous-sdk#v0.80.0`（公開 repo；不上 npm，SDK ADR 0110）。
+   * - `spec`：以套件相依安裝，例如 `github:VaalRL/cinderous-sdk#v0.81.0`（公開 repo；不上 npm，SDK ADR 0110）。
    */
   sdkSource?: { kind: 'embed' } | { kind: 'spec'; spec: string };
   /** Workers 目標：附預打包的中繼（`src/relay.mjs`），不需要安裝 SDK。需要 `relayWorkerSource`。 */
@@ -121,7 +123,7 @@ const bindOption = (bindAddress: string | undefined): { bindAddress?: string } =
 function renderEnvExample(config: DeployConfig, sdkVersion: string): string {
   const lines = [...header('#', sdkVersion), '#', '# 複製成 .env 再填值；.env 已在 .gitignore，不要提交。Copy to .env and fill in; .env is git-ignored — never commit it.', ''];
   const host = hostOfTarget(config.target);
-  const add = (key: 'cloudflareApiToken' | 'flyApiToken' | 'tunnelToken' | 'turnApiToken', note: string) => {
+  const add = (key: 'cloudflareApiToken' | 'flyApiToken' | 'tunnelToken' | 'turnApiToken' | 'iotGatewayKeys', note: string) => {
     lines.push(`# ${note}`, `${secretEnvName(config, key)}=`, '');
   };
   if (host === 'worker') {
@@ -134,6 +136,13 @@ function renderEnvExample(config: DeployConfig, sdkVersion: string): string {
   }
   if (config.target === 'fly') add('flyApiToken', 'Fly deploy token（`fly tokens create deploy --app <name>`；沒有就用 `fly auth login`）');
   if (config.target === 'home-tunnel') add('tunnelToken', 'Cloudflare Tunnel Token（必填／required）');
+  if (config.site?.iotRealtime !== undefined && serviceOfConfig(config) === 'relay') {
+    add(
+      'iotGatewayKeys',
+      'C′ 的閘道私鑰（SDK ADR 0121）：JSON {"<homeTag>":"<64 位 hex>"}，`cinderous iot realtime home` 印出的那一行。🔴 等同家庭的鑰匙\n' +
+        '# C′ gateway private keys (SDK ADR 0121): JSON {"<homeTag>":"<64 hex>"}, the line printed by `cinderous iot realtime home`. 🔴 It is a house key',
+    );
+  }
   const privateEnv = privateLaneEnvName(config);
   if (privateEnv !== undefined && serviceOfConfig(config) === 'relay') {
     lines.push(
@@ -225,7 +234,7 @@ function workerEntry(sdkVersion: string, selfContained: boolean): string {
       "import { setRelayVersion } from './relay.mjs';",
       '',
       `setRelayVersion(${JSON.stringify(sdkVersion)});`,
-      `export { default, ${RELAY_DO_BINDING.className} } from './relay.mjs';`,
+      `export { default, ${RELAY_DO_BINDINGS.map((b) => b.className).join(', ')} } from './relay.mjs';`,
     );
   } else {
     lines.push(
@@ -243,14 +252,15 @@ function workerEntry(sdkVersion: string, selfContained: boolean): string {
 
 function devVarsExample(config: DeployConfig, sdkVersion: string): string {
   const lines = [...header('#', sdkVersion), '#'];
-  if (config.site?.turnKeyId !== undefined) {
+  const turn = config.site?.turnKeyId !== undefined;
+  const iot = config.site?.iotRealtime !== undefined;
+  if (turn || iot) {
     lines.push(
       '# `wrangler dev` 的本機秘密範本（複製成 .dev.vars，不要提交）。站台參數都在 wrangler.toml 的 [vars]。',
       '# Local secrets template for `wrangler dev` (copy to .dev.vars, never commit it). Site parameters are in [vars] of wrangler.toml.',
-      '',
-      '# Cloudflare TURN 金鑰的 API Token（SDK ADR 0118）／API token of the Cloudflare TURN key',
-      'TURN_API_TOKEN=',
     );
+    if (turn) lines.push('', '# Cloudflare TURN 金鑰的 API Token（SDK ADR 0118）／API token of the Cloudflare TURN key', 'TURN_API_TOKEN=');
+    if (iot) lines.push('', '# C′ 的閘道私鑰，JSON（SDK ADR 0121）／C′ gateway private keys, JSON', `${IOT_GATEWAY_KEYS_ENV}=`);
   } else {
     lines.push(
       '# `wrangler dev` 的本機秘密範本（複製成 .dev.vars）。這座中繼沒有執行期秘密（沒有設 site.turnKeyId）；站台參數都在 wrangler.toml 的 [vars]。',
@@ -329,6 +339,10 @@ export function renderDeployPackage(config: DeployConfig, ctx: DeployPackageCont
       // 唯讀寬限期（SDK ADR 0052）：與私人路徑同一個做法，但沒設＝沒有唯讀車道（不擋啟動）
       if (config.target === 'fly') delete environment.READONLY_LANES;
       else environment.READONLY_LANES = `\${${readOnlyEnv}:-}`;
+    }
+    // C′ 的閘道私鑰（SDK ADR 0121）：Fly 以 `fly secrets set` 設定；compose 從 .env 代入，沒設就不啟動
+    if (config.site?.iotRealtime !== undefined && config.target !== 'fly') {
+      environment[IOT_GATEWAY_KEYS_ENV] = composeRequiredEnv(secretEnvName(config, 'iotGatewayKeys'), 'C′ gateway keys, SDK ADR 0121');
     }
     add('Dockerfile', renderDockerfile(v, { embedSdk: embed, header: header('#', v) }));
     add('server.mjs', renderServerEntry({ header: header('//', v) }));

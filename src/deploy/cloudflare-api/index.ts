@@ -83,6 +83,7 @@ export {
   type DeployStep,
   type DeploySubstep,
   generatePrivateLaneId,
+  iotGatewayKeysSecret,
   isPrivateLaneId,
   laneListVar,
   maxFileMbVar,

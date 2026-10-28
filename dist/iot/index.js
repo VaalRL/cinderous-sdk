@@ -19,6 +19,7 @@ export * from './acl.js';
 export * from './replay.js';
 export * from './envelope.js';
 export * from './device-frame.js';
+export * from './device-message.js';
 export * from './retained.js';
 export * from './push.js';
 export * from './push-registry.js';

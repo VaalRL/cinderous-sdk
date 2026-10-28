@@ -127,7 +127,8 @@ export function sharedRelayEventBudget(pubkey: string): RelayEventBudget {
 export function rateLimitBackoffMs(result: PublishResult): number | undefined {
   let ms: number | undefined;
   for (const r of publishRejections(result)) {
-    if (r.kind !== 'rate-limited') continue;
+    // IoT 即時通道的「今日額度用完」（SDK ADR 0049 §10）不是短暫限速：退避重送沒用，還會拖慢同一身分的其他流量
+    if (r.kind !== 'rate-limited' || r.token === 'iot-quota') continue;
     const wait = r.token === 'ip' ? IP_BACKOFF_MS : RELAY_RATE_LIMIT_BACKOFF_MS;
     ms = Math.max(ms ?? 0, wait);
   }

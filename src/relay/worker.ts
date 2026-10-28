@@ -26,6 +26,7 @@ import { ConnPersistence, MAX_CONN_SUB_BYTES, type SaveResult } from "./conn-per
 import { closeSignalOf, RelayCore, type ConnSnapshot, type Outbound } from "./relay-core.js";
 import { routeForPath } from "./shard.js";
 import { routeIotRequest, type IotHomeEnv } from "./iot-home-room.js";
+import { iotRealtimeAnnouncement } from "./iot-realtime.js";
 export { IotHomeRoom } from "./iot-home-room.js";
 import { type SqlExec, SqlMessageStore } from "./sql-message-store.js";
 import { ReconnectGuard, reconnectGuardFrom } from "./reconnect-guard.js";
@@ -338,6 +339,8 @@ export function relayInfoFrom(
       lightning: env.DONATE_LIGHTNING,
     },
     nodeAttestation: env.NODE_ATTESTATION,
+    // C′ 即時通道（SDK ADR 0120）：與 `routeIotRequest` 同一個條件（有 `IOT_HOME` 綁定、至少一個家庭有效）
+    iotRealtime: env.IOT_HOME ? iotRealtimeAnnouncement(env) : undefined,
   });
 }
 

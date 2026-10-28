@@ -4,6 +4,20 @@ Releases are git tags; install one with `npm install github:VaalRL/cinderous-sdk
 
 每個版本是一個 git tag，安裝方式是 `npm install github:VaalRL/cinderous-sdk#vX.Y.Z`。每一版列出那一版的改動（取自 commit 紀錄）；每項改動的理由寫在它引用的 ADR 裡（[docs/adr/](docs/adr/README.md)）。
 
+## v0.81.0 — 2026-10-28
+
+- feat(iot): C′ 即時通道的手機端——`IotClient` 新增 `realtime`（`devices`、`operatorSecret`、選配 `pool`／`gateway`）、`urgency: 'realtime'`（ttl 15、等 ack 5 秒、逾時回 `unknown` 並自動查詢，結果在 `after`）、`ackTimeoutMs`、`deviceLink()`、`quota` 狀態與 `reset`、ack 帶回的 `state`；`subscribeState`／`getRetained`／`query` 涵蓋 C′ 設備（ADR 0120）
+- feat(iot): 新子路徑 `@cinderous/client/iot/device`：`connectIotDevice`、`memoryIotDeviceCounterStore`（中立、零 Node 內建模組）；`./iot` 新增信封明文的格式 `parseIotDownMessage`／`parseIotUpMessage`（ADR 0120）
+- feat(relay): NIP-11 `cinder_iot.realtime`（`ws`、`longpoll: false`、`heartbeat_sec`；不列家庭）；`iotRealtimeAnnouncement`（ADR 0120）
+- fix(budget): `rate-limited: iot-quota:` 不再讓同一身分的事件預算退避重送（ADR 0120）
+- feat(deploy): C′ 進四條部署路徑——`RelaySiteOptions.iotRealtime`（`IOT_REALTIME`）、`iotHomeDailyRequests`（Cloudflare）、`RelayWorkerSecrets.iotGatewayKeys`（`IOT_GATEWAY_KEYS`；`iotGatewayKeysSecret` 比對 `gatewayPubkey`）；docker 以 compose 必填代入、fly 以 `fly secrets import` 上傳；部署設定檔 `site.iotRealtime`／`site.iotHomeDailyRequests`／`secrets.iotGatewayKeys`（ADR 0121）
+- feat(deploy): Workers 一律帶 `IOT_HOME` 綁定，遷移新增 **v2**（`IotHomeRoom`）；入口與打包好的 Worker 轉出 `IotHomeRoom`。🔴 下一次重新部署任何 Worker 都會套用 v2（ADR 0121）
+- feat(cli): `cinderous iot realtime home|device`（產生 C′ 設定；閘道私鑰、operator 秘密、設備權杖與金鑰只印一次）、`relay start --iot-realtime <檔>`（ADR 0121）
+- feat(relay): 家庭設定的 `aclBlindId` → relay 以 31170 公告角色名單（`myRole()`／`getAcl()` 在 C′ 可用）；`checkIotRealtimeConfig`／`checkIotRealtimeAclShape` 與部署設定器共用（ADR 0121）
+- fix(relay): 名單公告的 `created_at` 嚴格遞增：同一秒內的兩則由 id 決勝，改名單後新名單可能被舊的蓋掉（ADR 0121）
+- fix(relay): C′ 每個家庭的可尋址上限改成 65（原本沿用嚴格平面的 5，第 6 台設備以後的 retained 被拒）（ADR 0121）
+- fix(iot): 只連 C′ 時 `updateAcl` 的 `$sys/acl` 改加密給閘道公鑰（原本加密給 `homePub`，relay 解不開）（ADR 0121）
+
 ## v0.80.0 — 2026-10-28
 
 - fix(relay)!: Node 中繼取 `X-Forwarded-For` 改為從右邊數第 `TRUST_PROXY` 段（`TRUST_PROXY=<層數>`，1–10；新增 `clientIpFrom`、`trustedProxyHopsFrom`）——原本取第一段，nginx 的 `$proxy_add_x_forwarded_for`、Cloudflare、Fly 後方客戶端能偽造 IP 躲過每個 IP 的上限（ADR 0119）

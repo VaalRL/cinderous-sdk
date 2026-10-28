@@ -18,18 +18,18 @@ import {
   waitForHealthy,
 } from './common.js';
 import { prepareNodeRelayContext } from './container.js';
-import { DEFAULT_FLY_REGION, FLY_VOLUME_NAME as VOLUME_NAME, relayEnvironment, renderFlyToml } from './render.js';
+import { DEFAULT_FLY_REGION, FLY_VOLUME_NAME as VOLUME_NAME, IOT_GATEWAY_KEYS_ENV, relayEnvironment, renderFlyToml } from './render.js';
 
 // 產生器搬到不碰 Node 的 render.ts（SDK ADR 0050），這裡轉出以維持原本的匯出
 export { DEFAULT_FLY_REGION, renderFlyToml } from './render.js';
-import { privateLaneEndpoint, type RelaySiteOptions } from './shared.js';
+import { iotGatewayKeysSecret, privateLaneEndpoint, type RelaySiteOptions, type RelayWorkerSecrets } from './shared.js';
 
 
 /**
  * 站台參數（白名單、站名、防濫用、保存期、檔案塊……）見 `RelaySiteOptions`（SDK ADR 0036、0037）；
  * 只有 Cloudflare 版支援的參數（`appLanes` 等）在這裡會丟例外——Node 主機沒有車道。
  */
-export interface FlyDeployOptions extends RelaySiteOptions {
+export interface FlyDeployOptions extends RelaySiteOptions, Pick<RelayWorkerSecrets, 'iotGatewayKeys'> {
   /** Fly app 名稱，也是 `<名稱>.fly.dev`；預設 cinderous-relay */
   name?: string;
   region?: string;
@@ -60,6 +60,8 @@ export async function deployFlyRelay(opts: FlyDeployOptions = {}): Promise<Relay
 
   // 先驗證站台參數再寫任何檔案（SDK ADR 0036）
   const environment = relayEnvironment({ ...opts, ...(allowed ? { allowedPubkeys: allowed } : {}), persist, trustProxy: true });
+  // C′ 的閘道私鑰（SDK ADR 0121）：不進 fly.toml（會被提交、儀表板看得到），部署前以 `fly secrets import` 從標準輸入上傳
+  const gatewayKeys = opts.iotGatewayKeys !== undefined ? iotGatewayKeysSecret(opts.iotGatewayKeys, opts.iotRealtime) : undefined;
   const workDir = opts.workDir ?? join(process.cwd(), '.cinderous', name);
   prepareNodeRelayContext({ workDir, ...(opts.sdkRoot ? { sdkRoot: opts.sdkRoot } : {}), ...(opts.version ? { version: opts.version } : {}) });
   const configPath = join(workDir, 'fly.toml');
@@ -87,6 +89,13 @@ export async function deployFlyRelay(opts: FlyDeployOptions = {}): Promise<Relay
       const createdVolume = await run('fly', ['volumes', 'create', VOLUME_NAME, '--app', name, '--region', region, '--size', '1', '--yes'], env);
       if (createdVolume.code !== 0) throw commandFailure('fly volumes create', createdVolume);
     }
+  }
+
+  if (gatewayKeys !== undefined) {
+    const imported = await run('fly', ['secrets', 'import', '--app', name, '--stage'], env, `${IOT_GATEWAY_KEYS_ENV}=${gatewayKeys}\n`);
+    if (imported.code !== 0) throw commandFailure('fly secrets import', imported);
+  } else if (opts.iotRealtime !== undefined) {
+    progress({ step: 'deploy', message: `沒有給閘道私鑰：沿用 Fly 上已經有的 ${IOT_GATEWAY_KEYS_ENV}（沒有的話 C′ 的家庭不會啟用；用 fly secrets set 設定）` });
   }
 
   const deployed = await run('fly', ['deploy', '--config', configPath, '--app', name, '--remote-only', '--ha=false'], env);

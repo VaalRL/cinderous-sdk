@@ -1,6 +1,6 @@
 # 0049. IoT：共用事件格式 `./iot`、家中橋接器，以及部署時選用的 relay 內建 MQTT（Node）與 HTTP 輪詢（Workers／Node，可設定的端到端加密）
 
-- 狀態：**已接受（Accepted，2026-10-02）**——所有待決事項已由使用者逐項裁示（見〈使用者裁示（2026-10-02，C′）〉與〈使用者裁示（2026-10-02，其餘待決事項）〉）；**P0（路線 A）已實作（v0.39.0）**，見〈P0 實作（v0.39.0，路線 A）〉；**§11 IoT 推播的 SDK 側已實作（v0.40.0）**，見〈§11 實作（v0.40.0，IoT 推播的 SDK 側）〉；**R0 PoC 已完成（2026-10-07），完整實驗細節見 [`docs/reports/iot-r0-poc.md`](../reports/iot-r0-poc.md)**；**C′ 的 R1（relay 端即時通道）已實作（v0.59.0）**，見〈C′ R1 實作（v0.59.0，relay 端即時通道）〉；C′ R2–R5、P2、P1 未做
+- 狀態：**已接受（Accepted，2026-10-02）**——所有待決事項已由使用者逐項裁示（見〈使用者裁示（2026-10-02，C′）〉與〈使用者裁示（2026-10-02，其餘待決事項）〉）；**P0（路線 A）已實作（v0.39.0）**，見〈P0 實作（v0.39.0，路線 A）〉；**§11 IoT 推播的 SDK 側已實作（v0.40.0）**，見〈§11 實作（v0.40.0，IoT 推播的 SDK 側）〉；**R0 PoC 已完成（2026-10-07），完整實驗細節見 [`docs/reports/iot-r0-poc.md`](../reports/iot-r0-poc.md)**；**C′ 的 R1（relay 端即時通道）已實作（v0.59.0）**，見〈C′ R1 實作（v0.59.0，relay 端即時通道）〉；**C′ R2 的手機端、設備端 `./iot/device`、`operatorSecret`、NIP-11 已實作（SDK ADR 0120）**，見〈C′ R2 實作〉；**R2b（部署設定、Workers 的 `IOT_HOME` 綁定與 v2 遷移、CLI、名單公告）已實作（SDK ADR 0121）**；R3–R5、P2、P1 未做
 - 日期：2026-10-02（同日補充：輪詢模式的端到端加密選項、查詢 kind 25173、閘道端角色權限、中繼端「狀態類 kind 只收閘道」保險；再補充：路線 C′ 即時通道、每個家庭一顆 DO、額度用完時的設備感知與降級）
 - 對應：使用者的 IoT 研究需求（研究報告第三版，見〈參考〉）。相關：本 repo ADR 0006（kind 分配）、0007（中繼搬進 SDK）、0008（白名單與 CLI）、0013（存取控制）、
   0018（docker／fly 共用 Node 建置）、0019（中立預設）、0021（REST 部署）、0028（QR 配對與名單、§7 白名單與禮物包）、0036（`RelaySiteOptions`、Node 拒絕車道參數）、
@@ -1054,6 +1054,18 @@ relay 的環境變數：`IOT_REALTIME`（JSON，非秘密：`{ homes: [{ homeTag
 - 宿主：Workers 11 項（假的 DurableObjectState：路由與拒絕不碰 DO、自動回覆設定、指令往返、單一連線 4409、stale、休眠喚醒、預算三個門檻與 503、DO 超量 503）；Node 3 項（真的 HTTP／WebSocket：權杖錯 401＋`Cinder-Relay`、403、沒開 404、心跳、指令往返、一般路徑不受影響、4409）。
 - 全套 206 檔、2,954 項通過；`npm run typecheck`（三套設定）通過；worker 內嵌包已重產。
 - **沒有驗證**：沒有部署到 Cloudflare（`wrangler deploy` 與真的休眠、自動回覆時間戳、超量例外的實際文字都還沒在雲端跑過）；沒有真的 ESP32／Tasmota 設備（R3）。部署前要在測試帳號上跑一次 R0 那套腳本確認行為一致。
+
+## C′ R2 實作（SDK ADR 0120）
+
+2026-10-28 使用者：「從 C′ R2 開始做」。完整內容見 [SDK ADR 0120](0120-iot-realtime-phone-and-device.md)，這裡只列與本 ADR 的差異：
+
+1. **信封明文的格式由 ADR 0120 §1 定**（本 ADR 沒有寫）：down `cmd`／`query`，up `ack`／`state`；設備的 ack 只有 `ok`／`rejected`／`unknown-topic`。
+2. **門鎖類的 `query` 幀用 `deviceKey`**（§9.5 只說 down 方向改用 `operatorSecret`）：查詢不改變狀態，viewer 也要能看門鎖；設備只執行 `cmd` 幀＋down 金鑰＋`type: 'cmd'`。
+3. **`urgency` 預設 `normal`**，C′ 設備不自動變成即時等級，由呼叫端依 §9.4 的分級表決定。
+4. §9.6 的 `connectIotDevice` 的 `heartbeat.mode` 沒有做：中立的 WebSocket API 送不了協定層 ping，只做應用層心跳（R0 實測自動回覆同樣不計費）。`onLinkState` 多了 `connecting`、`replaced`（4409）、`closed`，沒有 `network-down`（WebSocket API 分不出網路斷線與站掛掉，都算 `reconnecting`／`relay-error`）。
+5. NIP-11 照 §9.6 寫 `{ ws, longpoll, heartbeat_sec }`；`longpoll` 還沒實作，寫 false。
+6. NIP-42 維持 R1 的決定（ADR 0120 §7）；`RelaySiteOptions`／部署設定／CLI 與 `$sys/acl` 公告在 R2b 做掉（[SDK ADR 0121](0121-iot-realtime-deploy-and-cli.md)：家庭設定加 `aclBlindId`，relay 以 31170 公告名單；每家的可尋址上限改成 64＋1）。
+7. 實作時發現事件預算把 `rate-limited: iot-quota:` 當一般限速而整個身分退避，已修正（ADR 0120 §4）。
 
 ## Consequences（若依此提議實作）
 

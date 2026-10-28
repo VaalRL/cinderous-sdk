@@ -40,7 +40,7 @@ function fakeCloudflare(overrides: Record<string, Reply> = {}, extra: Route[] = 
     'GET /accounts?per_page=50&page=1': ok([{ id: 'acc1', name: 'Alice' }]),
     'GET /accounts/acc1/workers/subdomain': ok({ subdomain: 'alice' }),
     'GET /accounts/acc1/workers/scripts': ok([]),
-    'PUT /accounts/acc1/workers/scripts/my-relay': ok({ id: 'my-relay', migration_tag: 'v1' }),
+    'PUT /accounts/acc1/workers/scripts/my-relay': ok({ id: 'my-relay', migration_tag: 'v2' }),
     'POST /accounts/acc1/workers/scripts/my-relay/subdomain': ok({ enabled: true, previews_enabled: false }),
     'GET /accounts/acc1/workers/scripts/my-relay/settings': ok({ bindings: [] }),
     'GET https://my-relay.alice.workers.dev/healthz': { status: 200, raw: 'ok' },
@@ -142,6 +142,7 @@ describe('deployCloudflareRelayViaApi：第一次部署', () => {
       compatibility_date: '2026-09-15',
       bindings: [
         { type: 'durable_object_namespace', name: 'RELAY_ROOM', class_name: 'RelayRoom' },
+        { type: 'durable_object_namespace', name: 'IOT_HOME', class_name: 'IotHomeRoom' },
         { type: 'plain_text', name: 'MAX_CONNECTIONS_PER_PUBKEY', text: '5' },
         { type: 'plain_text', name: 'MAX_MESSAGES_PER_SECOND_PER_IP', text: '20' },
         { type: 'plain_text', name: 'ALLOWED_PUBKEYS', text: alice }, // npub 已換成 hex
@@ -149,14 +150,14 @@ describe('deployCloudflareRelayViaApi：第一次部署', () => {
       ],
       keep_bindings: ['secret_text', 'secret_key'],
       observability: { enabled: true },
-      migrations: { new_tag: 'v1', steps: [{ new_sqlite_classes: ['RelayRoom'] }] },
+      migrations: { new_tag: 'v2', steps: [{ new_sqlite_classes: ['RelayRoom'] }, { new_sqlite_classes: ['IotHomeRoom'] }] },
     });
 
     const entry = parts.get('entry.mjs')!;
     expect(entry.headers).toContain('filename="entry.mjs"');
     expect(entry.headers).toContain('Content-Type: application/javascript+module');
     expect(entry.content).toContain('setRelayVersion("1.2.3")');
-    expect(entry.content).toContain('export { default, RelayRoom } from "./relay.mjs"');
+    expect(entry.content).toContain('export { default, RelayRoom, IotHomeRoom } from "./relay.mjs"');
 
     const relay = parts.get('relay.mjs')!;
     expect(relay.headers).toContain('Content-Type: application/javascript+module');
@@ -190,7 +191,7 @@ describe('deployCloudflareRelayViaApi：第一次部署', () => {
 
 describe('deployCloudflareRelayViaApi：重新部署要冪等', () => {
   it('Worker 已套用最後一個遷移 tag → 不再送 migrations（再送會被 Cloudflare 拒絕）', async () => {
-    const cf = fakeCloudflare({ 'GET /accounts/acc1/workers/scripts': ok([{ id: 'other' }, { id: 'my-relay', migration_tag: 'v1' }]) });
+    const cf = fakeCloudflare({ 'GET /accounts/acc1/workers/scripts': ok([{ id: 'other' }, { id: 'my-relay', migration_tag: 'v2' }]) });
     const result = await deployCloudflareRelayViaApi({ ...base, fetch: cf.http });
     const metadata = JSON.parse(parseMultipart(cf.calls.find((c) => c.method === 'PUT')!).get('metadata')!.content);
     expect(metadata.migrations).toBeUndefined();
@@ -215,10 +216,10 @@ describe('deployCloudflareRelayViaApi：重新部署要冪等', () => {
   });
 
   it('planMigrations：沒有 tag 送全部；最後一個 tag 不送；陌生 tag 標記為別人的 Worker', () => {
-    expect(planMigrations(undefined)).toEqual({ payload: { new_tag: 'v1', steps: [{ new_sqlite_classes: ['RelayRoom'] }] }, foreign: false });
-    expect(planMigrations('v1')).toEqual({ foreign: false });
+    expect(planMigrations(undefined)).toEqual({ payload: { new_tag: 'v2', steps: [{ new_sqlite_classes: ['RelayRoom'] }, { new_sqlite_classes: ['IotHomeRoom'] }] }, foreign: false });
+    expect(planMigrations('v2')).toEqual({ foreign: false });
     expect(planMigrations('their-tag')).toEqual({
-      payload: { old_tag: 'their-tag', new_tag: 'v1', steps: [{ new_sqlite_classes: ['RelayRoom'] }] },
+      payload: { old_tag: 'their-tag', new_tag: 'v2', steps: [{ new_sqlite_classes: ['RelayRoom'] }, { new_sqlite_classes: ['IotHomeRoom'] }] },
       foreign: true,
     });
   });
@@ -227,7 +228,7 @@ describe('deployCloudflareRelayViaApi：重新部署要冪等', () => {
 describe('deployCloudflareRelayViaApi：已知租戶車道（appLanes，SDK ADR 0036）', () => {
   const liveWith = (lanes: string | undefined) =>
     fakeCloudflare({
-      'GET /accounts/acc1/workers/scripts': ok([{ id: 'my-relay', migration_tag: 'v1' }]),
+      'GET /accounts/acc1/workers/scripts': ok([{ id: 'my-relay', migration_tag: 'v2' }]),
       'GET /accounts/acc1/workers/scripts/my-relay/settings': ok({
         bindings: [
           { type: 'durable_object_namespace', name: 'RELAY_ROOM', class_name: 'RelayRoom' },
@@ -315,7 +316,7 @@ describe('deployCloudflareRelayViaApi：名稱衝突', () => {
     const cf = fakeCloudflare({ 'GET /accounts/acc1/workers/scripts': ok([{ id: 'my-relay', migration_tag: 'their-v3' }]) });
     await deployCloudflareRelayViaApi({ ...base, fetch: cf.http, replaceExisting: true });
     const metadata = JSON.parse(parseMultipart(cf.calls.find((c) => c.method === 'PUT')!).get('metadata')!.content);
-    expect(metadata.migrations).toEqual({ old_tag: 'their-v3', new_tag: 'v1', steps: [{ new_sqlite_classes: ['RelayRoom'] }] });
+    expect(metadata.migrations).toEqual({ old_tag: 'their-v3', new_tag: 'v2', steps: [{ new_sqlite_classes: ['RelayRoom'] }, { new_sqlite_classes: ['IotHomeRoom'] }] });
   });
 });
 

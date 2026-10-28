@@ -7,8 +7,8 @@ import { join } from 'node:path';
 import { allowedPubkeysFrom } from '../relay/host-config.js';
 import { assertRelayName, commandFailure, defaultRunner, waitForHealthy, } from './common.js';
 import { prepareNodeRelayContext } from './container.js';
-import { BIND_ADDRESS_PATTERN, composeBindAddress, DEFAULT_DOCKER_PORT, relayEnvironment, renderCompose, WILDCARD_BIND_ADDRESSES } from './render.js';
-import { privateLaneEndpoint } from './shared.js';
+import { BIND_ADDRESS_PATTERN, composeBindAddress, composeRequiredEnv, DEFAULT_DOCKER_PORT, IOT_GATEWAY_KEYS_ENV, relayEnvironment, renderCompose, WILDCARD_BIND_ADDRESSES } from './render.js';
+import { iotGatewayKeysSecret, privateLaneEndpoint } from './shared.js';
 // 產生器搬到不碰 Node 的 render.ts（SDK ADR 0050），這裡轉出以維持原本的匯出
 export { DEFAULT_DOCKER_PORT, renderCompose } from './render.js';
 export async function deployDockerRelay(opts = {}) {
@@ -35,6 +35,10 @@ export async function deployDockerRelay(opts = {}) {
         // Tunnel 模式所有連線都經過 cloudflared：一定要信 X-Forwarded-For，IP 限速才不會把所有人算成同一個來源
         trustProxy,
     });
+    // C′ 的閘道私鑰（SDK ADR 0121）：compose 從環境代入、沒設就不啟動；值只交給 docker compose 的環境，不寫檔
+    const gatewayKeys = opts.iotGatewayKeys !== undefined ? iotGatewayKeysSecret(opts.iotGatewayKeys, opts.iotRealtime) : undefined;
+    if (opts.iotRealtime !== undefined)
+        environment.IOT_GATEWAY_KEYS = composeRequiredEnv(IOT_GATEWAY_KEYS_ENV, 'C′ gateway keys, SDK ADR 0121');
     const workDir = opts.workDir ?? join(process.cwd(), '.cinderous', name);
     prepareNodeRelayContext({ workDir, ...(opts.sdkRoot ? { sdkRoot: opts.sdkRoot } : {}), ...(opts.version ? { version: opts.version } : {}) });
     const configPath = join(workDir, 'docker-compose.yml');
@@ -51,6 +55,8 @@ export async function deployDockerRelay(opts = {}) {
     progress({ step: 'deploy', message: '以 docker compose 建置並啟動' });
     // Token 只放進 docker compose 的環境（compose 以它代入 cloudflared 的 TUNNEL_TOKEN），不寫檔
     const runEnv = tunnel?.token !== undefined ? { [tunnel.tokenEnv]: tunnel.token } : {};
+    if (gatewayKeys !== undefined)
+        runEnv[IOT_GATEWAY_KEYS_ENV] = gatewayKeys;
     const result = await (opts.run ?? defaultRunner)('docker', ['compose', '-f', configPath, '-p', name, 'up', '-d', '--build'], runEnv);
     if (result.code !== 0)
         throw commandFailure('docker compose', result);

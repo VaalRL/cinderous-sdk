@@ -1,15 +1,20 @@
 // `cinderous` 命令列（PRD 5.2、5.3、5.4；SDK ADR 0008、0050）。
 // 這個檔只解讀旗標、把工作交出去；起中繼、部署、讀寫檔都經由 `CliDeps`，測試換成替身。
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { cloudflareApiOptionsFromConfig, DEPLOY_TARGETS, migrateDeployConfig, renderDeployConfigFile, renderDeployConfigJsonSchema, runInitWizard, resolveSecret, resolveSiteSecrets, resolveStringOrSecret, secretEnvName, serviceOfConfig, siteWithPlaceholders, validateDeployConfig, } from '../deploy/config/index.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
+import { cloudflareApiOptionsFromConfig, DEPLOY_TARGETS, migrateDeployConfig, renderDeployConfigFile, renderDeployConfigJsonSchema, runInitWizard, resolveIotGatewayKeys, resolveSecret, resolveSiteSecrets, resolveStringOrSecret, secretEnvName, serviceOfConfig, siteWithPlaceholders, validateDeployConfig, } from '../deploy/config/index.js';
+import { iotGatewayKeysSecret } from '../deploy/shared.js';
 import { estimateResourceConsumption, formatEstimationReport, } from '../estimator.js';
 import { Identity } from '../identity.js';
 import { iotPubkeyOf, IOT_ROLES } from '../iot/acl.js';
 import { resolveIotBridgeConfig, resolveIotClientConfig } from '../iot/bridge/config.js';
+import { generateIotDeviceToken, hashIotDeviceToken } from '../iot/device-frame.js';
+import { deriveIotDeviceKeyDown, iotKid } from '../iot/envelope.js';
 import { deriveIotHome, generateIotHomeSecret } from '../iot/keys.js';
-import { npubEncode } from '../protocol/keys.js';
+import { generateSecretKey, getPublicKey, npubEncode } from '../protocol/keys.js';
 import { PRD_MAX_CONNECTIONS_PER_PUBKEY, PRD_MAX_MESSAGES_PER_SECOND_PER_IP } from '../relay/host-config.js';
+import { checkIotRealtimeAclShape, checkIotRealtimeConfig, IOT_LOCAL_FALLBACKS, } from '../relay/iot-realtime-config.js';
 export const USAGE = `用法：cinderous <指令> [選項]
 
   cinderous relay start    在這台機器起一座中繼（預設純記憶體）
@@ -22,6 +27,7 @@ export const USAGE = `用法：cinderous <指令> [選項]
       --name <站名>               NIP-11 顯示的站名
       --max-file-mb <MB>          接受檔案塊（kind 1060；全站開關）；Vault 同步必須開，建議 17（需要白名單）
       --open-file-relay           沒有白名單也接受檔案塊（不建議）
+      --iot-realtime <檔>         IoT 即時通道 C′ 的設定（iot realtime home／device 產生）；閘道私鑰從環境變數 IOT_GATEWAY_KEYS 讀
 
   cinderous relay deploy   部署一座中繼
       --config, -c <檔>           改用設定檔（cinderous.config.json，SDK ADR 0050）；只能再加 --output-env、--dry-run
@@ -55,7 +61,7 @@ export const USAGE = `用法：cinderous <指令> [選項]
       --config, -c <檔>           預設 cinderous.config.json
       --out, -o <目錄>            預設設定檔所在的資料夾
       --self-contained            Workers：附預打包的中繼（src/relay.mjs），不需要安裝 SDK
-      --sdk-spec <相依>           SDK 改以套件相依安裝（例如 github:VaalRL/cinderous-sdk#v0.80.0），不內嵌 sdk/
+      --sdk-spec <相依>           SDK 改以套件相依安裝（例如 github:VaalRL/cinderous-sdk#v0.81.0），不內嵌 sdk/
       --force                     覆寫被手改過、或不是 relay build 產生的檔案
 
   cinderous init           逐題產生設定檔 cinderous.config.json（SDK ADR 0117）；危險選項要打字確認才會開
@@ -79,6 +85,15 @@ export const USAGE = `用法：cinderous <指令> [選項]
   cinderous iot build      寫出橋接器的 Docker 建置內容（Dockerfile、compose.yaml、.env.example、sdk/）
       --out, -o <目錄>            預設 iot-bridge
       --config, -c <檔>           一併複製這份 iot-bridge.json
+  cinderous iot realtime home     把一個家庭加進 C′ 的設定（SDK ADR 0121；家庭秘密讀 IOT_HOME_SECRET）；閘道私鑰與 operator 秘密只印這一次
+      --owner <npub>              第一位 owner（必填）
+      --file, -f <檔>             預設 iot-realtime.json（只有公開值與雜湊；relay start --iot-realtime 與 site.iotRealtime 用它）
+  cinderous iot realtime device <id>  把一台設備加進那個家庭；設備權杖與金鑰只印這一次（燒進韌體）
+      --class <lock|general>      門鎖類要 --local-fallback 與 IOT_OPERATOR_SECRET（down 金鑰以它衍生）
+      --local-fallback <清單>     不依賴 relay 的開啟方式：key、keypad、lan、ble、button（逗號分隔）
+      --min-role <角色>           操作它至少要哪個角色（viewer、operator、owner）
+      --epoch <n>                 金鑰版本，預設 0
+      --file, -f <檔>             預設 iot-realtime.json
 
   cinderous config validate [檔]  驗證設定檔，一次列出所有問題（預設 cinderous.config.json）
   cinderous config schema          印出設定檔的 JSON Schema
@@ -163,7 +178,7 @@ export function parseEstimateArgs(argv) {
  * `cinderous relay start` 的旗標 → Node 主機的環境變數與選項。
  * 以既有環境變數為底：Docker 用 `-e` 設的值照樣生效，旗標只覆寫有給的那幾個。
  */
-export function parseRelayStartArgs(argv, baseEnv) {
+export function parseRelayStartArgs(argv, baseEnv, files) {
     const { values } = parseArgs({
         args: argv,
         strict: true,
@@ -177,6 +192,7 @@ export function parseRelayStartArgs(argv, baseEnv) {
             name: { type: 'string' },
             'max-file-mb': { type: 'string' },
             'open-file-relay': { type: 'boolean' },
+            'iot-realtime': { type: 'string' },
         },
     });
     const env = {
@@ -201,10 +217,50 @@ export function parseRelayStartArgs(argv, baseEnv) {
             throw new UsageError('--max-file-mb 需要白名單（--allowed-pubkeys），或明確加 --open-file-relay');
         env.MAX_FILE_MB = String(positiveInt('--max-file-mb', values['max-file-mb'], 1));
     }
+    if (values['iot-realtime'] !== undefined)
+        env.IOT_REALTIME = iotRealtimeForStart(values['iot-realtime'], env, files);
     const persist = values.persist === true;
     if (persist)
         env.DB_PATH = values['db-path'] ?? 'cinderous-relay.db';
     return { env, options: { memory: !persist } };
+}
+const pathIn = (cwd, file) => (isAbsolute(file) ? file : join(cwd, file));
+/**
+ * `relay start --iot-realtime`（SDK ADR 0121）：讀設定、與 relay 同一份規則檢查、比對環境裡的閘道私鑰。
+ * 有任何問題就不啟動——relay 本身會略過有問題的家庭，但從命令列起的站，設定錯了應該當場看到。
+ */
+function iotRealtimeForStart(file, env, files) {
+    const text = files?.readFile?.(pathIn(files.cwd, file));
+    if (text === undefined)
+        throw new UsageError(`找不到 --iot-realtime 的檔案：${file}`);
+    let parsed;
+    try {
+        parsed = JSON.parse(text.replace(/^\uFEFF/, ''));
+    }
+    catch {
+        throw new UsageError(`--iot-realtime 的檔案不是合法的 JSON：${file}`);
+    }
+    const { issues } = checkIotRealtimeConfig(parsed, checkIotRealtimeAclShape);
+    if (issues.length > 0)
+        throw new UsageError(`--iot-realtime 有 ${issues.length} 個問題：\n${issues.map((i) => `- ${i.path}：${i.message}`).join('\n')}`);
+    if (!env.IOT_GATEWAY_KEYS)
+        throw new UsageError('C′ 需要環境變數 IOT_GATEWAY_KEYS（閘道私鑰的 JSON；`cinderous iot realtime home` 印出的那一行）');
+    let keys;
+    try {
+        keys = JSON.parse(env.IOT_GATEWAY_KEYS);
+    }
+    catch {
+        keys = undefined;
+    }
+    if (keys === null || typeof keys !== 'object' || Array.isArray(keys))
+        throw new UsageError('IOT_GATEWAY_KEYS 必須是 JSON 物件 {"<homeTag>": "<64 位 hex>"}');
+    try {
+        iotGatewayKeysSecret(keys, parsed);
+    }
+    catch (error) {
+        throw new UsageError(error instanceof Error ? error.message : String(error));
+    }
+    return JSON.stringify(parsed);
 }
 const PROVIDERS = ['cloudflare', 'docker', 'fly'];
 /** 只有 Cloudflare 版中繼支援的旗標（Node 主機沒有車道；SDK ADR 0036）。 */
@@ -360,6 +416,11 @@ function deployArgsFromConfig(config, env, overrides) {
         if (turnApiToken)
             args.turnApiToken = turnApiToken;
     }
+    if (config.site?.iotRealtime !== undefined && !overrides.dryRun) {
+        const gatewayKeys = resolveIotGatewayKeys(config.secrets?.iotGatewayKeys, env, secretEnvName(config, 'iotGatewayKeys'));
+        if (gatewayKeys !== undefined)
+            args.iotGatewayKeys = gatewayKeys;
+    }
     if (provider === 'fly') {
         const apiToken = overrides.apiToken ?? resolveSecret(config.secrets?.flyApiToken, env, 'FLY_API_TOKEN');
         if (apiToken)
@@ -402,6 +463,7 @@ async function deployWith(args, deps) {
     const common = {
         ...(args.name !== undefined ? { name: args.name } : {}),
         ...args.site,
+        ...(args.iotGatewayKeys !== undefined ? { iotGatewayKeys: args.iotGatewayKeys } : {}),
         ...(args.dryRun ? { dryRun: true } : {}),
         onProgress,
     };
@@ -907,6 +969,159 @@ function iotPushKeygen(argv, deps) {
     deps.stdout(`# 公鑰（App 以它封推播 token；也可以從 GET /v1/info 讀）：${key.pubkey}`);
     return 0;
 }
+const IOT_REALTIME_FILE = 'iot-realtime.json';
+/** 讀 C′ 的設定檔（沒有＝空的）；不是 `{ homes: [] }` 的形狀就丟例外 */
+function readIotRealtimeFile(path, deps) {
+    if (!deps.readFile)
+        throw new Error('這個環境不支援讀檔（readFile）');
+    const text = deps.readFile(path);
+    if (text === undefined)
+        return { homes: [] };
+    const parsed = JSON.parse(text.replace(/^\uFEFF/, ''));
+    if (!Array.isArray(parsed.homes))
+        throw new Error(`${path} 不是 C′ 的設定（需要 { "homes": [ … ] }）`);
+    return parsed;
+}
+function homeSecretFrom(deps) {
+    const secret = deps.env.IOT_HOME_SECRET;
+    if (!secret)
+        throw new UsageError('需要環境變數 IOT_HOME_SECRET（家庭秘密；`cinderous iot keygen` 產生）');
+    return secret;
+}
+/** `iot realtime home`（SDK ADR 0121）：家庭的公開值寫進設定檔；新的閘道私鑰與 operator 秘密只印這一次 */
+function iotRealtimeHome(argv, deps) {
+    const { values, positionals } = parseArgs({ args: argv, strict: true, allowPositionals: true, options: { owner: { type: 'string' }, file: { type: 'string', short: 'f' } } });
+    if (positionals.length > 0)
+        throw new UsageError(`iot realtime home 不吃位置參數，收到：${positionals.join(' ')}`);
+    const homeSecret = homeSecretFrom(deps);
+    if (values.owner === undefined)
+        throw new UsageError('iot realtime home 要給 --owner（第一位 owner 的 npub 或 hex 公鑰）');
+    try {
+        checkIotRealtimeAclShape([{ pubkey: values.owner, role: 'owner' }]);
+    }
+    catch {
+        throw new UsageError(`--owner 不是 npub 或 64 位小寫 hex：${values.owner}`);
+    }
+    const path = pathIn(deps.cwd, values.file ?? IOT_REALTIME_FILE);
+    const config = readIotRealtimeFile(path, deps);
+    const home = deriveIotHome(homeSecret);
+    if (config.homes.some((h) => h.homeTag === home.homeTag)) {
+        deps.stderr(`這個家庭（${home.homeTag}）已經在 ${path} 裡；要加設備用 iot realtime device`);
+        return 1;
+    }
+    let existing = {};
+    if (deps.env.IOT_GATEWAY_KEYS) {
+        try {
+            existing = JSON.parse(deps.env.IOT_GATEWAY_KEYS);
+        }
+        catch {
+            throw new UsageError('環境變數 IOT_GATEWAY_KEYS 不是合法的 JSON；先修好它（或清掉）再加家庭');
+        }
+    }
+    const gatewaySecret = generateSecretKey();
+    const entry = {
+        homeTag: home.homeTag,
+        homePub: home.homePub,
+        gatewayPubkey: getPublicKey(gatewaySecret),
+        aclBlindId: home.blind('sys:acl'),
+        acl: [{ pubkey: values.owner, role: 'owner' }],
+        devices: [],
+    };
+    const next = { homes: [...config.homes, entry] };
+    const { issues } = checkIotRealtimeConfig(next, checkIotRealtimeAclShape);
+    if (issues.length > 0)
+        throw new Error(`加進去之後設定不合法：${issues.map((i) => `${i.path}（${i.code}）`).join('、')}`);
+    deps.writeFile(path, `${JSON.stringify(next, null, 2)}\n`);
+    deps.stdout(`# 已把家庭 ${home.homeTag} 加進 ${path}（只有公開值；可以提交）`);
+    deps.stdout('# 🔴 以下秘密只顯示這一次。IOT_GATEWAY_KEYS 是整份（含既有的家庭）：放進 relay 的 .env 或 Worker secret，取代舊值');
+    deps.stdout(`IOT_GATEWAY_KEYS=${JSON.stringify({ ...existing, [home.homeTag]: bytesToHex(gatewaySecret) })}`);
+    deps.stdout('# operator 秘密：只發給 operator／owner 的手機（IotClient 的 realtime.operatorSecret）；門鎖類設備的 down 金鑰由它衍生');
+    deps.stdout(`IOT_OPERATOR_SECRET=${bytesToHex(generateSecretKey())}`);
+    deps.stdout(`# 手機端的閘道公鑰（realtime.gateway）：${entry.gatewayPubkey}`);
+    return 0;
+}
+/** `iot realtime device <id>`（SDK ADR 0121）：設定檔只存 tokenHash 與 blindId；權杖與設備金鑰只印這一次 */
+function iotRealtimeDevice(argv, deps) {
+    const { values, positionals } = parseArgs({
+        args: argv,
+        strict: true,
+        allowPositionals: true,
+        options: {
+            class: { type: 'string' },
+            'local-fallback': { type: 'string' },
+            'min-role': { type: 'string' },
+            epoch: { type: 'string' },
+            file: { type: 'string', short: 'f' },
+        },
+    });
+    if (positionals.length !== 1)
+        throw new UsageError('iot realtime device 要給一個設備 id');
+    const id = positionals[0];
+    const homeSecret = homeSecretFrom(deps);
+    const cls = values.class ?? 'general';
+    if (cls !== 'lock' && cls !== 'general')
+        throw new UsageError('--class 只能是 lock 或 general');
+    const fallback = values['local-fallback'] === undefined ? [] : values['local-fallback'].split(',').map((x) => x.trim()).filter((x) => x !== '');
+    const badFallback = fallback.filter((x) => !IOT_LOCAL_FALLBACKS.includes(x));
+    if (badFallback.length > 0)
+        throw new UsageError(`--local-fallback 不認得：${badFallback.join(', ')}（可用：${IOT_LOCAL_FALLBACKS.join('、')}）`);
+    if (cls === 'lock' && fallback.length === 0)
+        throw new UsageError('門鎖類設備要給 --local-fallback：relay 掛了也開得了門的方式（ADR 0049 §10.5）');
+    const operatorSecret = deps.env.IOT_OPERATOR_SECRET;
+    if (cls === 'lock' && !operatorSecret)
+        throw new UsageError('門鎖類設備需要環境變數 IOT_OPERATOR_SECRET（`iot realtime home` 印出的那一行）：down 金鑰以它衍生');
+    const minRole = values['min-role'];
+    if (minRole !== undefined && !IOT_ROLES.includes(minRole))
+        throw new UsageError(`--min-role 只能是 ${IOT_ROLES.join('、')}`);
+    const epoch = values.epoch === undefined ? 0 : nonNegativeInt('--epoch', values.epoch);
+    const path = pathIn(deps.cwd, values.file ?? IOT_REALTIME_FILE);
+    const config = readIotRealtimeFile(path, deps);
+    const home = deriveIotHome(homeSecret);
+    const index = config.homes.findIndex((h) => h.homeTag === home.homeTag);
+    if (index === -1) {
+        deps.stderr(`${path} 裡沒有這個家庭（${home.homeTag}）：先跑 cinderous iot realtime home`);
+        return 1;
+    }
+    const target = config.homes[index];
+    if (target.devices.some((d) => d.id === id)) {
+        deps.stderr(`設備 ${id} 已經在這個家庭裡`);
+        return 1;
+    }
+    const token = generateIotDeviceToken();
+    const device = {
+        id,
+        blindId: home.blind(`dev:${id}`),
+        epoch,
+        tokenHash: hashIotDeviceToken(token),
+        ...(cls === 'lock' ? { class: 'lock', localFallback: fallback } : fallback.length > 0 ? { localFallback: fallback } : {}),
+        ...(minRole !== undefined ? { minRole: minRole } : {}),
+    };
+    const homes = config.homes.map((h, i) => (i === index ? { ...h, devices: [...h.devices, device] } : h));
+    const { issues } = checkIotRealtimeConfig({ homes }, checkIotRealtimeAclShape);
+    if (issues.length > 0) {
+        deps.stderr(`加進去之後設定不合法：\n${issues.map((i) => `- ${i.path}：${i.message}`).join('\n')}`);
+        return 1;
+    }
+    deps.writeFile(path, `${JSON.stringify({ ...config, homes }, null, 2)}\n`);
+    deps.stdout(`# 已把設備 ${id} 加進 ${path}（只存權杖的雜湊）；重新部署或重啟 relay 才生效`);
+    deps.stdout('# 🔴 以下只顯示這一次：燒進設備（connectIotDevice 的 token、kid、deviceKey），不要提交');
+    deps.stdout(`IOT_DEVICE_ID=${id}`);
+    deps.stdout(`IOT_DEVICE_BLIND_ID=${device.blindId}`);
+    deps.stdout(`IOT_DEVICE_TOKEN=${token}`);
+    deps.stdout(`IOT_DEVICE_KID=${iotKid(id, epoch)}`);
+    deps.stdout(`IOT_DEVICE_KEY=${bytesToHex(home.deviceKey(id, epoch))}`);
+    if (cls === 'lock')
+        deps.stdout(`IOT_DEVICE_KEY_DOWN=${bytesToHex(deriveIotDeviceKeyDown(operatorSecret, id, epoch))}`);
+    return 0;
+}
+function iotRealtime(argv, deps) {
+    const [action, ...rest] = argv;
+    if (action === 'home')
+        return iotRealtimeHome(rest, deps);
+    if (action === 'device')
+        return iotRealtimeDevice(rest, deps);
+    throw new UsageError(`不認得的指令：iot realtime ${action ?? ''}（可用：home、device）`);
+}
 async function iotCommand(sub, argv, deps) {
     if (sub === 'bridge')
         return iotBridge(argv, deps);
@@ -918,7 +1133,9 @@ async function iotCommand(sub, argv, deps) {
         return iotPushKeygen(argv, deps);
     if (sub === 'build')
         return iotBuild(argv, deps);
-    throw new UsageError(`不認得的指令：iot ${sub ?? ''}（可用：iot bridge、iot acl、iot keygen、iot push-keygen、iot build）`);
+    if (sub === 'realtime')
+        return iotRealtime(argv, deps);
+    throw new UsageError(`不認得的指令：iot ${sub ?? ''}（可用：iot bridge、iot acl、iot keygen、iot push-keygen、iot build、iot realtime）`);
 }
 /** 執行一次命令列；回傳結束碼（0 成功、1 執行失敗、2 用法錯誤）。 */
 export async function runCli(argv, deps) {
@@ -935,7 +1152,7 @@ export async function runCli(argv, deps) {
             return 0;
         }
         if (command === 'relay' && sub === 'start') {
-            const { env, options } = parseRelayStartArgs(rest, deps.env);
+            const { env, options } = parseRelayStartArgs(rest, deps.env, { cwd: deps.cwd, ...(deps.readFile ? { readFile: deps.readFile } : {}) });
             deps.startNodeRelay(env, options);
             return 0;
         }

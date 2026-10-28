@@ -172,6 +172,12 @@ export function buildRelayInfo(cfg = {}) {
             : {}),
         /** 丟棄計數（SDK ADR 0042）：讀自己的收件匣時會收到 `NOTICE "warning: dropped: …"`。 */
         ...(store.countDrops === true ? { cinder_drop_notices: true } : {}),
+        /**
+         * IoT 即時通道（SDK ADR 0049 §9.6）：`ws`＝設備常駐 WebSocket；`longpoll` 還沒實作（R4），如實寫 false。
+         */
+        ...(cfg.iotRealtime !== undefined
+            ? { cinder_iot: { realtime: { ws: true, longpoll: false, heartbeat_sec: cfg.iotRealtime.heartbeatSec } } }
+            : {}),
         /** 是否接受檔案塊（ADR-0162）：false＝整類拒收，客戶端不必試。 */
         cinder_accepts_files: cfg.acceptsFiles === true,
         /**

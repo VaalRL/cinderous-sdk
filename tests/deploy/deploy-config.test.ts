@@ -62,6 +62,8 @@ describe('描述表 DEPLOY_OPTION_SPECS', () => {
         developerDocsUrl: 'https://x.example',
         turnKeyId: 'k1',
         turnTtlSeconds: 3600,
+        iotRealtime: { homes: [{ homeTag: 'h'.repeat(22), homePub: alice, gatewayPubkey: alice, acl: [], devices: [] }] },
+        iotHomeDailyRequests: 1000,
       },
       'worker',
     );
