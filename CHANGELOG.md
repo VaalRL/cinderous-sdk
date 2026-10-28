@@ -4,6 +4,10 @@ Releases are git tags; install one with `npm install github:VaalRL/cinderous-sdk
 
 每個版本是一個 git tag，安裝方式是 `npm install github:VaalRL/cinderous-sdk#vX.Y.Z`。每一版列出那一版的改動（取自 commit 紀錄）；每項改動的理由寫在它引用的 ADR 裡（[docs/adr/](docs/adr/README.md)）。
 
+## v0.77.2 — 2026-10-28
+
+- docs: 說明網站 https://vaalrl.github.io/cinderous-sdk/ ——VitePress，直接用 repo 裡的 README、指南、ADR、CHANGELOG（SDK ADR 0113）；不公開路徑清單改放 `scripts/public-exclude.json`，匯出腳本與網站共用
+
 ## v0.77.1 — 2026-10-28
 
 - feat(deploy): JSON Schema 的 `$id` 改成公開 repo 裡這份檔案的網址（`https://raw.githubusercontent.com/VaalRL/cinderous-sdk/main/schema/cinderous.config.schema.json`，SDK ADR 0112）

@@ -11,14 +11,15 @@
   4. commit「Cinderous SDK vX.Y.Z」、打 tag、push（push 前要使用者同意）。
 """
 import difflib
+import json
 import pathlib
 import shutil
 import subprocess
 import sys
 
 new, prev, pub = (pathlib.Path(a) for a in sys.argv[1:4])
-# 不公開的檔案（ADR 0110 第 6 項）
-EXCLUDE = ["poc", "docs/reports", "RESEARCH-JOURNEY.md", "docs/companion-specs"]
+# 不公開的檔案（ADR 0110 第 6 項）；說明網站也用同一份（SDK ADR 0113）
+EXCLUDE = json.loads((pathlib.Path(__file__).parent / "public-exclude.json").read_text(encoding="utf-8"))
 # 公開版有改寫的檔案（連到上面那些檔案的連結）
 REWRITTEN = ["PRD.md", "README.md", "README.zh-TW.md"]
 

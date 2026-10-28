@@ -23,3 +23,5 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      # 說明網站（SDK ADR 0113）：建置失敗＝有壞掉的連結或頁面編譯不過；部署在 pages.yml
+      - run: npm run docs:build

@@ -1,2 +1,4 @@
 node_modules/
 *.log
+site/.vitepress/dist/
+site/.vitepress/cache/
