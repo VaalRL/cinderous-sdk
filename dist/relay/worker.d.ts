@@ -277,6 +277,7 @@ export declare class RelayRoom {
     /** 唯讀寬限期已過（SDK ADR 0052）：這顆 DO 的車道列在 `READONLY_LANES` 但到期了 */
     private laneExpired;
     webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): void;
+    private handleMessage;
     webSocketClose(ws: WebSocket, code?: number): void;
     webSocketError(ws: WebSocket): void;
     /** 連線結束：記憶體與溢位列一起清（Cinderous ADR-0373）。 */

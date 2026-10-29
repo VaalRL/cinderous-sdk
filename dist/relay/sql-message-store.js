@@ -137,9 +137,12 @@ export class SqlMessageStore {
                 /* 欄位已存在 */
             }
         }
-        this.sql(`UPDATE offline_msgs SET pubkey = json_extract(json, '$.pubkey'), kind = json_extract(json, '$.kind')
-       WHERE pubkey IS NULL OR kind IS NULL`);
+        // 🔴 先建索引、條件只看 `pubkey`（SDK ADR 0126）：這段每次建 store 都跑（DO 每次喚醒建兩次），
+        // 原本的 `pubkey IS NULL OR kind IS NULL` 用不到任何索引、每次都掃全表——2026-10-22 錨點 1 讀取額度用完的來源之一。
+        // 兩欄一直是一起寫的（這段回填與每一次 INSERT），只看 `pubkey` 不會漏；`IS NULL` 走 pubkey 索引，沒有舊列時讀 0 列。
         this.sql(`CREATE INDEX IF NOT EXISTS idx_offline_pubkey ON offline_msgs(pubkey)`);
+        this.sql(`UPDATE offline_msgs SET pubkey = json_extract(json, '$.pubkey'), kind = json_extract(json, '$.kind')
+       WHERE pubkey IS NULL`);
         // SDK ADR 0098（Cinderous ADR-0388）：`idx_offline_kind` 拿掉了。`#p` 查詢走分桶索引、`authors` 查詢走 pubkey 索引；
         // 它只會在 `authors+kinds` 時被規劃器誤選（kind 的選擇性遠低於 pubkey），卻讓每次寫入與刪除各多寫一列（DO 依寫入列數計費）。
         // 舊版程式打開時會把它建回來（`IF NOT EXISTS`，回滾照常），這裡再拿掉。
@@ -226,6 +229,27 @@ export class SqlMessageStore {
     }
     setInboxProbe(probe) {
         this.inboxProbe = probe;
+    }
+    /**
+     * 資料庫大小證明「加上 `need` 也不超過 `limit`」嗎（SDK ADR 0126）。沒給上界＝證明不了。
+     * 只在快取是空的時候用得到（喚醒後）：快取在，精算本來就不必讀任何一列。
+     */
+    boundedUnder(need, limit) {
+        const bound = this.upperBound();
+        return bound !== undefined && bound + need <= limit;
+    }
+    /** 宿主給的上界；沒給或不是有限的非負數（測試替身、宿主不支援）＝沒有上界，照舊精算。 */
+    upperBound() {
+        const bound = this.opts.sizeUpperBound?.();
+        return typeof bound === "number" && Number.isFinite(bound) && bound >= 0 ? bound : undefined;
+    }
+    /** 寫入後的預警等級；上界證明沒到預警線就不精算（SDK ADR 0126）。 */
+    offlineNearFull() {
+        const { offlineMaxTotalBytes: max, nearFullPercent: percent } = this.opts;
+        const bound = this.offlineUsed === undefined ? this.upperBound() : undefined;
+        if (bound !== undefined && nearFullGrade(bound, max, percent) === undefined)
+            return undefined;
+        return nearFullGrade(this.usedOfflineBytes(), max, percent);
     }
     usedOfflineBytes() {
         if (this.offlineUsed === undefined) {
@@ -326,7 +350,7 @@ export class SqlMessageStore {
             return { ok: true, borrowedTtlSec: ttl };
         if (this.opts.nearFullPercent === undefined)
             return { ok: true };
-        const nearFull = nearFullGrade(this.usedOfflineBytes(), this.opts.offlineMaxTotalBytes, this.opts.nearFullPercent);
+        const nearFull = this.offlineNearFull();
         return nearFull === undefined ? { ok: true } : { ok: true, nearFull };
     }
     /** 寫入可取代／可尋址事件（取代語意＋配額；ADR-0035／0071）。行為對齊記憶體版。 */
@@ -392,6 +416,9 @@ export class SqlMessageStore {
         if (max === undefined)
             return { borrowed: false };
         const need = size * copies;
+        // 喚醒後快取是空的：資料庫大小證明放得下就不 SUM 整張表（SDK ADR 0126）——與 `decideCapacity` 的 "fit" 同一個結果
+        if (this.offlineUsed === undefined && this.boundedUnder(need, max))
+            return { borrowed: false };
         let used = this.usedOfflineBytes();
         const guarantee = this.opts.guaranteeBytes;
         const band = overflowBand(max, this.opts.overflowRatio);
@@ -527,6 +554,12 @@ export class SqlMessageStore {
             return { borrowed: false, usedAfter: 0 };
         if (size > max)
             return undefined; // 單顆就超過：淘汰也救不了，別把整顆 DO 清空
+        // 可尋址的總量沒有快取、每次寫入都 SUM 整張表（SDK ADR 0126）：資料庫大小證明放得下、也沒到預警線，就照 "fit" 回。
+        // `usedAfter` 回上界：呼叫端只拿它判預警，而上界已證明沒到預警線。
+        const bound = this.upperBound();
+        if (bound !== undefined && bound + size <= max && nearFullGrade(bound + size, max, this.opts.nearFullPercent) === undefined) {
+            return { borrowed: false, usedAfter: bound + size };
+        }
         const total = this.sql(`SELECT COALESCE(SUM(LENGTH(json)), 0) AS n FROM addressable`)[0]?.n ?? 0;
         let used = total - replacedLen;
         const guarantee = this.opts.guaranteeBytes;
@@ -773,10 +806,17 @@ export class SqlMessageStore {
      * 🔴 為什麼要分兩步：`toArray()` 一次把結果全部搬進記憶體，而 DO 的記憶體上限是 128MB。
      * 一位收件人名下的檔案塊可能有上千顆、每顆約 131KB——一次 REQ 就是上百 MB，DO 當場重置。
      * 先只讀大小（分桶索引上就有）算出放得下幾列，再取那幾列的 json。
-     * 排序多一個 `rowid` 當決勝，兩步才保證挑中的是同一批列。
+     * 排序要是**全序**（同一秒的列也排得出先後），兩步才保證挑中的是同一批列。
+     *
+     * 🔴 全序要照索引的順序排（SDK ADR 0126）：離線留言用 `created_at, expiration, bytes, rowid`，
+     * 正好是分桶索引 `(recipient, kind, created_at, expiration, bytes)` 加上隱含的 rowid——`#p`＋單一 kind 的查詢
+     * 順著索引倒著讀，讀滿 LIMIT 就停。原本的 `created_at, rowid` 跳過了中間兩欄，SQLite 只好把整個桶讀出來排序：
+     * 補拉收件匣每一頁都讀全桶、兩步各一次（miniflare 實測 LIMIT 1024 讀 2049 列×2）。
      */
     boundedSelect(table, where, bind, limit, sizeExpr, budget) {
-        const order = "ORDER BY created_at DESC, rowid DESC";
+        const order = table === "offline_msgs"
+            ? "ORDER BY created_at DESC, expiration DESC, bytes DESC, rowid DESC"
+            : "ORDER BY created_at DESC, rowid DESC";
         if (budget === undefined) {
             return { rows: this.sql(`SELECT json FROM ${table} WHERE ${where} ${order} LIMIT ?`, ...bind, limit), spent: 0 };
         }

@@ -4,6 +4,11 @@ Releases are git tags; install one with `npm install github:VaalRL/cinderous-sdk
 
 每個版本是一個 git tag，安裝方式是 `npm install github:VaalRL/cinderous-sdk#vX.Y.Z`。每一版列出那一版的改動（取自 commit 紀錄）；每項改動的理由寫在它引用的 ADR 裡（[docs/adr/](docs/adr/README.md)）。
 
+## v0.85.0 — 2026-10-29
+
+- fix(relay): 喚醒與分頁補拉只讀需要的列——pubkey/kind 回填只看 `pubkey` 並先建索引（建 store 4,631→4 列；每次喚醒建兩次）；新選項 `MessageStoreOptions.sizeUpperBound`（DO 宿主給 `ctx.storage.sql.databaseSize`），證明放得下、沒到預警線就不 `SUM` 整張表（喚醒後第一次寫入 6,949→2,321 列，可尋址事件不再每次寫入都掃全表）；離線留言照分桶索引的順序排序，`#p`＋kinds 分頁讀滿一頁就停（4,098→2,048 列）。2026-10-22 錨點 1 的 CinderSync 車道就是這樣讀了 535 萬列、撞到每日 500 萬列的上限（ADR 0126）
+- fix(relay): 已經連著的連線也說清楚「額度用完」——新選項 `RelayCoreOptions.isStorageExhausted`（DO 宿主給 `doFailureKind`），處理到一半撞到每日讀寫列數上限時，EVENT 回 `OK false over quota:`、REQ 回 `CLOSED over quota:`，再一則 NOTICE 並以 1013 關閉（原本只回 `error: internal`、連線不關，客戶端一直重送到重置）；喚醒還原與存訂閱時撞到也接住；轉出 `storageExhausted`、`STORAGE_QUOTA_REJECTION`，句子改成「rows read or written」，升級被拒共用（前綴不變）（ADR 0127）
+
 ## v0.84.0 — 2026-10-29
 
 - feat(relay-pool): 連不上時分辨「邊緣代答」與「網路斷了」——連續兩次還沒連上就斷，抓兩次 NIP-11（一般與 `no-cors`）：一般失敗、`no-cors` 成功＝主機有回應但不是中繼（Cloudflare 每日請求數用完的 1027 就是這樣）；照 1013 處理：`onRelayReject` 的 `source: 'probe'`、`kind: 'unavailable'`、`token: 'edge'`，整座 5 分鐘不用、重連等到那時。每座最多 5 分鐘探測一次。新選項 `edgeProbe`（預設：內建 WebSocket＋有 `fetch` 時開，注入 `createSocket` 時關）；轉出 `probeRelayEdge`、`relayInfoUrlOf`、`EDGE_ANSWERED_TOKEN`、`EDGE_ANSWERED_REASON`、`DEFAULT_EDGE_PROBE_*`（ADR 0125）

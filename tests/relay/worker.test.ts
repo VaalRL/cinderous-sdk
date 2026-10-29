@@ -105,6 +105,8 @@ class FakeState {
   wsSubsWrites = 0;
   /** 設了就讓 `ws_subs` 的寫入拋錯（模擬 storage 失敗）。 */
   failWsSubsWrites = false;
+  /** 設了就讓**每一條** SQL 拋這個錯（模擬 Cloudflare 每日讀寫列數用完；SDK ADR 0127）。 */
+  sqlError: Error | undefined;
 
   /** 測試直接看溢位表。 */
   wsSubsRows(): { conn_id: string; sub_id: string }[] {
@@ -118,6 +120,7 @@ class FakeState {
     // 與 DO SQLite 相同：每次查詢最多 100 個綁定參數（Cinderous ADR-0372；SDK ADR 0032）。
     // node:sqlite 的上限是 32766，不設這一道的話宿主層測試永遠看不出來。
     if (bindings.length > 100) throw new Error(`too many SQL variables: ${bindings.length} > 100`);
+    if (this.sqlError) throw this.sqlError;
     if (/ws_subs/.test(query) && /^\s*(insert|update|delete)/i.test(query)) {
       if (this.failWsSubsWrites) throw new Error("storage write failed (test)");
       this.wsSubsWrites++;
@@ -2646,5 +2649,71 @@ describe("診斷沒認證就斷線的連線（SDK ADR 0111；Cinderous ADR-0392�
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe("RelayRoom — 額度用完時已經連著的連線（SDK ADR 0127）", () => {
+  // Cloudflare 的錯誤訊息（2026-10-22 錨點 1 撞到的是讀取列數）
+  const QUOTA = () => new Error("Exceeded allowed rows read in Durable Objects free tier.");
+  const stored = (sk: SecretKey): NostrEvent =>
+    finalizeEvent(
+      { kind: 1059, created_at: Math.floor(Date.now() / 1000), tags: [["p", getPublicKey(generateSecretKey())]], content: "x" },
+      sk,
+    );
+
+  async function connected() {
+    const state = new FakeState();
+    const room = newRoom(state);
+    const sk = generateSecretKey();
+    const ws = await open(room, state);
+    authenticate(room, ws, sk);
+    ws.drain();
+    return { state, room, sk, ws };
+  }
+
+  it("🔴 寫入撞到額度：EVENT 回 OK false over quota:、再一則 NOTICE、以 1013 關閉（原本只回 error: internal、連線不關）", async () => {
+    const { state, room, sk, ws } = await connected();
+    state.sqlError = QUOTA();
+    const ev = stored(sk);
+    expect(() => room.webSocketMessage(ws as unknown as WebSocket, JSON.stringify(["EVENT", ev]))).not.toThrow();
+    const out = ws.drain() as unknown[][];
+    expect(out.find((m) => m[0] === "OK")).toEqual(["OK", ev.id, false, expect.stringMatching(/^over quota: /)]);
+    expect(out.some((m) => m[0] === "NOTICE" && /^over quota: /.test(String(m[1])))).toBe(true);
+    expect(ws.closeCode).toBe(1013);
+    expect(classifyRelayClose(ws.closeCode!, ws.closeReason ?? "")).toMatchObject({ kind: "unavailable" });
+  });
+
+  it("🔴 查詢撞到額度：REQ 回 CLOSED over quota:、以 1013 關閉", async () => {
+    const { state, room, sk, ws } = await connected();
+    state.sqlError = QUOTA();
+    const out = send(room, ws, ["REQ", "inbox", { kinds: [1059], "#p": [getPublicKey(sk)] }]) as unknown[][];
+    expect(out.find((m) => m[0] === "CLOSED")).toEqual(["CLOSED", "inbox", expect.stringMatching(/^over quota: /)]);
+    expect(ws.closeCode).toBe(1013);
+  });
+
+  it("🔴 喚醒還原時就撞到額度（還沒進 core）：不拋、NOTICE、以 1013 關閉", async () => {
+    const { state, ws } = await connected();
+    const woke = newRoom(state); // 休眠後的新實例，第一則訊息才還原連線
+    state.sqlError = QUOTA();
+    expect(() => woke.webSocketMessage(ws as unknown as WebSocket, JSON.stringify(["REQ", "x", { authors: [getPublicKey(generateSecretKey())] }]))).not.toThrow();
+    const out = ws.drain() as unknown[][];
+    expect(out.some((m) => m[0] === "NOTICE" && /^over quota: /.test(String(m[1])))).toBe(true);
+    expect(ws.closeCode).toBe(1013);
+  });
+
+  it("其他 storage 錯誤照舊：NOTICE error: internal、連線不關（不把一般錯誤說成額度用完）", async () => {
+    const { state, room, sk, ws } = await connected();
+    state.sqlError = new Error("SQLITE_BUSY (test)");
+    room.webSocketMessage(ws as unknown as WebSocket, JSON.stringify(["EVENT", stored(sk)]));
+    const out = ws.drain() as unknown[][];
+    expect(out.some((m) => m[0] === "NOTICE" && /^error: /.test(String(m[1])))).toBe(true);
+    expect(out.some((m) => /over quota/.test(JSON.stringify(m)))).toBe(false);
+    expect(ws.closeCode).toBeUndefined();
+  });
+
+  it("升級被拒與已連著的連線說的是同一句（新連線在額度用完時也走這句）", () => {
+    const { notice } = upgradeRejection("over-quota", HOST, undefined);
+    expect(notice).toMatch(/^over quota: /);
+    expect(notice).toMatch(/rows read or written/);
   });
 });

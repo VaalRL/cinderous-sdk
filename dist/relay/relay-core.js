@@ -32,7 +32,7 @@ const MAX_P_TAGS = 16;
 // 拒收訊息（SDK ADR 0038 P0-R1／P0-R2；ADR 0040 詞元表）集中在 `reject-messages.ts`。
 // `OFFLINE_CEILING_REJECT`／`EXPIRED_REJECT` 在 v0.31.1 從這裡匯出，照舊轉出。
 export { EXPIRED_REJECT, OFFLINE_CEILING_REJECT } from "./reject-messages.js";
-import { ADDRESSABLE_REJECT, ADDRESSABLE_REJECT_GENERIC, borrowedWarning, droppedNotice, EXPIRED_REJECT, nearFullWarning, malformedMessage, OFFLINE_CEILING_REJECT, powRejectMessage, REJECT, tooManyConnectionsMessage, } from "./reject-messages.js";
+import { ADDRESSABLE_REJECT, ADDRESSABLE_REJECT_GENERIC, borrowedWarning, droppedNotice, EXPIRED_REJECT, nearFullWarning, malformedMessage, OFFLINE_CEILING_REJECT, powRejectMessage, REJECT, STORAGE_QUOTA_REJECTION, tooManyConnectionsMessage, UPGRADE_UNAVAILABLE_CLOSE_CODE, } from "./reject-messages.js";
 import { FILE_EVENT_MAX_BYTES, FILE_WRAP_KIND, getExpiration, isAuthorOnlyKind, MAX_QUERY_BYTES, isReplaceableOrAddressable, recipientsOf, } from "./message-store.js";
 import { parseClientMessage, } from "./protocol.js";
 const EPHEMERAL_MIN = 20000;
@@ -235,7 +235,9 @@ export class RelayCore {
             }
             return this.dispatch(connId, raw);
         }
-        catch {
+        catch (error) {
+            if (this.opts.isStorageExhausted?.(error))
+                return storageExhausted(connId, raw);
             // 不回傳例外細節（不給探測訊號）；宿主連線維持存活。
             return [{ to: connId, message: ["NOTICE", REJECT.internal] }];
         }
@@ -868,5 +870,27 @@ function buildEntry(connId, subId, filters) {
         }
     }
     return { connId, subId, filters, kinds: [...kinds], anyKind };
+}
+/**
+ * 儲存額度用完時給這條連線的回覆（SDK ADR 0127）：先結案它這一則（EVENT→`OK false`、REQ→`CLOSED`），
+ * 再一則 NOTICE 並以 1013 關閉。從原始訊息只取 EVENT 的 id 與 REQ 的訂閱 id，取不到就只送 NOTICE。
+ */
+export function storageExhausted(connId, raw) {
+    const { notice, reason } = STORAGE_QUOTA_REJECTION;
+    const out = [];
+    try {
+        const msg = JSON.parse(raw);
+        if (Array.isArray(msg) && msg[0] === "EVENT" && typeof msg[1]?.id === "string") {
+            out.push({ to: connId, message: ["OK", msg[1].id, false, notice] });
+        }
+        else if (Array.isArray(msg) && msg[0] === "REQ" && typeof msg[1] === "string") {
+            out.push({ to: connId, message: ["CLOSED", msg[1], notice] });
+        }
+    }
+    catch {
+        /* 解析不了：只送 NOTICE */
+    }
+    out.push({ to: connId, message: ["NOTICE", notice], close: { code: UPGRADE_UNAVAILABLE_CLOSE_CODE, reason } });
+    return out;
 }
 //# sourceMappingURL=relay-core.js.map

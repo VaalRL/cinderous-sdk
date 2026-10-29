@@ -120,6 +120,13 @@ export interface MessageStoreOptions {
    */
   nearFullPercent?: number;
   /**
+   * **資料庫大小的上界**（位元組；SDK ADR 0126）：只有 SQL 版用。給了，寫入時先拿它判斷「一定放得下、一定沒到預警線」，
+   * 成立就不 `SUM` 整張表（喚醒後第一次寫入原本要掃整個分桶索引、可尋址事件每次寫入都掃）。不成立才照舊精算——
+   * 它只用來**確定放得下**，從不用來拒收、淘汰或預警。DO 宿主給 `ctx.storage.sql.databaseSize`：
+   * 每一列的 json 都完整存在資料庫裡（UTF-8 位元組數 ≥ `JSON.stringify(...).length`），所以它不會小於實際用量。
+   */
+  sizeUpperBound?: () => number;
+  /**
    * **丟棄計數**（SDK ADR 0042；ADR 0038 M8）：因 FIFO、天花板淘汰、借用到期而刪掉寄給某位收件人的留言時，按收件人累計；
    * 收件人下次訂閱自己的收件匣時由中繼送一則 `NOTICE "warning: dropped: …"`。未設＝不計（v0.33 行為）。
    */

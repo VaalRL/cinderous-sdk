@@ -4,7 +4,7 @@ import { buildRelayInfo, NIP11_HEADERS, wantsRelayInfo } from "./nip11.js";
 import { relayVersion } from "./version.js";
 import { UNKNOWN_PATH_INFO_BODY, UPGRADE_REJECT_CLOSE_CODE, upgradeCloseCode, upgradeRejection } from "./reject-messages.js";
 import { ConnPersistence, MAX_CONN_SUB_BYTES } from "./conn-persistence.js";
-import { closeSignalOf, RelayCore } from "./relay-core.js";
+import { closeSignalOf, RelayCore, storageExhausted } from "./relay-core.js";
 import { routeForPath } from "./shard.js";
 import { routeIotRequest } from "./iot-home-room.js";
 import { iotRealtimeAnnouncement } from "./iot-realtime.js";
@@ -346,7 +346,7 @@ export class RelayRoom {
         const sql = ctx.storage.sql;
         const exec = (query, ...bindings) => sql.exec(query, ...bindings).toArray();
         this.exec = exec;
-        this.store = new SqlMessageStore(exec, storeOptions(env.MAX_TTL_DAYS));
+        this.store = new SqlMessageStore(exec, { ...storeOptions(env.MAX_TTL_DAYS), sizeUpperBound: () => sql.databaseSize });
         this.conns = new ConnPersistence(exec);
         // 先以嚴格政策組起來：休眠喚醒後可能**沒有 fetch**（`webSocketMessage` 直接進來），
         // 那時還沒讀到 storage，預設必須是**收得最緊**的那一邊。
@@ -403,7 +403,8 @@ export class RelayRoom {
         const storeOpts = storeOptions(this.env.MAX_TTL_DAYS, profile, this.knownLane, files.accept ? files.maxFileMb : undefined, 
         // 每顆 DO 的容量政策（Cinderous ADR-0377；SDK ADR 0042）：與預算加總、NIP-11 用的是同一個函式。
         this.doName !== undefined ? doCapacityFor(this.env, this.doName) : undefined);
-        this.store = new SqlMessageStore(this.exec, storeOpts);
+        // 資料庫大小當用量的上界（SDK ADR 0126）：喚醒後第一次寫入不必 SUM 整張表就知道放得下
+        this.store = new SqlMessageStore(this.exec, { ...storeOpts, sizeUpperBound: () => this.ctx.storage.sql.databaseSize });
         const pow = powForLane(profile, this.env.APP_LANE_POW);
         // 白名單不分政策：車道也要擋，否則私人站換個 `/app/` 路徑就被繞過（SDK ADR 0008）。
         const allowed = allowedPubkeysFrom(this.env.ALLOWED_PUBKEYS);
@@ -422,6 +423,8 @@ export class RelayRoom {
             ...(files.accept ? { acceptFileEvents: true } : {}),
             // 收件確認（SDK ADR 0067）：與 NIP-11 宣告的 `grace_sec` 同一個函式
             inboxAckGraceSec: inboxAckGraceFor(storeOpts),
+            // 處理到一半撞到每日讀寫列數上限（SDK ADR 0127）：說清楚、以 1013 關閉，不回 error: internal
+            isStorageExhausted: (error) => doFailureKind(error) === "over-quota",
         });
     }
     /** 沒認證就斷線的診斷（SDK ADR 0111）：`DIAG_UNAUTH_LOG=1` 才有，否則 null */
@@ -539,6 +542,37 @@ export class RelayRoom {
         return this.profile === "app" && this.laneId !== undefined && laneStateOf(this.env, this.laneId, nowSec()) === "expired";
     }
     webSocketMessage(ws, message) {
+        try {
+            this.handleMessage(ws, message);
+        }
+        catch (error) {
+            // core 之外（喚醒還原、存訂閱）撞到每日讀寫列數上限（SDK ADR 0127）：跟 core 裡撞到的同一個回覆。
+            // 其他錯誤照舊拋出（平台記錄、連線由平台處理）——不把一般錯誤說成額度用完。
+            const connId = connIdOf(ws);
+            if (!connId || doFailureKind(error) !== "over-quota")
+                throw error;
+            const raw = typeof message === "string" ? message : "";
+            try {
+                this.forget(connId); // 記憶體裡的狀態；溢位列刪不掉時 remove 自己吞掉
+            }
+            catch {
+                /* 還原到一半 */
+            }
+            for (const { message: m, close } of storageExhausted(connId, raw)) {
+                try {
+                    ws.send(JSON.stringify(m));
+                    if (close) {
+                        const { code, reason } = closeSignalOf(close);
+                        ws.close(code, reason);
+                    }
+                }
+                catch {
+                    /* 已關閉 */
+                }
+            }
+        }
+    }
+    handleMessage(ws, message) {
         const restored = this.ensureHydrated();
         const connId = connIdOf(ws);
         if (!connId)

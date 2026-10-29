@@ -60,7 +60,9 @@ import {
   OFFLINE_CEILING_REJECT,
   powRejectMessage,
   REJECT,
+  STORAGE_QUOTA_REJECTION,
   tooManyConnectionsMessage,
+  UPGRADE_UNAVAILABLE_CLOSE_CODE,
 } from "./reject-messages.js";
 import {
   FILE_EVENT_MAX_BYTES,
@@ -255,6 +257,13 @@ export interface RelayCoreOptions {
    * 宿主以 {@link inboxAckGraceFor} 算（比照未註冊應用的保存期、不超過站方保存上限），並在 NIP-11 宣告同一個值。
    */
   inboxAckGraceSec?: number;
+  /**
+   * 這個錯誤是不是宿主的儲存額度用完了（SDK ADR 0127）。是的話，處理到一半拋出來的錯誤不回 `error: internal`，
+   * 改回 `OK false`（EVENT）或 `CLOSED`（REQ）帶 `over quota:`、一則同樣開頭的 NOTICE，並以 1013 關閉：
+   * 客戶端照 1013 整座退避（SDK ADR 0108），不會在同一條連線上一直重送、一直失敗到重置。
+   * Cloudflare DO 宿主給 `doFailureKind(e) === "over-quota"`；沒給＝一律當內部錯誤（Node 宿主沒有這種額度）。
+   */
+  isStorageExhausted?: (error: unknown) => boolean;
   /**
    * 宿主接手某些事件（SDK ADR 0049 §7、C′ R1）：通過大小、驗簽、白名單、kind 政策、時鐘窗、重放與速率限制之後呼叫。
    * 回傳陣列＝宿主已處理（含給寄件人的 `OK`）：**不寫庫、不扇出**，陣列原樣送出；回傳 undefined＝照一般流程。
@@ -461,7 +470,8 @@ export class RelayCore {
         ];
       }
       return this.dispatch(connId, raw);
-    } catch {
+    } catch (error) {
+      if (this.opts.isStorageExhausted?.(error)) return storageExhausted(connId, raw);
       // 不回傳例外細節（不給探測訊號）；宿主連線維持存活。
       return [{ to: connId, message: ["NOTICE", REJECT.internal] }];
     }
@@ -1084,4 +1094,25 @@ function buildEntry(connId: string, subId: string, filters: RelayFilter[]): SubE
     }
   }
   return { connId, subId, filters, kinds: [...kinds], anyKind };
+}
+
+/**
+ * 儲存額度用完時給這條連線的回覆（SDK ADR 0127）：先結案它這一則（EVENT→`OK false`、REQ→`CLOSED`），
+ * 再一則 NOTICE 並以 1013 關閉。從原始訊息只取 EVENT 的 id 與 REQ 的訂閱 id，取不到就只送 NOTICE。
+ */
+export function storageExhausted(connId: string, raw: string): Outbound[] {
+  const { notice, reason } = STORAGE_QUOTA_REJECTION;
+  const out: Outbound[] = [];
+  try {
+    const msg = JSON.parse(raw) as unknown;
+    if (Array.isArray(msg) && msg[0] === "EVENT" && typeof (msg[1] as { id?: unknown } | null)?.id === "string") {
+      out.push({ to: connId, message: ["OK", (msg[1] as { id: string }).id, false, notice] });
+    } else if (Array.isArray(msg) && msg[0] === "REQ" && typeof msg[1] === "string") {
+      out.push({ to: connId, message: ["CLOSED", msg[1], notice] });
+    }
+  } catch {
+    /* 解析不了：只送 NOTICE */
+  }
+  out.push({ to: connId, message: ["NOTICE", notice], close: { code: UPGRADE_UNAVAILABLE_CLOSE_CODE, reason } });
+  return out;
 }

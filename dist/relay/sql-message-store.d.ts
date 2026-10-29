@@ -42,6 +42,15 @@ export declare class SqlMessageStore implements OfflineStore {
     /** 作廢所有快取（下次用到時從索引重算）。 */
     private invalidateUsage;
     setInboxProbe(probe: (recipient: string) => boolean): void;
+    /**
+     * 資料庫大小證明「加上 `need` 也不超過 `limit`」嗎（SDK ADR 0126）。沒給上界＝證明不了。
+     * 只在快取是空的時候用得到（喚醒後）：快取在，精算本來就不必讀任何一列。
+     */
+    private boundedUnder;
+    /** 宿主給的上界；沒給或不是有限的非負數（測試替身、宿主不支援）＝沒有上界，照舊精算。 */
+    private upperBound;
+    /** 寫入後的預警等級；上界證明沒到預警線就不精算（SDK ADR 0126）。 */
+    private offlineNearFull;
     private usedOfflineBytes;
     /** 借用列的總量（部分索引 `idx_offline_borrowed`，只掃借用列）。 */
     private borrowedOfflineBytes;
@@ -116,7 +125,12 @@ export declare class SqlMessageStore implements OfflineStore {
      * 🔴 為什麼要分兩步：`toArray()` 一次把結果全部搬進記憶體，而 DO 的記憶體上限是 128MB。
      * 一位收件人名下的檔案塊可能有上千顆、每顆約 131KB——一次 REQ 就是上百 MB，DO 當場重置。
      * 先只讀大小（分桶索引上就有）算出放得下幾列，再取那幾列的 json。
-     * 排序多一個 `rowid` 當決勝，兩步才保證挑中的是同一批列。
+     * 排序要是**全序**（同一秒的列也排得出先後），兩步才保證挑中的是同一批列。
+     *
+     * 🔴 全序要照索引的順序排（SDK ADR 0126）：離線留言用 `created_at, expiration, bytes, rowid`，
+     * 正好是分桶索引 `(recipient, kind, created_at, expiration, bytes)` 加上隱含的 rowid——`#p`＋單一 kind 的查詢
+     * 順著索引倒著讀，讀滿 LIMIT 就停。原本的 `created_at, rowid` 跳過了中間兩欄，SQLite 只好把整個桶讀出來排序：
+     * 補拉收件匣每一頁都讀全桶、兩步各一次（miniflare 實測 LIMIT 1024 讀 2049 列×2）。
      */
     private boundedSelect;
     prune(nowSec: number): void;

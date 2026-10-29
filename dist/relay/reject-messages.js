@@ -135,11 +135,7 @@ export function upgradeRejection(kind, host, docsUrl) {
                 "too many connections: too many open connections from your IP address. Close some or use another relay.",
             ]
             : kind === "over-quota"
-                ? [
-                    "over quota",
-                    "over quota: this relay has used up its storage write allowance for today and cannot open connections " +
-                        "until it resets (around 00:00 UTC). Use another relay meanwhile.",
-                ]
+                ? [STORAGE_QUOTA_REJECTION.reason, STORAGE_QUOTA_REJECTION.notice]
                 : kind === "unavailable"
                     ? ["temporarily unavailable", "temporarily unavailable: this relay could not open its storage. Retry in a few minutes or use another relay."]
                     : kind === "reconnect-limited"
@@ -160,6 +156,16 @@ export function upgradeRejection(kind, host, docsUrl) {
     const reason = new TextEncoder().encode(withDocs).length <= CLOSE_REASON_MAX_BYTES ? withDocs : short;
     return { notice, reason };
 }
+/**
+ * 中繼的儲存額度今天用完了（SDK ADR 0097 的升級被拒、SDK ADR 0127 的已連著的連線，同一句）。
+ * Cloudflare 免費方案的 Durable Object 每日讀取與寫入列數都有上限，哪一個先撞到都一樣（2026-10-22 錨點 1 撞到的是讀取）。
+ * 前綴 `over quota:` 是客戶端分類的依據；關閉原因 `over quota`、關閉碼 1013。
+ */
+export const STORAGE_QUOTA_REJECTION = {
+    notice: "over quota: this relay has used up its daily storage allowance (rows read or written) and cannot serve connections " +
+        "until it resets (around 00:00 UTC). Use another relay meanwhile.",
+    reason: "over quota",
+};
 /**
  * 每月流量用完（SDK ADR 0101）：與 Cloudflare 額度用完同一個前綴（`over quota:`），客戶端一樣會改用別座；
  * 多說何時恢復。新連線與既有連線都收到這一則，以 1013 關閉。

@@ -102,6 +102,15 @@ export declare function upgradeRejection(kind: RejectKind, host: string, docsUrl
     reason: string;
 };
 /**
+ * 中繼的儲存額度今天用完了（SDK ADR 0097 的升級被拒、SDK ADR 0127 的已連著的連線，同一句）。
+ * Cloudflare 免費方案的 Durable Object 每日讀取與寫入列數都有上限，哪一個先撞到都一樣（2026-10-22 錨點 1 撞到的是讀取）。
+ * 前綴 `over quota:` 是客戶端分類的依據；關閉原因 `over quota`、關閉碼 1013。
+ */
+export declare const STORAGE_QUOTA_REJECTION: {
+    readonly notice: string;
+    readonly reason: string;
+};
+/**
  * 每月流量用完（SDK ADR 0101）：與 Cloudflare 額度用完同一個前綴（`over quota:`），客戶端一樣會改用別座；
  * 多說何時恢復。新連線與既有連線都收到這一則，以 1013 關閉。
  */
