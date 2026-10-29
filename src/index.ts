@@ -89,7 +89,12 @@ export {
   type SubscribeOptions,
   type Subscription,
   type SubscriptionHandlers,
+  type EdgeProbeOptions,
+  DEFAULT_EDGE_PROBE_AFTER_FAILURES,
+  DEFAULT_EDGE_PROBE_INTERVAL_MS,
+  EDGE_ANSWERED_REASON,
 } from './relay-pool.js';
+export { EDGE_ANSWERED_TOKEN, EDGE_PROBE_TIMEOUT_MS, probeRelayEdge, relayInfoUrlOf, type EdgeProbeFetch, type RelayEdgeProbe } from './edge-probe.js';
 export {
   classifyRelayClose,
   classifyRelayMessage,

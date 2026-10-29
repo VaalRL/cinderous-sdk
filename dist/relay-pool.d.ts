@@ -10,6 +10,7 @@
  */
 import type { Event } from 'nostr-tools/core';
 import type { Filter } from 'nostr-tools/filter';
+import { type EdgeProbeFetch } from './edge-probe.js';
 import type { Identity } from './identity.js';
 import { type RelayDroppedNotice, type RelayRejectKind, type RelayRejectTraits } from './protocol/relay-reject.js';
 import { type RelayHealthCooldowns, type RelayHealthMark, type RelayHealthResetFilter, type RelayHealthSnapshot } from './relay-health.js';
@@ -156,8 +157,11 @@ export interface RelayDroppedReport extends RelayDroppedNotice {
 }
 /** 中繼的一次拒收（`onRelayReject`；SDK ADR 0038 P0-C） */
 export interface RelayRejection extends RelayRejectTraits {
-    /** `ok`＝某次發布的 `OK false`；`closed`＝訂閱被 `CLOSED`；`notice`＝帶前綴的 `NOTICE`；`close`＝中繼以關閉碼斷線 */
-    readonly source: 'ok' | 'closed' | 'notice' | 'close';
+    /**
+     * `ok`＝某次發布的 `OK false`；`closed`＝訂閱被 `CLOSED`；`notice`＝帶前綴的 `NOTICE`；`close`＝中繼以關閉碼斷線；
+     * `probe`＝連線池自己探測出來的（SDK ADR 0125）：連不上時主機有回應、回答的卻不是中繼（`token: 'edge'`）
+     */
+    readonly source: 'ok' | 'closed' | 'notice' | 'close' | 'probe';
     readonly kind: RelayRejectKind;
     readonly reason: string;
     readonly token?: string;
@@ -165,6 +169,20 @@ export interface RelayRejection extends RelayRejectTraits {
     readonly subId?: string;
     /** WebSocket 關閉碼（`source: 'close'`） */
     readonly code?: number;
+}
+/**
+ * 連不上時的邊緣探測（SDK ADR 0125）。Cloudflare 的每日請求數用完時，邊緣直接回 1027、Worker 沒執行，
+ * 送不出 1013；瀏覽器只看得到 1006。連線池在「還沒連上就斷」連續發生時抓兩次 NIP-11（見 `probeRelayEdge`），
+ * 判定是邊緣代答就當成 1013：回報 `onRelayReject`（`source: 'probe'`、`kind: 'unavailable'`、`token: 'edge'`）、
+ * 整座標成暫時不能用、重連等到標記過期。
+ */
+export interface EdgeProbeOptions {
+    /** 預設 `globalThis.fetch` */
+    readonly fetch?: EdgeProbeFetch;
+    /** 連續幾次「還沒連上就斷」才探測；預設 2 */
+    readonly afterFailures?: number;
+    /** 同一座兩次探測至少隔多久（毫秒）；預設 5 分鐘 */
+    readonly minIntervalMs?: number;
 }
 export interface SubscriptionHandlers {
     onEvent(event: Event, relayUrl: string): void;
@@ -267,6 +285,11 @@ export interface RelayPoolOptions {
      * 平常用不到上限：補訂閱不會再重播、又收到超過 {@link SEEN_GRACE_MS} 的 id 本來就會定期忘掉。預設 50,000。
      */
     readonly maxSeenPerSubscription?: number;
+    /**
+     * 連不上時分辨「邊緣代答」與「網路斷了」（SDK ADR 0125）。預設：用預設的 WebSocket、而且有 `fetch` 時開啟；
+     * 注入了 `createSocket`（測試或自訂傳輸）時預設關閉，要明確給一個物件才開。`false` 關閉。
+     */
+    readonly edgeProbe?: false | EdgeProbeOptions;
 }
 export declare const DEFAULT_RECONNECT_DELAYS_MS: readonly number[];
 export declare const DEFAULT_RECONNECT_STABLE_MS = 30000;
@@ -276,6 +299,12 @@ export declare const DEFAULT_STANDBY_IDLE_MS = 60000;
 export declare const DEFAULT_MAX_SEEN_PER_SUBSCRIPTION = 50000;
 /** 每收幾則新事件整理一次訂閱的去重表（SDK ADR 0124） */
 export declare const SEEN_PRUNE_EVERY = 1024;
+/** 連續幾次「還沒連上就斷」才做邊緣探測（SDK ADR 0125） */
+export declare const DEFAULT_EDGE_PROBE_AFTER_FAILURES = 2;
+/** 同一座兩次邊緣探測至少隔多久（毫秒；SDK ADR 0125）：每次花兩個 HTTP 請求，額度用完時也是請求 */
+export declare const DEFAULT_EDGE_PROBE_INTERVAL_MS: number;
+/** 探測判定邊緣代答時回報的原因（SDK ADR 0125） */
+export declare const EDGE_ANSWERED_REASON = "edge: the relay host answered, but not the relay (most likely its host daily request quota, e.g. Cloudflare error 1027; resets around 00:00 UTC)";
 /**
  * 收到之後至少記住多久（毫秒；SDK ADR 0124）：一次載入歷史時，別座晚幾分鐘才送到的同一則照樣去重。
  * 過了這段時間、而且早於補訂閱的 `since`（{@link resumeSince}）的才會忘——補訂閱不會再重播那些。

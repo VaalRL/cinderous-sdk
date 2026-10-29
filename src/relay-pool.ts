@@ -13,6 +13,7 @@ import type { Event } from 'nostr-tools/core';
 import type { Filter } from 'nostr-tools/filter';
 import { verifyEvent } from 'nostr-tools/pure';
 
+import { EDGE_ANSWERED_TOKEN, probeRelayEdge, type EdgeProbeFetch } from './edge-probe.js';
 import type { Identity } from './identity.js';
 import {
   classifyRelayClose,
@@ -208,8 +209,11 @@ export interface RelayDroppedReport extends RelayDroppedNotice {
 
 /** 中繼的一次拒收（`onRelayReject`；SDK ADR 0038 P0-C） */
 export interface RelayRejection extends RelayRejectTraits {
-  /** `ok`＝某次發布的 `OK false`；`closed`＝訂閱被 `CLOSED`；`notice`＝帶前綴的 `NOTICE`；`close`＝中繼以關閉碼斷線 */
-  readonly source: 'ok' | 'closed' | 'notice' | 'close';
+  /**
+   * `ok`＝某次發布的 `OK false`；`closed`＝訂閱被 `CLOSED`；`notice`＝帶前綴的 `NOTICE`；`close`＝中繼以關閉碼斷線；
+   * `probe`＝連線池自己探測出來的（SDK ADR 0125）：連不上時主機有回應、回答的卻不是中繼（`token: 'edge'`）
+   */
+  readonly source: 'ok' | 'closed' | 'notice' | 'close' | 'probe';
   readonly kind: RelayRejectKind;
   readonly reason: string;
   readonly token?: string;
@@ -217,6 +221,21 @@ export interface RelayRejection extends RelayRejectTraits {
   readonly subId?: string;
   /** WebSocket 關閉碼（`source: 'close'`） */
   readonly code?: number;
+}
+
+/**
+ * 連不上時的邊緣探測（SDK ADR 0125）。Cloudflare 的每日請求數用完時，邊緣直接回 1027、Worker 沒執行，
+ * 送不出 1013；瀏覽器只看得到 1006。連線池在「還沒連上就斷」連續發生時抓兩次 NIP-11（見 `probeRelayEdge`），
+ * 判定是邊緣代答就當成 1013：回報 `onRelayReject`（`source: 'probe'`、`kind: 'unavailable'`、`token: 'edge'`）、
+ * 整座標成暫時不能用、重連等到標記過期。
+ */
+export interface EdgeProbeOptions {
+  /** 預設 `globalThis.fetch` */
+  readonly fetch?: EdgeProbeFetch;
+  /** 連續幾次「還沒連上就斷」才探測；預設 2 */
+  readonly afterFailures?: number;
+  /** 同一座兩次探測至少隔多久（毫秒）；預設 5 分鐘 */
+  readonly minIntervalMs?: number;
 }
 
 export interface SubscriptionHandlers {
@@ -334,6 +353,11 @@ export interface RelayPoolOptions {
    * 平常用不到上限：補訂閱不會再重播、又收到超過 {@link SEEN_GRACE_MS} 的 id 本來就會定期忘掉。預設 50,000。
    */
   readonly maxSeenPerSubscription?: number;
+  /**
+   * 連不上時分辨「邊緣代答」與「網路斷了」（SDK ADR 0125）。預設：用預設的 WebSocket、而且有 `fetch` 時開啟；
+   * 注入了 `createSocket`（測試或自訂傳輸）時預設關閉，要明確給一個物件才開。`false` 關閉。
+   */
+  readonly edgeProbe?: false | EdgeProbeOptions;
 }
 
 export const DEFAULT_RECONNECT_DELAYS_MS: readonly number[] = [500, 1000, 2000, 5000, 10_000];
@@ -344,6 +368,13 @@ export const DEFAULT_STANDBY_IDLE_MS = 60_000;
 export const DEFAULT_MAX_SEEN_PER_SUBSCRIPTION = 50_000;
 /** 每收幾則新事件整理一次訂閱的去重表（SDK ADR 0124） */
 export const SEEN_PRUNE_EVERY = 1024;
+/** 連續幾次「還沒連上就斷」才做邊緣探測（SDK ADR 0125） */
+export const DEFAULT_EDGE_PROBE_AFTER_FAILURES = 2;
+/** 同一座兩次邊緣探測至少隔多久（毫秒；SDK ADR 0125）：每次花兩個 HTTP 請求，額度用完時也是請求 */
+export const DEFAULT_EDGE_PROBE_INTERVAL_MS = 5 * 60_000;
+/** 探測判定邊緣代答時回報的原因（SDK ADR 0125） */
+export const EDGE_ANSWERED_REASON =
+  'edge: the relay host answered, but not the relay (most likely its host daily request quota, e.g. Cloudflare error 1027; resets around 00:00 UTC)';
 /**
  * 收到之後至少記住多久（毫秒；SDK ADR 0124）：一次載入歷史時，別座晚幾分鐘才送到的同一則照樣去重。
  * 過了這段時間、而且早於補訂閱的 `since`（{@link resumeSince}）的才會忘——補訂閱不會再重播那些。
@@ -391,6 +422,12 @@ interface Connection {
   readonly waiters: Set<(open: boolean) => void>;
   /** 備援閒置斷線的計時器 */
   idleTimer: ReturnType<typeof setTimeout> | null;
+  /** 連續幾次還沒連上就斷（邊緣探測用，SDK ADR 0125） */
+  failedBeforeOpen: number;
+  /** 正在做邊緣探測 */
+  probing: boolean;
+  /** 上一次邊緣探測的時間（毫秒） */
+  lastProbeAt: number | null;
 }
 
 interface EachState {
@@ -464,6 +501,11 @@ function defaultCreateSocket(url: string): SocketLike {
   return new WebSocket(url);
 }
 
+/** 有全域 `fetch` 就用它做邊緣探測（SDK ADR 0125）；沒有就不探測 */
+function defaultEdgeProbeFetch(): EdgeProbeFetch | undefined {
+  return typeof globalThis.fetch === 'function' ? (url, init) => globalThis.fetch(url, init) : undefined;
+}
+
 /** 關閉碼帶了恢復時間（4429 `iot-quota:<reset>`）時最多等多久、抖動多少（毫秒；SDK ADR 0122） */
 const MAX_RESUME_WAIT_MS = 24 * 3_600_000;
 const RESUME_JITTER_MS = 60_000;
@@ -495,6 +537,9 @@ function newConnection(standby: boolean, read = false): Connection {
     writing: false,
     waiters: new Set(),
     idleTimer: null,
+    failedBeforeOpen: 0,
+    probing: false,
+    lastProbeAt: null,
   };
 }
 
@@ -544,6 +589,7 @@ export class RelayPool implements RelayTransport {
   /** 每收幾則整理一次：{@link SEEN_PRUNE_EVERY}，上限比它小時跟著上限 */
   readonly #pruneEvery: number;
   readonly #health: RelayHealthTracker;
+  readonly #edgeProbe: { fetch: EdgeProbeFetch; afterFailures: number; minIntervalMs: number } | undefined;
   readonly #healthListeners = new Set<(url: string, health: RelayHealthSnapshot) => void>();
   #subscriptionCounter = 0;
   #closed = false;
@@ -568,6 +614,16 @@ export class RelayPool implements RelayTransport {
     this.#standbySubscribe = options.standbySubscribe === true;
     this.#maxSeen = Math.max(1, options.maxSeenPerSubscription ?? DEFAULT_MAX_SEEN_PER_SUBSCRIPTION);
     this.#pruneEvery = Math.min(SEEN_PRUNE_EVERY, this.#maxSeen);
+    const probe = options.edgeProbe ?? (options.createSocket === undefined ? {} : false);
+    const probeFetch = probe === false ? undefined : (probe.fetch ?? defaultEdgeProbeFetch());
+    this.#edgeProbe =
+      probe === false || probeFetch === undefined
+        ? undefined
+        : {
+            fetch: probeFetch,
+            afterFailures: Math.max(1, probe.afterFailures ?? DEFAULT_EDGE_PROBE_AFTER_FAILURES),
+            minIntervalMs: probe.minIntervalMs ?? DEFAULT_EDGE_PROBE_INTERVAL_MS,
+          };
     this.#health = new RelayHealthTracker({
       ...(options.healthCooldowns !== undefined ? { cooldowns: options.healthCooldowns } : {}),
       onChange: (url) => this.#emitHealth(url),
@@ -1249,6 +1305,8 @@ export class RelayPool implements RelayTransport {
     }
     const closed = code === undefined ? undefined : classifyRelayClose(code, reason);
     const kicked = closed !== undefined && closed.kind !== 'disconnected' ? closed : undefined;
+    // 還沒連上就斷、而且中繼沒說原因（SDK ADR 0125）：連續發生就去問是不是邊緣代答。連上過（openedAt 有值）就歸零
+    connection.failedBeforeOpen = connection.openedAt === null && kicked === undefined ? connection.failedBeforeOpen + 1 : 0;
     connection.socket = null;
     if (
       connection.openedAt !== null &&
@@ -1283,12 +1341,47 @@ export class RelayPool implements RelayTransport {
       // 暫時不能用（1013，SDK ADR 0108）：等到標記過期才重連——每 10 秒重連只會再被關一次（額度用完要等到隔天）
       const until = kicked?.kind === 'unavailable' ? this.#health.marks(url).find((mark) => mark.kind === 'unavailable')?.until : undefined;
       this.#scheduleReconnect(url, connection, kicked !== undefined, until === undefined ? undefined : until - Date.now());
+      this.#maybeProbeEdge(url, connection);
     }
     try {
       socket.close();
     } catch {
       // 已經關了
     }
+  }
+
+  /**
+   * 邊緣探測（SDK ADR 0125）：連續「還沒連上就斷」時，問問看回答的是不是中繼本身。是邊緣代答就照 1013 處理——
+   * 回報、整座標成暫時不能用、已排好的重連延到標記過期。探測期間連上了、或連線池關了，結果就不用了。
+   */
+  #maybeProbeEdge(url: string, connection: Connection): void {
+    const probe = this.#edgeProbe;
+    if (probe === undefined || connection.probing || connection.failedBeforeOpen < probe.afterFailures) return;
+    const now = Date.now();
+    if (connection.lastProbeAt !== null && now - connection.lastProbeAt < probe.minIntervalMs) return;
+    connection.probing = true;
+    connection.lastProbeAt = now;
+    void probeRelayEdge(url, probe.fetch).then((result) => {
+      connection.probing = false;
+      if (result !== 'edge' || this.#closed || connection.status === 'open') return;
+      const klass = classifyRelayClose(1013, EDGE_ANSWERED_REASON);
+      this.#health.observe(url, { kind: 'unavailable', reason: EDGE_ANSWERED_REASON, token: EDGE_ANSWERED_TOKEN, source: 'close' });
+      this.#onRelayReject?.(url, {
+        source: 'probe',
+        kind: 'unavailable',
+        retryable: klass.retryable,
+        tryOtherRelays: klass.tryOtherRelays,
+        reason: EDGE_ANSWERED_REASON,
+        token: EDGE_ANSWERED_TOKEN,
+      });
+      const until = this.#health.marks(url).find((mark) => mark.kind === 'unavailable')?.until;
+      if (connection.reconnectTimer !== null && until !== undefined) {
+        clearTimeout(connection.reconnectTimer);
+        connection.reconnectTimer = null;
+        connection.attempts = Math.max(0, connection.attempts - 1); // 這次重排不算多一次失敗
+        this.#scheduleReconnect(url, connection, true, until - Date.now());
+      }
+    });
   }
 
   #scheduleReconnect(url: string, connection: Connection, longest = false, atLeastMs = 0): void {

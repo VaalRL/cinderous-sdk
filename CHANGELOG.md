@@ -4,6 +4,10 @@ Releases are git tags; install one with `npm install github:VaalRL/cinderous-sdk
 
 每個版本是一個 git tag，安裝方式是 `npm install github:VaalRL/cinderous-sdk#vX.Y.Z`。每一版列出那一版的改動（取自 commit 紀錄）；每項改動的理由寫在它引用的 ADR 裡（[docs/adr/](docs/adr/README.md)）。
 
+## v0.84.0 — 2026-10-29
+
+- feat(relay-pool): 連不上時分辨「邊緣代答」與「網路斷了」——連續兩次還沒連上就斷，抓兩次 NIP-11（一般與 `no-cors`）：一般失敗、`no-cors` 成功＝主機有回應但不是中繼（Cloudflare 每日請求數用完的 1027 就是這樣）；照 1013 處理：`onRelayReject` 的 `source: 'probe'`、`kind: 'unavailable'`、`token: 'edge'`，整座 5 分鐘不用、重連等到那時。每座最多 5 分鐘探測一次。新選項 `edgeProbe`（預設：內建 WebSocket＋有 `fetch` 時開，注入 `createSocket` 時關）；轉出 `probeRelayEdge`、`relayInfoUrlOf`、`EDGE_ANSWERED_TOKEN`、`EDGE_ANSWERED_REASON`、`DEFAULT_EDGE_PROBE_*`（ADR 0125）
+
 ## v0.83.1 — 2026-10-29
 
 - fix(relay-pool): 常駐訂閱的去重表有上限——每 1024 則整理一次、忘掉早於補訂閱 since 而且收到超過 10 分鐘的 id；新選項 `maxSeenPerSubscription`（預設 50,000，超過先忘最早收到的）。原本每個訂閱的 id 只進不出，一開好幾天的聊天 App 會被心跳慢慢吃掉記憶體（ADR 0124）

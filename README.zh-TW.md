@@ -397,6 +397,7 @@ this.registerEvent(this.app.vault.on('rename', (f, old) => sync.notifyLocalChang
   const { accepted, rejected } = await pool.publish(event);
   for (const r of rejected) console.log(r.url, r.kind, r.retryable, r.token);
   ```
+- **分辨「主機的邊緣代答」與「網路斷了」**（v0.84，[ADR 0125](docs/adr/0125-edge-answered-probe.md)）：Cloudflare Workers 免費方案的每日請求數用完時，邊緣在 Worker 執行之前就回 1027，中繼送不出 `over quota:` NOTICE、也關不出 1013，瀏覽器的 WebSocket 只看到 1006。連續兩條連線還沒連上就斷時，`RelayPool` 對中繼的 NIP-11 抓兩次：一般請求失敗、`no-cors` 請求成功 ⇒ 主機有回應，卻沒有每一份 NIP-11 都會帶的 CORS 標頭 ⇒ 回答的不是中繼。這時照 1013 處理：`onRelayReject` 的 `source: 'probe'`、`kind: 'unavailable'`、`token: 'edge'`，整座標成 5 分鐘不能用、重連等到那時。每座最多 5 分鐘探測一次（兩個 HTTP 請求）。用內建 WebSocket 時預設開；注入 `createSocket` 時預設關（`edgeProbe: {}` 開、`edgeProbe: false` 關）。另轉出 `probeRelayEdge(url, fetch)`。⚠ `edge` 的意思是「回答的不是中繼」，不保證是額度用完：Worker 當掉（1101）、攔截代理也長這樣，文案要寫「最可能」。
 - **每座中繼的健康狀態、耐久度要求與備援中繼、讀回稽核、NIP-65／NIP-17 中繼清單**（v0.33，[ADR 0038](docs/adr/0038-relay-capacity-signals-and-client-fallback.md) P1，[ADR 0041](docs/adr/0041-relay-health-durability-and-read-back-audit.md)）。**不採用就沒有任何差別**：不帶選項的 `publish(event)` 行為與回傳都和 v0.32 相同。
   - 健康狀態：`RelayPool` 依拒收分類記住每一座——`ceiling`／`quota` 把那一類資料（離線留言、可尋址…）標成**已滿** 1 小時；政策、白名單外把那個 kind 標成**不適用**（24 小時，或 `resetRelayHealth()`；v0.35.1 起重讀 NIP-11 看得出原因已不成立時由 `revalidateRelay` 清掉）；`too-large` 標那個 kind、那麼大以上；`rate-limited` 整座退避到計數窗結束（60 秒，`ip` 1 秒）；關閉碼 1008／4003 分別退避／不適用；`invalid` 是自己的錯，不標記。`pool.relayHealth()` 查、`pool.onRelayHealthChange()` 訂閱（重複的拒收只延長標記、不再通知）。只放記憶體：冷卻很短、中繼會恢復，持久化過期的標記反而會略過一座早就好了的中繼。
   - 耐久度：`pool.publish(event, { durability: { minAccepted, standby } })`（`minAccepted` 預設 1）會略過這一則被標記的中繼，只計**耐久收下**——`OK true` 與 `duplicate`，**不含** `OK true "warning: borrowed: …"`（ADR 0039；客戶端先認得，`PublishResult.borrowed` 會列出）。不足時，**只有給了 `standby`** 才延遲連上下一座備援、**只補發這一則**；備援不收常駐訂閱（除非 `standbySubscribe: true`）、不出現在 `status()`、不自動重連、閒置 `standbyIdleMs`（60 秒）後斷線。`result.durability` 帶每一座的結果與 `relaysFull`；每一座都被標成已滿時，耐久發布一則都不送，呼叫端的重試迴圈不會變成對中繼的風暴。
@@ -642,7 +643,7 @@ this.registerEvent(this.app.vault.on('rename', (f, old) => sync.notifyLocalChang
 - **Vault 名單上的裝置能力宣告**（v0.30，ADR 0035）：`membership.declareCapabilities()` 在名單上加一筆裝置自己簽的 `{ sdk, maxRelayFileBytes }`（可再帶未來的旗標）；`membership.minCapability()` 回傳所有有效成員都支援的下限，沒有宣告的成員（≤ v0.29）一律當成舊版 16.5 MB。每次名單變動時呼叫 `coordinator.setMemberCapabilities(membership.minCapability())`——經中繼的單檔門檻變成 min(中繼上限, 成員)——之後才把 `setRelayLimits` 調過 16.5 MB。沒有 `caps` 的舊名單照收；舊版裝置略過並丟掉這一欄，不影響收斂。每台只能簽自己的能力；誇大的後果只是別台送它收不下的檔案。
 - **內容相同的檔案不再產生衝突副本**（v0.30，ADR 0035）：兩個不同的檔案搶同一個路徑、而**內容雜湊相同**時（最常見的是新裝置帶著已經有的筆記加入），協調器把輸的那個收斂進留下的那個（確定性的刪除版本、磁碟那一份改記在留下的名下、不動磁碟），不再改名成衝突副本。內容不同仍照舊產生副本。與 ≤ v0.29 的裝置混用時也收斂到同一個檔案。
 
-安裝：從公開的 GitHub repo 以 git 相依安裝，釘住 tag：`npm install github:VaalRL/cinderous-sdk#v0.83.1`（[ADR 0110](docs/adr/0110-public-github-repo-not-npm.md)）。
+安裝：從公開的 GitHub repo 以 git 相依安裝，釘住 tag：`npm install github:VaalRL/cinderous-sdk#v0.84.0`（[ADR 0110](docs/adr/0110-public-github-repo-not-npm.md)）。
 
 > ⚠ **沒有發布到 npm。** npm 上的 `@cinderous` 範圍是不相關的帳號，npm 上任何 `@cinderous/*` 套件都**不是我們發布的**。一律用 GitHub 網址加 tag，並保留 lockfile；不要寫成 `"@cinderous/client": "^0.76.1"` 這種版號範圍，npm 會去 registry 找。
 
