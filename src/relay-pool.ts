@@ -329,12 +329,26 @@ export interface RelayPoolOptions {
    * 已經在 `urls` 裡的忽略。
    */
   readonly readUrls?: readonly string[];
+  /**
+   * 每個訂閱最多記住幾個已收事件的 id（去重用；SDK ADR 0124）。超過就先忘最早收到的。
+   * 平常用不到上限：補訂閱不會再重播、又收到超過 {@link SEEN_GRACE_MS} 的 id 本來就會定期忘掉。預設 50,000。
+   */
+  readonly maxSeenPerSubscription?: number;
 }
 
 export const DEFAULT_RECONNECT_DELAYS_MS: readonly number[] = [500, 1000, 2000, 5000, 10_000];
 export const DEFAULT_RECONNECT_STABLE_MS = 30_000;
 export const DEFAULT_PUBLISH_TIMEOUT_MS = 5000;
 export const DEFAULT_STANDBY_IDLE_MS = 60_000;
+/** 每個訂閱預設最多記住幾個已收 id（SDK ADR 0124） */
+export const DEFAULT_MAX_SEEN_PER_SUBSCRIPTION = 50_000;
+/** 每收幾則新事件整理一次訂閱的去重表（SDK ADR 0124） */
+export const SEEN_PRUNE_EVERY = 1024;
+/**
+ * 收到之後至少記住多久（毫秒；SDK ADR 0124）：一次載入歷史時，別座晚幾分鐘才送到的同一則照樣去重。
+ * 過了這段時間、而且早於補訂閱的 `since`（{@link resumeSince}）的才會忘——補訂閱不會再重播那些。
+ */
+export const SEEN_GRACE_MS = 10 * 60_000;
 
 const OPEN = 1;
 /** NIP-42 的認證事件 kind */
@@ -423,7 +437,10 @@ interface PingWaiter {
 interface ActiveSubscription {
   readonly filters: Filter[];
   readonly handlers: SubscriptionHandlers;
-  readonly seen: Set<string>;
+  /** 已收事件 id → 事件時間（秒）與收到時間（毫秒）。插入序＝收到的順序（SDK ADR 0124） */
+  readonly seen: Map<string, { readonly createdAt: number; readonly seenAt: number }>;
+  /** 上次整理去重表之後新記住幾則 */
+  seenSincePrune: number;
   eoseNotified: boolean;
   /** 看過最新的 created_at（秒，以本機時鐘為上限）；補訂閱時從這裡接續，少重播 */
   cursor: number | undefined;
@@ -523,6 +540,9 @@ export class RelayPool implements RelayTransport {
   readonly #standby = new Map<string, Connection>();
   readonly #standbyIdleMs: number;
   readonly #standbySubscribe: boolean;
+  readonly #maxSeen: number;
+  /** 每收幾則整理一次：{@link SEEN_PRUNE_EVERY}，上限比它小時跟著上限 */
+  readonly #pruneEvery: number;
   readonly #health: RelayHealthTracker;
   readonly #healthListeners = new Set<(url: string, health: RelayHealthSnapshot) => void>();
   #subscriptionCounter = 0;
@@ -546,6 +566,8 @@ export class RelayPool implements RelayTransport {
     this.#onRelayDropped = options.onRelayDropped;
     this.#standbyIdleMs = options.standbyIdleMs ?? DEFAULT_STANDBY_IDLE_MS;
     this.#standbySubscribe = options.standbySubscribe === true;
+    this.#maxSeen = Math.max(1, options.maxSeenPerSubscription ?? DEFAULT_MAX_SEEN_PER_SUBSCRIPTION);
+    this.#pruneEvery = Math.min(SEEN_PRUNE_EVERY, this.#maxSeen);
     this.#health = new RelayHealthTracker({
       ...(options.healthCooldowns !== undefined ? { cooldowns: options.healthCooldowns } : {}),
       onChange: (url) => this.#emitHealth(url),
@@ -908,7 +930,8 @@ export class RelayPool implements RelayTransport {
     const subscription: ActiveSubscription = {
       filters,
       handlers,
-      seen: new Set(),
+      seen: new Map(),
+      seenSincePrune: 0,
       eoseNotified: false,
       cursor: undefined,
       backdateWindowSec: options.backdateWindowSec,
@@ -1302,6 +1325,38 @@ export class RelayPool implements RelayTransport {
     }
   }
 
+  /**
+   * 記住這則已收過，並且定期整理（SDK ADR 0124）：常駐訂閱（聊天 App 一開好幾天）收到的心跳一直進來，
+   * 不整理的話去重表只會長大。
+   *
+   * 忘掉的條件是兩個都成立：事件時間早於補訂閱的 `since`（每個 filter 的 {@link resumeSince} 取最早的那個），
+   * 補訂閱不會再重播；而且收到超過 {@link SEEN_GRACE_MS}，別座的同一則不會再晚到。
+   * 之後還超過上限就先忘最早收到的（記憶體上限優先，代價是極少數重複）。
+   */
+  #rememberSeen(subscription: ActiveSubscription, event: Event): void {
+    const seen = subscription.seen;
+    seen.set(event.id, { createdAt: event.created_at, seenAt: Date.now() });
+    subscription.seenSincePrune += 1;
+    if (subscription.seenSincePrune < this.#pruneEvery && seen.size <= this.#maxSeen) return;
+    subscription.seenSincePrune = 0;
+    const cursor = subscription.cursor;
+    if (cursor !== undefined && subscription.filters.length > 0) {
+      const floor = Math.min(
+        ...subscription.filters.map((filter) => resumeSince(filter, cursor, subscription.backdateWindowSec)),
+      );
+      const graceEnd = Date.now() - SEEN_GRACE_MS;
+      for (const [id, entry] of seen) {
+        // 插入序＝收到的順序：從這一則開始都還在寬限內
+        if (entry.seenAt > graceEnd) break;
+        if (entry.createdAt < floor) seen.delete(id);
+      }
+    }
+    for (const id of seen.keys()) {
+      if (seen.size <= this.#maxSeen) break;
+      seen.delete(id);
+    }
+  }
+
   /** 某個訂閱接續游標的 REQ（補訂閱、重訂共用） */
   #resumeRequest(id: string, subscription: ActiveSubscription): string {
     const cursor = subscription.cursor;
@@ -1438,7 +1493,7 @@ export class RelayPool implements RelayTransport {
         if (subscription.seen.has(event.id)) {
           return;
         }
-        subscription.seen.add(event.id);
+        this.#rememberSeen(subscription, event);
         subscription.handlers.onEvent(event, url);
         return;
       }

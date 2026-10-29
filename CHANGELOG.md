@@ -4,6 +4,10 @@ Releases are git tags; install one with `npm install github:VaalRL/cinderous-sdk
 
 每個版本是一個 git tag，安裝方式是 `npm install github:VaalRL/cinderous-sdk#vX.Y.Z`。每一版列出那一版的改動（取自 commit 紀錄）；每項改動的理由寫在它引用的 ADR 裡（[docs/adr/](docs/adr/README.md)）。
 
+## v0.83.1 — 2026-10-29
+
+- fix(relay-pool): 常駐訂閱的去重表有上限——每 1024 則整理一次、忘掉早於補訂閱 since 而且收到超過 10 分鐘的 id；新選項 `maxSeenPerSubscription`（預設 50,000，超過先忘最早收到的）。原本每個訂閱的 id 只進不出，一開好幾天的聊天 App 會被心跳慢慢吃掉記憶體（ADR 0124）
+
 ## v0.83.0 — 2026-10-28
 
 - feat(cli): `iot realtime home --rotate-secret [--remove <npub>…] [--new-operator-secret]`——撤銷成員＝換家庭秘密：這一家整筆改寫成新秘密推出的值、名單拿掉那些人、每台設備的新網址與金鑰各印一次（要重燒，不做 keyWrap）；權杖、epoch、閘道私鑰不變；拿掉 operator／owner 時 operator 秘密也換（ADR 0123）

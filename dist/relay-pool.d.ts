@@ -262,11 +262,25 @@ export interface RelayPoolOptions {
      * 已經在 `urls` 裡的忽略。
      */
     readonly readUrls?: readonly string[];
+    /**
+     * 每個訂閱最多記住幾個已收事件的 id（去重用；SDK ADR 0124）。超過就先忘最早收到的。
+     * 平常用不到上限：補訂閱不會再重播、又收到超過 {@link SEEN_GRACE_MS} 的 id 本來就會定期忘掉。預設 50,000。
+     */
+    readonly maxSeenPerSubscription?: number;
 }
 export declare const DEFAULT_RECONNECT_DELAYS_MS: readonly number[];
 export declare const DEFAULT_RECONNECT_STABLE_MS = 30000;
 export declare const DEFAULT_PUBLISH_TIMEOUT_MS = 5000;
 export declare const DEFAULT_STANDBY_IDLE_MS = 60000;
+/** 每個訂閱預設最多記住幾個已收 id（SDK ADR 0124） */
+export declare const DEFAULT_MAX_SEEN_PER_SUBSCRIPTION = 50000;
+/** 每收幾則新事件整理一次訂閱的去重表（SDK ADR 0124） */
+export declare const SEEN_PRUNE_EVERY = 1024;
+/**
+ * 收到之後至少記住多久（毫秒；SDK ADR 0124）：一次載入歷史時，別座晚幾分鐘才送到的同一則照樣去重。
+ * 過了這段時間、而且早於補訂閱的 `since`（{@link resumeSince}）的才會忘——補訂閱不會再重播那些。
+ */
+export declare const SEEN_GRACE_MS: number;
 /** 一次性查詢的逾時以「多久沒有新資料」計，最長延到逾時的幾倍（SDK ADR 0077） */
 export declare const QUERY_MAX_EXTENSION = 12;
 export declare class RelayPool implements RelayTransport {
