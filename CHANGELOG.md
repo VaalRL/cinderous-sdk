@@ -4,6 +4,10 @@ Releases are git tags; install one with `npm install github:VaalRL/cinderous-sdk
 
 每個版本是一個 git tag，安裝方式是 `npm install github:VaalRL/cinderous-sdk#vX.Y.Z`。每一版列出那一版的改動（取自 commit 紀錄）；每項改動的理由寫在它引用的 ADR 裡（[docs/adr/](docs/adr/README.md)）。
 
+## v0.85.1 — 2026-10-30
+
+- fix(relay): 清理鬧鐘不會永久停掉——`alarm()` 的清理拋錯時記錄並照樣排下一次（原本走不到 `setAlarm`，Cloudflare 重試 6 次用完就不再跑）；DO 醒來時鬧鐘停在過去也重排。2026-10-22 錨點 1 的 CinderSync 車道撞到額度後一週沒有清理，過期的檔案塊佔著八成空間、每次寫入都回 `near-full`（ADR 0128）
+
 ## v0.85.0 — 2026-10-29
 
 - fix(relay): 喚醒與分頁補拉只讀需要的列——pubkey/kind 回填只看 `pubkey` 並先建索引（建 store 4,631→4 列；每次喚醒建兩次）；新選項 `MessageStoreOptions.sizeUpperBound`（DO 宿主給 `ctx.storage.sql.databaseSize`），證明放得下、沒到預警線就不 `SUM` 整張表（喚醒後第一次寫入 6,949→2,321 列，可尋址事件不再每次寫入都掃全表）；離線留言照分桶索引的順序排序，`#p`＋kinds 分頁讀滿一頁就停（4,098→2,048 列）。2026-10-22 錨點 1 的 CinderSync 車道就是這樣讀了 535 萬列、撞到每日 500 萬列的上限（ADR 0126）

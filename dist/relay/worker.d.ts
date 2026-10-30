@@ -269,7 +269,12 @@ export declare class RelayRoom {
     private buildCore;
     private unauthDiag;
     private reconnectGuard;
-    /** DO 定時鬧鐘（C2）：清除已過期留言並重排下一次。 */
+    /**
+     * DO 定時鬧鐘（C2）：清除已過期留言並重排下一次。
+     *
+     * 🔴 清理失敗也**一定**排下一次（SDK ADR 0128）。原本拋錯就走不到 `setAlarm`，交給 Cloudflare 重試，
+     * 而重試 6 次（兩分鐘內）用完就不再跑。額度用完一整天，重試必然全部失敗。
+     */
     alarm(): Promise<void>;
     fetch(request: Request): Promise<Response>;
     /** 這顆 DO 服務的車道現在是不是在唯讀寬限期（SDK ADR 0052） */

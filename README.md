@@ -531,7 +531,7 @@ Everything below is shipped and tested. Design records live in [`docs/adr/`](doc
 
 > ⚠ The crypto engines are **experimental**. The Double Ratchet is newly written code that has had one internal independent review but **no external audit**. The post-quantum hybrid protects encryption only — signatures are still secp256k1 — so it defends against "harvest now, decrypt later", and **this is not "quantum-safe"**.
 
-Install from the public GitHub repository, pinned to a tag: `npm install github:VaalRL/cinderous-sdk#v0.85.0` ([ADR 0110](docs/adr/0110-public-github-repo-not-npm.md)).
+Install from the public GitHub repository, pinned to a tag: `npm install github:VaalRL/cinderous-sdk#v0.85.1` ([ADR 0110](docs/adr/0110-public-github-repo-not-npm.md)).
 
 > ⚠ **Not published on npm.** The `@cinderous` scope on npm belongs to an unrelated account, so any `@cinderous/*` package on the npm registry is **not ours**. Always depend on the GitHub URL with a tag and keep your lockfile. Never write a version range such as `"@cinderous/client": "^0.76.1"`: npm would resolve it from the registry.
 

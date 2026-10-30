@@ -593,9 +593,11 @@ export class RelayRoom {
         }
       }
       // C2：排程 NIP-40 過期清理（DO 休眠仍會被 alarm 喚醒執行）。
-      if ((await ctx.storage.getAlarm()) === null) {
-        await ctx.storage.setAlarm(Date.now() + PRUNE_INTERVAL_MS);
-      }
+      // 🔴 停在過去的也要重排（SDK ADR 0128）：重試用完的鬧鐘 Cloudflare 不會再跑，`getAlarm()` 卻不一定回 null。
+      // 只看 null 的話，清理就永久停掉——2026-10-22 之後錨點 1 的 CinderSync 車道一週沒有清過。過期了就馬上清。
+      const alarm = await ctx.storage.getAlarm();
+      if (alarm === null) await ctx.storage.setAlarm(Date.now() + PRUNE_INTERVAL_MS);
+      else if (alarm <= Date.now()) await ctx.storage.setAlarm(Date.now());
     });
   }
 
@@ -661,13 +663,23 @@ export class RelayRoom {
     return this.#reconnectGuard;
   }
 
-  /** DO 定時鬧鐘（C2）：清除已過期留言並重排下一次。 */
+  /**
+   * DO 定時鬧鐘（C2）：清除已過期留言並重排下一次。
+   *
+   * 🔴 清理失敗也**一定**排下一次（SDK ADR 0128）。原本拋錯就走不到 `setAlarm`，交給 Cloudflare 重試，
+   * 而重試 6 次（兩分鐘內）用完就不再跑。額度用完一整天，重試必然全部失敗。
+   */
   async alarm(): Promise<void> {
-    // 順手還原＋清孤兒溢位列（Cinderous ADR-0373）：部署重啟時 `webSocketClose` 不保證會跑，
-    // 之後若再也沒有連線進來，孤兒列只有這裡清得到。
-    this.dispatch(this.ensureHydrated());
-    this.store.prune(Math.floor(Date.now() / 1000));
-    await this.ctx.storage.setAlarm(Date.now() + PRUNE_INTERVAL_MS);
+    try {
+      // 順手還原＋清孤兒溢位列（Cinderous ADR-0373）：部署重啟時 `webSocketClose` 不保證會跑，
+      // 之後若再也沒有連線進來，孤兒列只有這裡清得到。
+      this.dispatch(this.ensureHydrated());
+      this.store.prune(Math.floor(Date.now() / 1000));
+    } catch (error) {
+      console.error("relay: prune failed", error);
+    } finally {
+      await this.ctx.storage.setAlarm(Date.now() + PRUNE_INTERVAL_MS);
+    }
   }
 
   async fetch(request: Request): Promise<Response> {

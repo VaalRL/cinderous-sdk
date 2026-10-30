@@ -2717,3 +2717,61 @@ describe("RelayRoom — 額度用完時已經連著的連線（SDK ADR 0127）",
     expect(notice).toMatch(/rows read or written/);
   });
 });
+
+describe("RelayRoom — 清理鬧鐘不會永久停掉（SDK ADR 0128）", () => {
+  // 2026-10-22 錨點 1 的 CinderSync 車道：清理撞到額度 → 重試用完 → 之後一週沒有任何清理，過期的檔案塊佔著八成空間
+  const QUOTA = () => new Error("Exceeded allowed rows read in Durable Objects free tier.");
+  /** 假的 blockConcurrencyWhile 不會擋：讓建構子跑完 */
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const chunk = (expiration: number): NostrEvent =>
+    finalizeEvent(
+      { kind: 1059, created_at: nowSec() - 10, tags: [["p", getPublicKey(generateSecretKey())], ["expiration", String(expiration)]], content: "x" },
+      generateSecretKey(),
+    );
+
+  it("🔴 清理撞到錯誤（例如額度用完）：照樣排下一次，不靠 Cloudflare 的重試", async () => {
+    const state = new FakeState();
+    const room = newRoom(state);
+    await settle();
+    const before = Date.now();
+    state.alarm = before - 1000; // 正在跑的這一次
+    state.sqlError = QUOTA();
+    await expect(room.alarm()).resolves.toBeUndefined();
+    expect(state.alarm).toBeGreaterThan(before);
+  });
+
+  it("🔴 喚醒時鬧鐘停在過去（重試用完後 Cloudflare 不再跑，getAlarm 卻不是 null）：重新排上", async () => {
+    const state = new FakeState();
+    state.alarm = Date.now() - 7 * 86_400_000;
+    const before = Date.now();
+    newRoom(state);
+    await settle();
+    expect(state.alarm).toBeGreaterThanOrEqual(before);
+  });
+
+  it("鬧鐘排在未來：不動它", async () => {
+    const state = new FakeState();
+    const future = Date.now() + 30 * 60_000;
+    state.alarm = future;
+    newRoom(state);
+    await settle();
+    expect(state.alarm).toBe(future);
+  });
+
+  it("額度恢復後的下一次清理把過期的刪掉", async () => {
+    const state = new FakeState();
+    const room = newRoom(state);
+    const ws = await open(room, state);
+    authenticate(room, ws, generateSecretKey());
+    ws.drain();
+    send(room, ws, ["EVENT", chunk(nowSec() + 1)]);
+    const count = () => Number(state.storage.sql.exec(`SELECT COUNT(*) AS n FROM offline_msgs`).toArray()[0]?.n);
+    expect(count()).toBe(1);
+    await new Promise((resolve) => setTimeout(resolve, 1100)); // 讓它過期
+    state.sqlError = QUOTA();
+    await room.alarm();
+    state.sqlError = undefined;
+    await room.alarm();
+    expect(count()).toBe(0);
+  });
+});

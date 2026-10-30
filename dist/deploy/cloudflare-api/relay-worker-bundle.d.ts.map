@@ -1,1 +1,1 @@
-{"version":3,"file":"relay-worker-bundle.d.ts","sourceRoot":"","sources":["../../../src/deploy/cloudflare-api/relay-worker-bundle.ts"],"names":[],"mappings":"AAEA,OAAO,EAAE,qBAAqB,EAAE,MAAM,wBAAwB,CAAC;AAE/D;;;GAGG;AACH,eAAO,MAAM,iBAAiB,EAAE,MAA0xhK,CAAC"}
+{"version":3,"file":"relay-worker-bundle.d.ts","sourceRoot":"","sources":["../../../src/deploy/cloudflare-api/relay-worker-bundle.ts"],"names":[],"mappings":"AAEA,OAAO,EAAE,qBAAqB,EAAE,MAAM,wBAAwB,CAAC;AAE/D;;;GAGG;AACH,eAAO,MAAM,iBAAiB,EAAE,MAAo5hK,CAAC"}
