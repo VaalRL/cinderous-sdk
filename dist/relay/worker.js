@@ -476,7 +476,8 @@ export class RelayRoom {
         // 認不得的路徑在 worker 就被擋掉了（ADR-0368，不碰 DO）；真的漏進來就當嚴格（fail-closed）。
         const route = routeOf(new URL(request.url).pathname, this.env);
         const wanted = route?.profile ?? "strict";
-        // 主平面的反覆重連限速（SDK ADR 0111）：在 acceptWebSocket 與任何儲存寫入之前回絕——只花這一次 DO 請求
+        // 主平面的反覆重連限速（SDK ADR 0111、0131）：在 acceptWebSocket 與任何儲存寫入之前回絕——只花這一次 DO 請求。
+        // 這裡只算總次數；沒認證就斷線的在 webSocketClose 記
         const clientIp = request.headers.get("CF-Connecting-IP");
         const guard = this.reconnectGuard();
         if (wanted !== "app" && clientIp && guard && !guard.admit(clientIp)) {
@@ -636,6 +637,7 @@ export class RelayRoom {
             const line = this.unauthDiag()?.close(connId, code);
             if (line)
                 console.log(line);
+            this.noteUnauthenticatedClose(connId);
             this.forget(connId);
         }
         try {
@@ -654,9 +656,24 @@ export class RelayRoom {
             const line = this.unauthDiag()?.close(connId, undefined);
             if (line)
                 console.log(line);
+            this.noteUnauthenticatedClose(connId);
             this.forget(connId);
         }
         this.dispatch(restored);
+    }
+    /**
+     * 用戶端斷線時還沒認證：記進重連閘（SDK ADR 0131）。只有主平面套；IP 取自連線狀態（休眠後從 attachment 還原）。
+     * 伺服端自己關掉的連線（超限即關）不經過這裡——那些多半是認證過的。
+     */
+    noteUnauthenticatedClose(connId) {
+        if (this.profile === "app")
+            return;
+        const guard = this.reconnectGuard();
+        if (!guard || this.core.isAuthenticated(connId))
+            return;
+        const ip = this.core.exportConn(connId).ip;
+        if (ip)
+            guard.unauthenticated(ip);
     }
     /** 連線結束：記憶體與溢位列一起清（Cinderous ADR-0373）。 */
     forget(connId) {

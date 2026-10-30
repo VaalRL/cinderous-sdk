@@ -11,7 +11,8 @@
  * | `rate-limited` | `backoff` | 整座 | 到計數窗結束（`ip` 詞元 1 秒，其他 `rateLimitedMs` 預設 60 秒） |
  * | 關閉碼 1008 `rate-limited`／`too-many-connections` | `backoff` | 整座 | `rateLimitedMs` |
  * | 關閉碼 4003、1008 其他（車道被拒） | `inapplicable` | 整座 | `inapplicableMs` |
- * | 關閉碼 1013（`unavailable`：額度用完、儲存起不來；SDK ADR 0108） | `backoff` | 整座 | `unavailableMs`（預設 5 分鐘）；那一座回了 EOSE 就清掉 |
+ * | 關閉碼 1013（`unavailable`：額度用完、儲存起不來；SDK ADR 0108） | `backoff` | 整座 | `unavailableMs`（預設 5 分鐘）加 0～20% 抖動；那一座回了 EOSE 就清掉 |
+ * | 關閉碼 1013 `rate-limited: reconnects`（重連太頻繁；SDK ADR 0111、0130） | `backoff` | 整座 | `reconnectLimitedMs`（預設 60 秒），連續被擋就加倍、最多 `unavailableMs`；加 0～20% 抖動；恢復服務或收下事件就從頭算 |
  * | 關閉碼 4429（`unavailable`，詞元 `iot-quota`：C′ 家庭今日額度用完；SDK ADR 0122） | `backoff` | 整座 | 到原因帶的重置時間（加最多 60 秒抖動、最多一天）；沒帶＝`unavailableMs` |
  * | `invalid`、`stale`、`pow`、`error`、`timeout`、`disconnected`、`auth-failed:` | 不標記（只記最近一次） | — | — |
  *
@@ -36,7 +37,12 @@ export const DEFAULT_RELAY_HEALTH_COOLDOWNS = Object.freeze({
     inapplicableMs: 24 * 60 * 60_000,
     rateLimitedMs: 60_000,
     unavailableMs: 5 * 60_000,
+    reconnectLimitedMs: 60_000,
 });
+/** 1013 的「暫時不能用」多等 0～20%：同一個共用 IP 後面被擋的人不會在同一刻一起重連、又被擋一輪（SDK ADR 0130） */
+const UNAVAILABLE_JITTER = 0.2;
+/** 重連閘的關閉原因（SDK ADR 0111：`rate-limited: reconnects`，可能帶 `; docs: …`） */
+const RECONNECT_LIMITED_REASON = /^rate-limited: reconnects/i;
 /** 每 IP 每秒的計數窗（`rate-limited: ip:`） */
 const IP_WINDOW_MS = 1000;
 /** 某個 kind 在中繼上屬於哪一類（NIP-01 的 kind 範圍） */
@@ -55,8 +61,10 @@ export class RelayHealthTracker {
     #now;
     #cooldowns;
     #onChange;
+    #random;
     constructor(opts) {
         this.#now = opts.now ?? Date.now;
+        this.#random = opts.random ?? (() => Math.random());
         this.#cooldowns = { ...DEFAULT_RELAY_HEALTH_COOLDOWNS, ...opts.cooldowns };
         this.#onChange = opts.onChange;
     }
@@ -138,7 +146,7 @@ export class RelayHealthTracker {
             if (o.kind === 'rate-limited' || /too-many-connections/i.test(o.reason))
                 [state, ms] = ['backoff', c.rateLimitedMs];
             else if (o.kind === 'unavailable')
-                [state, ms] = ['backoff', c.unavailableMs];
+                [state, ms] = ['backoff', this.#unavailableWait(entry, o)];
             else if (o.kind === 'restricted' || o.kind === 'policy' || o.kind === 'invalid')
                 [state, ms] = ['inapplicable', c.inapplicableMs];
             else
@@ -177,10 +185,24 @@ export class RelayHealthTracker {
         if (existing === undefined || existing.state !== state)
             this.#onChange(url);
     }
+    /**
+     * 1013 之後等多久（SDK ADR 0108、0130）：重連太頻繁從 60 秒起、連續被擋就加倍；其他照 `unavailableMs`。
+     * 中繼沒說什麼時候恢復時加抖動（說了就照它，`observe` 用 `until`）。
+     */
+    #unavailableWait(entry, o) {
+        const c = this.#cooldowns;
+        let ms = c.unavailableMs;
+        if (RECONNECT_LIMITED_REASON.test(o.reason)) {
+            entry.reconnectStreak = (entry.reconnectStreak ?? 0) + 1;
+            ms = Math.min(c.reconnectLimitedMs * 2 ** (entry.reconnectStreak - 1), c.unavailableMs);
+        }
+        return Math.round(ms * (1 + UNAVAILABLE_JITTER * this.#random()));
+    }
     /** 收下了（`borrowed`＝只是借用）：清掉那一類的 `full` 與整座的 `backoff`（借用不清 `full`） */
     accepted(url, eventKind, borrowed = false) {
         const entry = this.#entry(url);
         const now = this.#now();
+        entry.reconnectStreak = undefined;
         if (borrowed)
             entry.lastBorrowedAt = now;
         else
@@ -197,6 +219,8 @@ export class RelayHealthTracker {
     /** 那一座回了 EOSE（能正常服務了）：清掉「暫時不能用」的標記（SDK ADR 0108） */
     served(url) {
         const entry = this.#entries.get(url);
+        if (entry !== undefined)
+            entry.reconnectStreak = undefined;
         if (entry === undefined || !entry.marks.some((mark) => mark.kind === 'unavailable'))
             return;
         entry.marks = entry.marks.filter((mark) => mark.kind !== 'unavailable');

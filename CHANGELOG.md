@@ -4,6 +4,11 @@ Releases are git tags; install one with `npm install github:VaalRL/cinderous-sdk
 
 每個版本是一個 git tag，安裝方式是 `npm install github:VaalRL/cinderous-sdk#vX.Y.Z`。每一版列出那一版的改動（取自 commit 紀錄）；每項改動的理由寫在它引用的 ADR 裡（[docs/adr/](docs/adr/README.md)）。
 
+## v0.87.0 — 2026-10-30
+
+- feat(pool): 中繼以 1013 `rate-limited: reconnects`（重連太頻繁，ADR 0111）關閉時改從 60 秒起退避、連續被擋才加倍到最多 5 分鐘，那一座恢復服務或收下事件就從頭算；所有 1013 的等待多加 0～20% 抖動（中繼帶 `until` 的照它）。`RelayHealthCooldowns.reconnectLimitedMs`（預設 60 秒）。精確驗 5 分鐘的應用測試要固定 `Math.random`（ADR 0130）
+- feat(relay): 重連閘的 DO 那一道主要只計沒認證就斷線的連線（10 分鐘 20 條擋 10 分鐘），所有升級另有總上限（預設 60，`max` 的 3 倍）；`RECONNECT_GUARD` 多一個選用的第四欄總上限。共用 IP 後面的正常使用者不再被一起擋（ADR 0131）
+
 ## v0.86.0 — 2026-10-30
 
 - feat(relay): Worker 讀 `MAX_EVENTS_PER_MINUTE`／`MAX_MESSAGES_PER_MINUTE`——照 ADR 0037 只能調高到 600／1200，0、負數、低於預設、壞值都當沒設（Cloudflare 每則訊息都計費，不能關掉）；車道與嚴格平面同一組；轉出 `workerRateLimitsFrom`、`WORKER_MAX_EVENTS_PER_MINUTE`、`WORKER_MAX_MESSAGES_PER_MINUTE`（`@cinderous/client/relay` 的 host-config）。NIP-11 的 `cinder_max_events_per_minute` 改成兩座宿主實際套用的值（原本一律 120；Node 版設 0 時不宣告）（ADR 0129）

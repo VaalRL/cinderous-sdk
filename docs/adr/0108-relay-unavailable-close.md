@@ -41,3 +41,7 @@
   - `tests/relay-pool-unavailable.test.ts`：1013 的分類、標記 5 分鐘、重連等到標記過期、再被關就再等、`reconnectNow` 後回了 EOSE 就清掉、耐久發布略過；
   - `tests/pairing/relay-unavailable.test.ts`：每一座都不能用時是 `relay-unavailable`；有一座正常、只有備援不能用、沒有健康狀態時照舊 `timeout`。
   - 變異測試：拿掉配對的判斷、拿掉 EOSE 清標記，各有一項失敗。
+
+## 後續（2026-10-30）
+
+- ADR 0130：關閉原因是 `rate-limited: reconnects`（重連太頻繁，ADR 0111）時改從 60 秒起退避、連續被擋才加倍到 5 分鐘；所有 1013 的等待多加 0～20% 抖動。

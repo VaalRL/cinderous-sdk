@@ -32,6 +32,7 @@ describe('🔴 RelayPool：relay 以 4429 關閉', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0); // 1013 的等待時間有抖動（SDK ADR 0130）；這裡驗的是精確時間
     factory = new SocketFactory();
     rejections = [];
     pool = new RelayPool({
@@ -47,6 +48,7 @@ describe('🔴 RelayPool：relay 以 4429 關閉', () => {
 
   afterEach(() => {
     pool.close();
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 

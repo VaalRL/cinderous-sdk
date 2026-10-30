@@ -107,6 +107,7 @@ describe('🔴 RelayPool：連不上時探測邊緣代答（SDK ADR 0125）', ()
 
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0); // 1013 的等待時間有抖動（SDK ADR 0130）；這裡驗的是精確時間
     factory = new SocketFactory();
     rejections = [];
     answer = 'blocked';
@@ -114,6 +115,7 @@ describe('🔴 RelayPool：連不上時探測邊緣代答（SDK ADR 0125）', ()
   });
   afterEach(() => {
     pool.close();
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 

@@ -11,7 +11,8 @@
  * | `rate-limited` | `backoff` | 整座 | 到計數窗結束（`ip` 詞元 1 秒，其他 `rateLimitedMs` 預設 60 秒） |
  * | 關閉碼 1008 `rate-limited`／`too-many-connections` | `backoff` | 整座 | `rateLimitedMs` |
  * | 關閉碼 4003、1008 其他（車道被拒） | `inapplicable` | 整座 | `inapplicableMs` |
- * | 關閉碼 1013（`unavailable`：額度用完、儲存起不來；SDK ADR 0108） | `backoff` | 整座 | `unavailableMs`（預設 5 分鐘）；那一座回了 EOSE 就清掉 |
+ * | 關閉碼 1013（`unavailable`：額度用完、儲存起不來；SDK ADR 0108） | `backoff` | 整座 | `unavailableMs`（預設 5 分鐘）加 0～20% 抖動；那一座回了 EOSE 就清掉 |
+ * | 關閉碼 1013 `rate-limited: reconnects`（重連太頻繁；SDK ADR 0111、0130） | `backoff` | 整座 | `reconnectLimitedMs`（預設 60 秒），連續被擋就加倍、最多 `unavailableMs`；加 0～20% 抖動；恢復服務或收下事件就從頭算 |
  * | 關閉碼 4429（`unavailable`，詞元 `iot-quota`：C′ 家庭今日額度用完；SDK ADR 0122） | `backoff` | 整座 | 到原因帶的重置時間（加最多 60 秒抖動、最多一天）；沒帶＝`unavailableMs` |
  * | `invalid`、`stale`、`pow`、`error`、`timeout`、`disconnected`、`auth-failed:` | 不標記（只記最近一次） | — | — |
  *
@@ -97,6 +98,11 @@ export interface RelayHealthCooldowns {
     readonly rateLimitedMs?: number;
     /** 以 1013 關閉（暫時不能用，SDK ADR 0108）之後多久不再用、多久之後才重連（毫秒）；預設 5 分鐘 */
     readonly unavailableMs?: number;
+    /**
+     * 以 1013 `rate-limited: reconnects` 關閉（重連太頻繁，SDK ADR 0111）之後第一次等多久（毫秒）；預設 60 秒
+     *（中繼 Worker 那一道的計數窗）。連續被擋就加倍，最多 `unavailableMs`（SDK ADR 0130）
+     */
+    readonly reconnectLimitedMs?: number;
 }
 export declare const DEFAULT_RELAY_HEALTH_COOLDOWNS: Readonly<Required<RelayHealthCooldowns>>;
 /** 某個 kind 在中繼上屬於哪一類（NIP-01 的 kind 範圍） */
@@ -119,6 +125,7 @@ export declare class RelayHealthTracker {
     #private;
     constructor(opts: {
         now?: () => number;
+        random?: () => number;
         cooldowns?: RelayHealthCooldowns;
         onChange: (url: string) => void;
     });

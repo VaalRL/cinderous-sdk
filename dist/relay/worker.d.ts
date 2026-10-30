@@ -291,6 +291,11 @@ export declare class RelayRoom {
     private handleMessage;
     webSocketClose(ws: WebSocket, code?: number): void;
     webSocketError(ws: WebSocket): void;
+    /**
+     * 用戶端斷線時還沒認證：記進重連閘（SDK ADR 0131）。只有主平面套；IP 取自連線狀態（休眠後從 attachment 還原）。
+     * 伺服端自己關掉的連線（超限即關）不經過這裡——那些多半是認證過的。
+     */
+    private noteUnauthenticatedClose;
     /** 連線結束：記憶體與溢位列一起清（Cinderous ADR-0373）。 */
     private forget;
     /**

@@ -2563,11 +2563,21 @@ describe("主平面的反覆重連限速（SDK ADR 0111；Cinderous ADR-0391）"
   const upgradeDo = (room: RelayRoom, ip: string, path = "/s/b") =>
     room.fetch(new Request(`https://${HOST}${path}`, { headers: { Upgrade: "websocket", "CF-Connecting-IP": ip } }));
 
-  it("🔴 DO 一道：同一個 IP 10 分鐘內第 21 次在 acceptWebSocket 之前回絕（不掛連線、不寫儲存）；別的 IP 照常", async () => {
+  /** 升級、（選擇性）認證、再斷線：回傳這次升級有沒有掛上連線 */
+  const roundTrip = async (room: RelayRoom, state: FakeState, ip: string, auth: boolean, path = "/s/b"): Promise<boolean> => {
+    const before = state.sockets.length;
+    await upgradeDo(room, ip, path);
+    const ws = state.sockets[before];
+    if (!ws) return false;
+    if (auth) authenticate(room, ws, generateSecretKey());
+    room.webSocketClose(ws as unknown as WebSocket, 1006);
+    return true;
+  };
+
+  it("🔴 DO 一道：同一個 IP 10 分鐘內 20 條沒認證就斷線之後，下一次在 acceptWebSocket 之前回絕（不掛連線、不寫儲存）；別的 IP 照常", async () => {
     const state = new FakeState();
     const room = newRoom(state);
-    for (let i = 0; i < 20; i += 1) await upgradeDo(room, IP);
-    expect(state.sockets).toHaveLength(20);
+    for (let i = 0; i < 20; i += 1) expect(await roundTrip(room, state, IP, false)).toBe(true);
     const kvBefore = JSON.stringify([...state.kv]);
     FakeWebSocketPair.last = undefined;
     const res = await upgradeDo(room, IP);
@@ -2577,23 +2587,27 @@ describe("主平面的反覆重連限速（SDK ADR 0111；Cinderous ADR-0391）"
     const server = (FakeWebSocketPair.last as FakeWebSocketPair | undefined)?.[1];
     expect(noticeOf(server).startsWith("rate-limited:")).toBe(true);
     expect(server?.closeCode).toBe(1013);
-    await upgradeDo(room, "198.51.100.9");
-    expect(state.sockets).toHaveLength(21);
+    expect(await roundTrip(room, state, "198.51.100.9", false)).toBe(true);
+  });
+
+  it("🔴 認證過的連線不算進那一道（SDK ADR 0131）：同一個 IP 後面 30 個人各自重連都放行；總上限 60 才擋", async () => {
+    const state = new FakeState();
+    const room = newRoom(state);
+    for (let i = 0; i < 60; i += 1) expect(await roundTrip(room, state, IP, true), String(i)).toBe(true);
+    expect(await roundTrip(room, state, IP, true)).toBe(false);
   });
 
   it("DO 一道可以用 RECONNECT_GUARD 調整或關掉；車道的 DO 不套", async () => {
     const off = new FakeState();
     const roomOff = newRoom(off, { RECONNECT_GUARD: "off" } as Env);
-    for (let i = 0; i < 25; i += 1) await upgradeDo(roomOff, IP);
-    expect(off.sockets).toHaveLength(25);
+    for (let i = 0; i < 25; i += 1) expect(await roundTrip(roomOff, off, IP, false)).toBe(true);
     const tight = new FakeState();
     const roomTight = newRoom(tight, { RECONNECT_GUARD: "2/600/600" } as Env);
-    for (let i = 0; i < 3; i += 1) await upgradeDo(roomTight, IP);
-    expect(tight.sockets).toHaveLength(2);
+    expect([await roundTrip(roomTight, tight, IP, false), await roundTrip(roomTight, tight, IP, false)]).toEqual([true, true]);
+    expect(await roundTrip(roomTight, tight, IP, false)).toBe(false);
     const lane = new FakeState();
     const roomLane = newRoom(lane, { RECONNECT_GUARD: "2/600/600" } as Env);
-    for (let i = 0; i < 3; i += 1) await upgradeDo(roomLane, IP, "/app/testgame");
-    expect(lane.sockets).toHaveLength(3);
+    for (let i = 0; i < 3; i += 1) expect(await roundTrip(roomLane, lane, IP, false, "/app/testgame")).toBe(true);
   });
 });
 
@@ -2694,6 +2708,7 @@ describe("RelayRoom — 額度用完時已經連著的連線（SDK ADR 0127）",
   it("🔴 喚醒還原時就撞到額度（還沒進 core）：不拋、NOTICE、以 1013 關閉", async () => {
     const { state, ws } = await connected();
     const woke = newRoom(state); // 休眠後的新實例，第一則訊息才還原連線
+    await new Promise((resolve) => setTimeout(resolve, 0)); // 建構時排清理鬧鐘（ADR 0128）是非同步的：先讓它跑完，否則它撞到下面的錯誤、變成沒人接的 rejection
     state.sqlError = QUOTA();
     expect(() => woke.webSocketMessage(ws as unknown as WebSocket, JSON.stringify(["REQ", "x", { authors: [getPublicKey(generateSecretKey())] }]))).not.toThrow();
     const out = ws.drain() as unknown[][];
