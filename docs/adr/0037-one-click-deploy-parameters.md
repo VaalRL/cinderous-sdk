@@ -40,7 +40,7 @@
 | 可尋址 TTL、配額、單顆上限 | —（常數：30 天；5／64／16；256 KB／32 KB；每作者 8 MB／2 MB） | 不開放（後續：`APP_LANE_POLICY`） | — | — | 配額是「一個作者塞爆一顆 DO」的界線 | 見上 | `cinder_addressable_ttl_sec`、`cinder_addressable_per_author`、`cinder_addressable_max_bytes`（v0.31 新增） |
 | 每顆 DO 天花板 | —（常數：128 MB 可尋址、128 MB 離線、檔案車道 1 GiB） | 不開放 | — | — | 調大前要重算全帳號 5 GB | 直接決定帳號儲存上限 | 無 |
 | 每收件人留言上限 | —（常數 500；檔案塊另計） | 不開放 | — | — | 收件人可亂編，這一條只是 FIFO，不是總量界線 | — | `cinder_max_per_recipient` |
-| 每公鑰每分鐘事件 | —（Worker 常數 120；Node 讀 `MAX_EVENTS_PER_MINUTE`） | 不開放（後續：Worker 也讀） | 120 | — | 🔴 Node 版可設 0＝關閉，一鍵部署**不**提供這條路 | 每則事件至少一列寫入 | `cinder_max_events_per_minute` |
+| 每公鑰每分鐘事件 | `MAX_EVENTS_PER_MINUTE`（2026-10-30 起兩座宿主都讀；SDK ADR 0129） | 不開放（Worker 已讀：只能調高到 600，SDK ADR 0129） | 120 | — | 🔴 Node 版可設 0＝關閉，一鍵部署**不**提供這條路 | 每則事件至少一列寫入 | `cinder_max_events_per_minute` |
 | 每連線每分鐘訊息 | —（Worker 常數 240；Node 讀 `MAX_MESSAGES_PER_MINUTE`） | 不開放 | 240 | 必須 ≥ 事件上限 × 2（`messagesPerMinuteFrom`） | 同上 | Cloudflare 以進站訊息計費，這是主要的成本界線 | 無 |
 | 每 IP 每秒訊息 | `MAX_MESSAGES_PER_SECOND_PER_IP` | 本版 | 20（PRD 3.3） | 1–1000 整數 | 不能設成「不限」；⚠ 每顆 DO 各自計算 | 20／秒 × 86,400 ≫ 免費額度，它擋的是爆量不是日總量 | `cinder_max_messages_per_second_per_ip`（v0.31 新增，有設才出現） |
 | 每公鑰連線數 | `MAX_CONNECTIONS_PER_PUBKEY` | 本版 | 5（PRD 3.3） | 1–100 整數 | 只對完成 AUTH 的連線計數（車道上不做 AUTH 的客戶端不受限） | 連線本身按 DO 時長計 | 無 |
@@ -76,6 +76,6 @@
 - **`APP_LANE_POLICY`（車道層級政策）**：`<lane>:addr=<n>,ttl=<days>,max=<KB>` 形式，只對 `APP_LANES` 上的車道生效，數值有上下限
   （例如位址 16–256、TTL 1–90 天、單顆 8–64 KB），NIP-11 如實宣告。需要改 `storeOptions` 與兩座宿主，另開 ADR；部署端以 `appLanePolicies` 開放。
 - **車道升級 IP 限速的綁定**：REST metadata 加 `ratelimit` 綁定、wrangler.toml 加對應設定；開放站建議預設開。
-- **Worker 讀 `MAX_EVENTS_PER_MINUTE`／`MAX_MESSAGES_PER_MINUTE`**（只允許調高到某個上限、不允許關閉），與 Node 主機一致。
+- ~~**Worker 讀 `MAX_EVENTS_PER_MINUTE`／`MAX_MESSAGES_PER_MINUTE`**（只允許調高到某個上限、不允許關閉），與 Node 主機一致。~~（已做：SDK ADR 0129，上限 600／1200；一鍵部署表單仍不開放。）
 - **TURN**：以 secret 綁定上傳 Token（REST 的 `secret_text`），部署表單只收 Key ID；另計費要在 UI 說明。（已做：SDK ADR 0118，wrangler 路徑用 `wrangler secret put`、值走 stdin。）
 - **PoW 難度宣告**：NIP-11 `limitation.min_pow_difficulty` 依車道回報。

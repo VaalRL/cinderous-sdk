@@ -99,7 +99,7 @@ export function buildRelayInfo(cfg = {}) {
         ...(cfg.readOnlyUntil !== undefined ? { cinder_read_only_until: cfg.readOnlyUntil } : {}),
         retention: [{ time: ttlSeconds }],
         /** 每 pubkey 每分鐘事件上限（ADR-0235 H1）；非 NIP-11 標準欄位，故加前綴。 */
-        cinder_max_events_per_minute: MAX_EVENTS_PER_MINUTE,
+        ...(cfg.maxEventsPerMinute === "off" ? {} : { cinder_max_events_per_minute: cfg.maxEventsPerMinute ?? MAX_EVENTS_PER_MINUTE }),
         /** 每收件人離線留言上限（PRD §8）。 */
         cinder_max_per_recipient: MAX_PER_RECIPIENT,
         /**

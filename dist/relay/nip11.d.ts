@@ -70,6 +70,11 @@ export interface Nip11Config {
      */
     maxMessagesPerSecondPerIp?: number | undefined;
     /**
+     * 每把公鑰每分鐘事件上限（SDK ADR 0129）：宿主實際套用的值。沒給＝預設 {@link MAX_EVENTS_PER_MINUTE}；
+     * `"off"`＝Node 版設 0 關掉了，文件不出現這一欄。原本一律寫預設值，調過的站會讓客戶端照錯的數字發。
+     */
+    maxEventsPerMinute?: number | "off" | undefined;
+    /**
      * 這條路徑那顆 DO 的容量政策（Cinderous ADR-0377；SDK ADR 0042；`doCapacityFor`）。沒給＝預設天花板、沒有保底與溢位帶。
      * 只宣告**靜態**上限與政策，不宣告即時用量（ADR 0038 M6）。
      */

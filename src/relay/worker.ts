@@ -7,6 +7,7 @@ import {
   fileLanes,
   filePolicyFor,
   messagesPerSecondPerIpFrom,
+  workerRateLimitsFrom,
   firstHost,
   guardFor,
   knownLanes,
@@ -129,6 +130,12 @@ export interface Env extends IotHomeEnv {
    */
   MAX_CONNECTIONS_PER_PUBKEY?: string;
   MAX_MESSAGES_PER_SECOND_PER_IP?: string;
+  /**
+   * 每把公鑰每分鐘事件、每條連線每分鐘訊息的上限（SDK ADR 0129）。沒設＝120／240，與 Node 版相同。
+   * 🔴 只能調高到 600／1200，不能關掉、也不往下調（`workerRateLimitsFrom`）；NIP-11 宣告生效的值。
+   */
+  MAX_EVENTS_PER_MINUTE?: string;
+  MAX_MESSAGES_PER_MINUTE?: string;
   /**
    * 連線被拒時指向的開發文件網址（ADR-0368）。**未設＝不附網址**（SDK ADR 0019）：
    * SDK 不替別人的站決定文件在哪。Cinderous 的錨點在自己的 wrangler.toml 設成官網開發者頁。
@@ -327,6 +334,8 @@ export function relayInfoFrom(
     writeRestricted: allowedPubkeysFrom(env.ALLOWED_PUBKEYS) !== undefined,
     // 與 DO 實際套用的同一個函式（SDK ADR 0036）：沒設＝不限、文件不出現。
     maxMessagesPerSecondPerIp: messagesPerSecondPerIpFrom(env.MAX_MESSAGES_PER_SECOND_PER_IP),
+    // 與 DO 實際套用的同一個函式（SDK ADR 0129）
+    maxEventsPerMinute: workerRateLimitsFrom(env.MAX_EVENTS_PER_MINUTE, env.MAX_MESSAGES_PER_MINUTE).maxEventsPerMinute,
     // 與 DO 實際套用的同一個函式（SDK ADR 0042）：天花板、淘汰或拒收、保底、溢位帶、預警、丟棄計數都是靜態值
     ...(doName !== undefined ? { capacity: doCapacityFor(env, doName) } : {}),
     // ADR-0356：出貨版號。讓任何人（與 App 的「一鍵更新節點」）看得出這座跑的是哪一版，
@@ -631,6 +640,8 @@ export class RelayRoom {
     return new RelayCore({
       store: this.store,
       ...guardFor(profile),
+      // 每分鐘速率（SDK ADR 0129）：蓋過 `guardFor` 的預設值；只能調高，車道與嚴格平面同一組
+      ...workerRateLimitsFrom(this.env.MAX_EVENTS_PER_MINUTE, this.env.MAX_MESSAGES_PER_MINUTE),
       // 唯讀寬限期（SDK ADR 0052）：這顆 DO 服務的舊路徑在寬限期內只能讀。env 在部署之間不變，
       // 「唯讀 → 到期」由 `webSocketMessage` 的到期檢查處理（關掉連線），不必重組 core。
       ...(this.laneReadOnly(profile) ? { readOnly: true } : {}),

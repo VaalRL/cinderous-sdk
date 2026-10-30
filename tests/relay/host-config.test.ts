@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { workerRateLimitsFrom, WORKER_MAX_EVENTS_PER_MINUTE, WORKER_MAX_MESSAGES_PER_MINUTE } from "../../src/relay/host-config.js";
 import { TIMESTAMP_JITTER_SECONDS } from "../../src/protocol/index.js";
 import { describe, expect, it } from "vitest";
 import { FILE_EVENT_MAX_BYTES } from "../../src/relay/message-store.js";
@@ -75,6 +76,30 @@ describe("host-config：速率覆寫（node 自架）", () => {
   it("正整數 → 採用；0／負 → 明確關閉（undefined）", () => {
     expect(eventsPerMinuteFrom("300")).toBe(300);
     expect(eventsPerMinuteFrom("0")).toBeUndefined();
+  });
+});
+
+describe("host-config：Worker 的速率覆寫（SDK ADR 0129）", () => {
+  // ADR 0037：只能調高到上限、不能關掉——Cloudflare 以進站訊息計費，關掉就是把帳單交給任何一個連線
+  it("未設 → 與 Node 相同的預設 120／240", () => {
+    expect(workerRateLimitsFrom(undefined, undefined)).toEqual({ maxEventsPerMinute: 120, maxMessagesPerMinute: 240 });
+  });
+  it("調高 → 採用；訊息上限跟著不低於事件的兩倍", () => {
+    expect(workerRateLimitsFrom("300", undefined)).toEqual({ maxEventsPerMinute: 300, maxMessagesPerMinute: 600 });
+    expect(workerRateLimitsFrom("300", "400")).toEqual({ maxEventsPerMinute: 300, maxMessagesPerMinute: 600 });
+    expect(workerRateLimitsFrom(undefined, "1000")).toEqual({ maxEventsPerMinute: 120, maxMessagesPerMinute: 1000 });
+  });
+  it("🔴 0、負數、低於預設、壞值 → 預設（不能關掉，也不往下調）", () => {
+    for (const raw of ["0", "-5", "50", "abc", ""]) {
+      expect(workerRateLimitsFrom(raw, raw)).toEqual({ maxEventsPerMinute: 120, maxMessagesPerMinute: 240 });
+    }
+  });
+  it("🔴 超過上限 → 夾到上限", () => {
+    expect(workerRateLimitsFrom("99999", "99999")).toEqual({
+      maxEventsPerMinute: WORKER_MAX_EVENTS_PER_MINUTE,
+      maxMessagesPerMinute: WORKER_MAX_MESSAGES_PER_MINUTE,
+    });
+    expect(WORKER_MAX_MESSAGES_PER_MINUTE).toBeGreaterThanOrEqual(WORKER_MAX_EVENTS_PER_MINUTE * 2);
   });
 });
 

@@ -2775,3 +2775,40 @@ describe("RelayRoom — 清理鬧鐘不會永久停掉（SDK ADR 0128）", () =>
     expect(count()).toBe(0);
   });
 });
+
+describe("Worker 讀每分鐘速率（SDK ADR 0129）", () => {
+  const nip11 = async (env: Partial<Env>): Promise<Record<string, unknown>> => {
+    const r = (await worker.fetch(new Request(`https://${HOST}/`, { headers: { Accept: "application/nostr+json" } }), env as Env)) as unknown as {
+      body: string;
+    };
+    return JSON.parse(r.body) as Record<string, unknown>;
+  };
+  /** 同一把已認證的公鑰一口氣送 n 則，回被限速的則數 */
+  const burst = async (env: Partial<Env>, n: number): Promise<number> => {
+    const state = new FakeState();
+    const room = newRoom(state, env as Env);
+    const sk = generateSecretKey();
+    const ws = await open(room, state);
+    authenticate(room, ws, sk);
+    ws.drain();
+    const to = getPublicKey(generateSecretKey());
+    let limited = 0;
+    for (let i = 0; i < n; i += 1) {
+      const ev = finalizeEvent({ kind: 1059, created_at: nowSec(), tags: [["p", to]], content: `x${i}` }, sk);
+      const out = send(room, ws, ["EVENT", ev]) as unknown[][];
+      if (out.some((m) => m[0] === "OK" && m[2] === false && /^rate-limited:/.test(String(m[3])))) limited += 1;
+    }
+    return limited;
+  };
+
+  it("🔴 NIP-11 宣告的是實際生效的值（客戶端照它的八成發）", async () => {
+    expect((await nip11({})).cinder_max_events_per_minute).toBe(120);
+    expect((await nip11({ MAX_EVENTS_PER_MINUTE: "300" })).cinder_max_events_per_minute).toBe(300);
+    expect((await nip11({ MAX_EVENTS_PER_MINUTE: "0" })).cinder_max_events_per_minute).toBe(120);
+  });
+
+  it("🔴 調高後真的照新的上限擋（原本 Worker 一律 120）", async () => {
+    expect(await burst({}, 130)).toBe(10);
+    expect(await burst({ MAX_EVENTS_PER_MINUTE: "300" }, 130)).toBe(0);
+  });
+});

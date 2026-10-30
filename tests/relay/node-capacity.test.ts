@@ -156,3 +156,11 @@ describe('startNodeRelay：空間上限（SDK ADR 0099）', () => {
     expect(oks.every((ok) => ok[2] === true)).toBe(true);
   });
 });
+
+describe('startNodeRelay：NIP-11 的每分鐘事件上限跟著設定走（SDK ADR 0129）', () => {
+  it('🔴 調過的值照實宣告；設 0 關掉時不宣告（原本一律寫 120）', async () => {
+    expect((await relayInfo(await start({}))).cinder_max_events_per_minute).toBe(120);
+    expect((await relayInfo(await start({ MAX_EVENTS_PER_MINUTE: '300' }))).cinder_max_events_per_minute).toBe(300);
+    expect((await relayInfo(await start({ MAX_EVENTS_PER_MINUTE: '0' }))).cinder_max_events_per_minute).toBeUndefined();
+  });
+});

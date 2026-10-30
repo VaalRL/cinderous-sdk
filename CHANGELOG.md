@@ -4,6 +4,11 @@ Releases are git tags; install one with `npm install github:VaalRL/cinderous-sdk
 
 每個版本是一個 git tag，安裝方式是 `npm install github:VaalRL/cinderous-sdk#vX.Y.Z`。每一版列出那一版的改動（取自 commit 紀錄）；每項改動的理由寫在它引用的 ADR 裡（[docs/adr/](docs/adr/README.md)）。
 
+## v0.86.0 — 2026-10-30
+
+- feat(relay): Worker 讀 `MAX_EVENTS_PER_MINUTE`／`MAX_MESSAGES_PER_MINUTE`——照 ADR 0037 只能調高到 600／1200，0、負數、低於預設、壞值都當沒設（Cloudflare 每則訊息都計費，不能關掉）；車道與嚴格平面同一組；轉出 `workerRateLimitsFrom`、`WORKER_MAX_EVENTS_PER_MINUTE`、`WORKER_MAX_MESSAGES_PER_MINUTE`（`@cinderous/client/relay` 的 host-config）。NIP-11 的 `cinder_max_events_per_minute` 改成兩座宿主實際套用的值（原本一律 120；Node 版設 0 時不宣告）（ADR 0129）
+- docs(adr): ADR 0038／0039／0042 的「錨點尚未部署」更正為已部署（Cinderous PR #9，2026-10-28）；ADR 0128 補上部署後驗證結果
+
 ## v0.85.1 — 2026-10-30
 
 - fix(relay): 清理鬧鐘不會永久停掉——`alarm()` 的清理拋錯時記錄並照樣排下一次（原本走不到 `setAlarm`，Cloudflare 重試 6 次用完就不再跑）；DO 醒來時鬧鐘停在過去也重排。2026-10-22 錨點 1 的 CinderSync 車道撞到額度後一週沒有清理，過期的檔案塊佔著八成空間、每次寫入都回 `near-full`（ADR 0128）

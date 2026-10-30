@@ -102,6 +102,12 @@ export interface Env extends IotHomeEnv {
     MAX_CONNECTIONS_PER_PUBKEY?: string;
     MAX_MESSAGES_PER_SECOND_PER_IP?: string;
     /**
+     * 每把公鑰每分鐘事件、每條連線每分鐘訊息的上限（SDK ADR 0129）。沒設＝120／240，與 Node 版相同。
+     * 🔴 只能調高到 600／1200，不能關掉、也不往下調（`workerRateLimitsFrom`）；NIP-11 宣告生效的值。
+     */
+    MAX_EVENTS_PER_MINUTE?: string;
+    MAX_MESSAGES_PER_MINUTE?: string;
+    /**
      * 連線被拒時指向的開發文件網址（ADR-0368）。**未設＝不附網址**（SDK ADR 0019）：
      * SDK 不替別人的站決定文件在哪。Cinderous 的錨點在自己的 wrangler.toml 設成官網開發者頁。
      */

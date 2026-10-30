@@ -196,6 +196,24 @@ export declare function eventsPerMinuteFrom(raw: string | undefined): number | u
  * 但訊息說 rate-limited」，兩種完全不同的診斷。
  */
 export declare function messagesPerMinuteFrom(raw: string | undefined, eventsPerMinute: number | undefined): number | undefined;
+/** Cloudflare 版的每把公鑰每分鐘事件上限最多調到多高（SDK ADR 0129；ADR 0037「只能調高到某個上限」）。 */
+export declare const WORKER_MAX_EVENTS_PER_MINUTE = 600;
+/** Cloudflare 版的每連線每分鐘訊息上限最多調到多高：事件上限的兩倍（{@link messagesPerMinuteFrom} 的不變量）。 */
+export declare const WORKER_MAX_MESSAGES_PER_MINUTE: number;
+/**
+ * Cloudflare 版讀 `MAX_EVENTS_PER_MINUTE`／`MAX_MESSAGES_PER_MINUTE`（SDK ADR 0129）。與 Node 版不同：
+ *
+ * - **只能調高**：0、負數、低於預設、壞值一律當沒設。Cloudflare 以進站訊息計費，這兩條是每條連線的成本界線；
+ *   關掉就是把帳單交給任何一個連線（ADR 0037）。
+ * - **有上限**：超過 {@link WORKER_MAX_EVENTS_PER_MINUTE}／{@link WORKER_MAX_MESSAGES_PER_MINUTE} 就夾到上限。
+ * - 訊息上限照 {@link messagesPerMinuteFrom} 的規則，不低於事件上限的兩倍。
+ *
+ * 回傳的物件直接展開進 `RelayCoreOptions`；NIP-11 的 `cinder_max_events_per_minute` 用同一個值。
+ */
+export declare function workerRateLimitsFrom(rawEvents: string | undefined, rawMessages: string | undefined): {
+    maxEventsPerMinute: number;
+    maxMessagesPerMinute: number;
+};
 /**
  * 正規化「本次連線打到的主機」（ADR-0235 H2）：AUTH 的 `relay` tag 必須指向它。
  *

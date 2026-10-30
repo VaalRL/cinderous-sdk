@@ -1,5 +1,5 @@
 import { verifyHttpAuth } from "../protocol/index.js";
-import { allowedPubkeysFrom, connectionsPerPubkeyFrom, doCapacityFor, doCapacitySettings, fileLanes, filePolicyFor, messagesPerSecondPerIpFrom, firstHost, guardFor, knownLanes, lanesOnlyFrom, laneStateOf, powForLane, readOnlyLaneIds, readOnlyLanesFrom, inboxAckGraceFor, storeOptions, } from "./host-config.js";
+import { allowedPubkeysFrom, connectionsPerPubkeyFrom, doCapacityFor, doCapacitySettings, fileLanes, filePolicyFor, messagesPerSecondPerIpFrom, workerRateLimitsFrom, firstHost, guardFor, knownLanes, lanesOnlyFrom, laneStateOf, powForLane, readOnlyLaneIds, readOnlyLanesFrom, inboxAckGraceFor, storeOptions, } from "./host-config.js";
 import { buildRelayInfo, NIP11_HEADERS, wantsRelayInfo } from "./nip11.js";
 import { relayVersion } from "./version.js";
 import { UNKNOWN_PATH_INFO_BODY, UPGRADE_REJECT_CLOSE_CODE, upgradeCloseCode, upgradeRejection } from "./reject-messages.js";
@@ -125,6 +125,8 @@ doName) {
         writeRestricted: allowedPubkeysFrom(env.ALLOWED_PUBKEYS) !== undefined,
         // 與 DO 實際套用的同一個函式（SDK ADR 0036）：沒設＝不限、文件不出現。
         maxMessagesPerSecondPerIp: messagesPerSecondPerIpFrom(env.MAX_MESSAGES_PER_SECOND_PER_IP),
+        // 與 DO 實際套用的同一個函式（SDK ADR 0129）
+        maxEventsPerMinute: workerRateLimitsFrom(env.MAX_EVENTS_PER_MINUTE, env.MAX_MESSAGES_PER_MINUTE).maxEventsPerMinute,
         // 與 DO 實際套用的同一個函式（SDK ADR 0042）：天花板、淘汰或拒收、保底、溢位帶、預警、丟棄計數都是靜態值
         ...(doName !== undefined ? { capacity: doCapacityFor(env, doName) } : {}),
         // ADR-0356：出貨版號。讓任何人（與 App 的「一鍵更新節點」）看得出這座跑的是哪一版，
@@ -417,6 +419,8 @@ export class RelayRoom {
         return new RelayCore({
             store: this.store,
             ...guardFor(profile),
+            // 每分鐘速率（SDK ADR 0129）：蓋過 `guardFor` 的預設值；只能調高，車道與嚴格平面同一組
+            ...workerRateLimitsFrom(this.env.MAX_EVENTS_PER_MINUTE, this.env.MAX_MESSAGES_PER_MINUTE),
             // 唯讀寬限期（SDK ADR 0052）：這顆 DO 服務的舊路徑在寬限期內只能讀。env 在部署之間不變，
             // 「唯讀 → 到期」由 `webSocketMessage` 的到期檢查處理（關掉連線），不必重組 core。
             ...(this.laneReadOnly(profile) ? { readOnly: true } : {}),

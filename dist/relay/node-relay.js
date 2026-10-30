@@ -147,6 +147,8 @@ export function startNodeRelay(env = process.env, opts = {}) {
         inboxAck: requireAuth,
         writeRestricted: allowed !== undefined,
         maxMessagesPerSecondPerIp: perIp,
+        // 實際套用的值（SDK ADR 0129）；設 0 關掉時不宣告
+        maxEventsPerMinute: rate ?? "off",
         capacity,
         // 宿主注入的版號（與 Worker 一致；Cinderous ADR-0356 的一鍵更新節點靠它比對）。
         // 先前漏了這一欄，自架站的 NIP-11 永遠沒有 version（SDK ADR 0018 冒煙測試抓到）。

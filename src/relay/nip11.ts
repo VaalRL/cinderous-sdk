@@ -111,6 +111,11 @@ export interface Nip11Config {
    */
   maxMessagesPerSecondPerIp?: number | undefined;
   /**
+   * 每把公鑰每分鐘事件上限（SDK ADR 0129）：宿主實際套用的值。沒給＝預設 {@link MAX_EVENTS_PER_MINUTE}；
+   * `"off"`＝Node 版設 0 關掉了，文件不出現這一欄。原本一律寫預設值，調過的站會讓客戶端照錯的數字發。
+   */
+  maxEventsPerMinute?: number | "off" | undefined;
+  /**
    * 這條路徑那顆 DO 的容量政策（Cinderous ADR-0377；SDK ADR 0042；`doCapacityFor`）。沒給＝預設天花板、沒有保底與溢位帶。
    * 只宣告**靜態**上限與政策，不宣告即時用量（ADR 0038 M6）。
    */
@@ -195,7 +200,7 @@ export function buildRelayInfo(cfg: Nip11Config = {}): Record<string, unknown> {
     ...(cfg.readOnlyUntil !== undefined ? { cinder_read_only_until: cfg.readOnlyUntil } : {}),
     retention: [{ time: ttlSeconds }],
     /** 每 pubkey 每分鐘事件上限（ADR-0235 H1）；非 NIP-11 標準欄位，故加前綴。 */
-    cinder_max_events_per_minute: MAX_EVENTS_PER_MINUTE,
+    ...(cfg.maxEventsPerMinute === "off" ? {} : { cinder_max_events_per_minute: cfg.maxEventsPerMinute ?? MAX_EVENTS_PER_MINUTE }),
     /** 每收件人離線留言上限（PRD §8）。 */
     cinder_max_per_recipient: MAX_PER_RECIPIENT,
     /**
