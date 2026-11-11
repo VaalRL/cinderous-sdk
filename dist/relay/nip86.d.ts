@@ -8,9 +8,11 @@ export declare const NIP86_NAME_MAX = 100;
 export declare const NIP86_DESCRIPTION_MAX = 2000;
 /** 執行期改過、要存起來的東西；重開後蓋過環境變數（SDK ADR 0132 §8）。 */
 export interface Nip86State {
+    /** `admin`＝簽這份名冊的名冊金鑰（SDK ADR 0133）：重開後名冊金鑰換了或拿掉，這份就不再生效。 */
     roster?: {
         updatedAt: number;
         allowed: string[];
+        admin?: string;
     };
     allowedKinds?: number[];
     name?: string;
@@ -63,14 +65,25 @@ export declare class Nip86Admin {
         description?: string;
     };
     /** 呼叫一個方法。`caller` 是已通過 NIP-98 的運維金鑰（只用於日誌）。 */
-    call(caller: string, method: string, params: unknown): Nip86Response;
-    private commit;
+    call(caller: string, method: string, params: unknown, nowSec?: number): Nip86Response;
+    /**
+     * 先存檔、存成功才換掉記憶體裡的狀態（SDK ADR 0133）。回 `false`＝沒存成，呼叫端不得套用。
+     *
+     * 過去是先套用後存檔：存檔拋錯會變成「這次生效、重開就消失」，被移除的人重開後又寫得進。
+     */
+    private persist;
     private applyRoster;
     private allowKind;
     private disallowKind;
     private setKinds;
     private changeText;
 }
+/**
+ * 讀回存檔時驗結構（SDK ADR 0133）。任何一格不對就**整份不用**（回 `undefined`）：
+ * 壞掉的存檔不該變成政策——`allowed: "abc"` 會被逐字拆成三個「成員」、空的 `allowedKinds` 會讓整站拒收、
+ * 少了 `updatedAt` 會讓舊名冊重新被接受。
+ */
+export declare function parseNip86State(json: string): Nip86State | undefined;
 /** 這個 HTTP 請求是不是 NIP-86（POST＋`application/nostr+json+rpc`）。 */
 export declare function isNip86Request(method: string | undefined, contentType: string | undefined): boolean;
 /** 宿主交進來的 HTTP 請求。 */
@@ -79,8 +92,13 @@ export interface Nip86HttpRequest {
     contentType?: string | undefined;
     authorization?: string | undefined;
     body: string;
-    /** 對外的主機（反向代理後方用 `X-Forwarded-Host`）。 */
+    /** 請求的 `Host` 標頭。⚠ 這是對方寫的——沒設 `publicUrl` 時簽章只綁到「對方自稱的主機」。 */
     host?: string | undefined;
+    /**
+     * 本站對外的網址（`NIP86_PUBLIC_URL`，SDK ADR 0133）。設了就**只認簽給它的請求**，不看 `host` 與 `path`：
+     * 同一把運維金鑰管好幾座站時，簽給甲站的請求不能拿到乙站重送。
+     */
+    publicUrl?: string | undefined;
     /** 路徑（不含查詢字串）。 */
     path: string;
 }
@@ -92,4 +110,10 @@ export declare function handleNip86Request(admin: Nip86Admin, req: Nip86HttpRequ
     status: number;
     body: Nip86Response;
 };
+/**
+ * 讀請求內容**之前**的檢查（SDK ADR 0133）：標頭是運維金鑰簽的、還在時間窗內。
+ * 沒過就不必收內容——否則任何人都能讓伺服器替他緩衝 1 MiB。⚠ 這不是授權（沒綁網址與內容），
+ * 通過之後仍要走 {@link handleNip86Request}。
+ */
+export declare function nip86Precheck(admin: Nip86Admin, authorization: string | null | undefined, nowSec?: number): boolean;
 //# sourceMappingURL=nip86.d.ts.map

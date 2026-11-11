@@ -8,7 +8,7 @@ import { WebSocketServer } from "ws";
 import { allowedKindsFrom, allowedPubkeysFrom, connectionsPerPubkeyFrom, eventsPerMinuteFrom, fileLanesMode, filePolicyFor, firstHost, guardFor, knownLanes, lanesOnlyFrom, maxConnectionsFrom, maxConnectionsPerIpFrom, laneStateOf, messagesPerMinuteFrom, messagesPerSecondPerIpFrom, nodeCapacityFrom, readOnlyLaneIds, readOnlyLanesFrom, inboxAckGraceFor, storeOptions, clientIpFrom, trustedProxyHopsFrom, } from "./host-config.js";
 import { MessageStore } from "./message-store.js";
 import { buildRelayInfo, NIP11_HEADERS, wantsRelayInfo } from "./nip11.js";
-import { handleNip86Request, isNip86Request, Nip86Admin, NIP86_MAX_BODY_BYTES } from "./nip86.js";
+import { handleNip86Request, isNip86Request, Nip86Admin, NIP86_MAX_BODY_BYTES, nip86Precheck, parseNip86State, } from "./nip86.js";
 import { relayVersion } from "./version.js";
 import { closeSignalOf, RelayCore } from "./relay-core.js";
 import { SqlMessageStore } from "./sql-message-store.js";
@@ -119,11 +119,49 @@ export function startNodeRelay(env = process.env, opts = {}) {
         db?.close();
         throw new Error("ROSTER_ADMIN_PUBKEY 只能有一把（SDK ADR 0132）");
     }
+    // 對外網址（SDK ADR 0133）：設了就只認簽給它的請求。寫錯就不開站——悄悄退回「看 Host 標頭」比不開更糟。
+    let nip86PublicUrl;
+    if (env.NIP86_PUBLIC_URL !== undefined && env.NIP86_PUBLIC_URL.trim() !== "") {
+        let parsedUrl;
+        try {
+            parsedUrl = new URL(env.NIP86_PUBLIC_URL.trim());
+        }
+        catch {
+            parsedUrl = undefined;
+        }
+        if (parsedUrl === undefined || (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "http:")) {
+            db?.close();
+            throw new Error("NIP86_PUBLIC_URL 要是 http:// 或 https:// 開頭的完整網址（SDK ADR 0133）");
+        }
+        nip86PublicUrl = env.NIP86_PUBLIC_URL.trim();
+    }
     const savedNip86 = sqlExec === undefined ? undefined : loadNip86State(sqlExec);
     if (nip86Admins === undefined && savedNip86 !== undefined) {
         console.warn("資料庫裡有 NIP-86 存過的設定，但 NIP86_ADMIN_PUBKEYS 沒設：這次照環境變數（SDK ADR 0132）");
     }
-    const nip86State = nip86Admins === undefined ? undefined : savedNip86;
+    if (nip86Admins !== undefined && nip86PublicUrl === undefined) {
+        console.warn("NIP-86 開著但沒設 NIP86_PUBLIC_URL：請求的簽章只綁到對方送來的 Host 標頭。同一把運維金鑰管不只一座站、或前面有反向代理時請設定它（SDK ADR 0133）");
+    }
+    let nip86State = nip86Admins === undefined ? undefined : savedNip86;
+    // 存過的名冊只在「同一把名冊金鑰還設著」時生效（SDK ADR 0133）：拿掉或換掉 ROSTER_ADMIN_PUBKEY
+    // ＝回到環境變數的 ALLOWED_PUBKEYS。否則站方想用環境變數踢人會毫無效果，而且沒有任何管道能改回來。
+    if (nip86State?.roster) {
+        const signedBy = nip86State.roster.admin;
+        const current = rosterAdmin?.[0];
+        if (current === undefined || (signedBy !== undefined && signedBy !== current)) {
+            console.warn(current === undefined
+                ? "資料庫裡有套用過的名冊，但 ROSTER_ADMIN_PUBKEY 沒設：這次不用它，成員照 ALLOWED_PUBKEYS（SDK ADR 0133）"
+                : "資料庫裡的名冊是另一把 ROSTER_ADMIN_PUBKEY 簽的：這次不用它，成員照 ALLOWED_PUBKEYS（SDK ADR 0133）");
+            const { roster: _dropped, ...rest } = nip86State;
+            nip86State = rest;
+        }
+        else if (allowed !== undefined && !sameSet(allowed, nip86State.roster.allowed)) {
+            console.warn("資料庫裡套用過的名冊蓋過了環境變數 ALLOWED_PUBKEYS（名冊才是成員權威；要改成員請送新名冊，SDK ADR 0132 §8）");
+        }
+    }
+    if (nip86State?.allowedKinds && envKinds !== undefined && !sameSet(envKinds, nip86State.allowedKinds)) {
+        console.warn("資料庫裡 NIP-86 改過的事件類型清單蓋過了環境變數 ALLOWED_KINDS（SDK ADR 0132 §8）");
+    }
     if (nip86State?.roster)
         coreOptions.allowedAuthors = nip86State.roster.allowed;
     if (nip86State?.allowedKinds)
@@ -303,20 +341,50 @@ export function startNodeRelay(env = process.env, opts = {}) {
                 return;
             }
             const admin = nip86;
+            /** 回應後切斷連線：對方還在送的內容不再收（SDK ADR 0133） */
+            const reply = (status, body, hangUp = false) => {
+                res.writeHead(status, {
+                    "content-type": "application/json; charset=utf-8",
+                    ...NIP86_CORS_HEADERS,
+                    ...(hangUp ? { connection: "close" } : {}),
+                });
+                res.end(JSON.stringify(body), () => {
+                    if (hangUp)
+                        req.destroy();
+                });
+            };
+            // 先擋人、再收內容（SDK ADR 0133）：不是運維金鑰簽的就不替他緩衝任何東西。
+            if (!nip86Precheck(admin, req.headers.authorization)) {
+                reply(401, { error: "unauthorized" }, true);
+                return;
+            }
+            if (Number(req.headers["content-length"] ?? 0) > NIP86_MAX_BODY_BYTES) {
+                reply(413, { error: "payload too large" }, true);
+                return;
+            }
             readBody(req, NIP86_MAX_BODY_BYTES, (body) => {
-                const host = firstHost((req.headers["x-forwarded-host"] ?? req.headers.host));
-                const out = body === undefined
-                    ? { status: 413, body: { error: "payload too large" } }
-                    : handleNip86Request(admin, {
+                if (body === undefined) {
+                    reply(413, { error: "payload too large" }, true);
+                    return;
+                }
+                try {
+                    const out = handleNip86Request(admin, {
                         method: req.method ?? "POST",
                         contentType: req.headers["content-type"],
                         authorization: req.headers.authorization,
                         body,
-                        host,
+                        // 🔴 只看 Host，不看 X-Forwarded-Host：那是任何人都能加的標頭。反向代理後面請設 NIP86_PUBLIC_URL。
+                        host: firstHost(req.headers.host),
+                        publicUrl: nip86PublicUrl,
                         path: (req.url ?? "/").split("?")[0] ?? "/",
                     });
-                res.writeHead(out.status, { "content-type": "application/json; charset=utf-8", ...NIP86_CORS_HEADERS });
-                res.end(JSON.stringify(out.body));
+                    reply(out.status, out.body);
+                }
+                catch (error) {
+                    // 這裡是 `end` 事件的回呼：漏出去的例外會讓整個程序結束
+                    console.warn("NIP-86 請求處理失敗：", error);
+                    reply(500, { error: "internal error" });
+                }
             });
             return;
         }
@@ -500,13 +568,14 @@ function loadNip86State(exec) {
     const row = exec("SELECT v FROM cinder_admin_state WHERE k = ?", "nip86")[0];
     if (row === undefined || typeof row.v !== "string")
         return undefined;
-    try {
-        return JSON.parse(row.v);
-    }
-    catch {
-        console.warn("cinder_admin_state 的 NIP-86 設定壞了，這次照環境變數（SDK ADR 0132）");
-        return undefined;
-    }
+    const state = parseNip86State(row.v);
+    if (state === undefined)
+        console.warn("cinder_admin_state 的 NIP-86 設定壞了或結構不對，這次照環境變數（SDK ADR 0133）");
+    return state;
+}
+function sameSet(a, b) {
+    const set = new Set(a);
+    return set.size === new Set(b).size && b.every((x) => set.has(x));
 }
 function saveNip86State(exec, state) {
     exec("INSERT INTO cinder_admin_state (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", "nip86", JSON.stringify(state));

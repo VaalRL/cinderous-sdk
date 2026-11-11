@@ -48,4 +48,11 @@ export declare function isValidAuthEventShape(e: unknown): boolean;
 export declare function verifyHttpAuth(header: string | null, url: string, method: string, nowSec?: number, 
 /** 給了 `payload`＝要求簽章綁定這份內容（SDK ADR 0132）；沒給＝不檢查，與之前相同 */
 opts?: HttpAuthOptions): string | null;
+/**
+ * 這個標頭是誰簽的（SDK ADR 0133）：驗簽章與時間窗，**不看** `u`／`method`／`payload`。
+ *
+ * 給「讀請求內容之前先擋人」用：伺服器可以在還沒收任何內容時就拒絕不是自己人的請求。
+ * ⚠ 它**不是**授權——通過之後仍要用 {@link verifyHttpAuth} 綁定網址、方法與內容。
+ */
+export declare function httpAuthSigner(header: string | null | undefined, nowSec?: number): string | null;
 //# sourceMappingURL=http-auth.d.ts.map

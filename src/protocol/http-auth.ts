@@ -156,6 +156,18 @@ export function verifyHttpAuth(
   /** 給了 `payload`＝要求簽章綁定這份內容（SDK ADR 0132）；沒給＝不檢查，與之前相同 */
   opts: HttpAuthOptions = {},
 ): string | null {
+  const event = parseAuthEvent(header, nowSec);
+  if (event === null) return null;
+  if (tagValue(event, "u") !== url) return null;
+  if (tagValue(event, "method") !== method.toUpperCase()) return null;
+  if (opts.payload !== undefined && tagValue(event, "payload") !== httpAuthPayloadHash(opts.payload)) return null;
+  if (!verifyEvent(event)) return null;
+
+  return event.pubkey;
+}
+
+/** 解開標頭並做不需要請求內容的檢查：格式、結構、kind、時間窗。**還沒驗簽**。 */
+function parseAuthEvent(header: string | null | undefined, nowSec: number): NostrEvent | null {
   if (!header) return null;
   const m = /^Nostr\s+(.+)$/i.exec(header.trim());
   if (!m) return null;
@@ -172,10 +184,20 @@ export function verifyHttpAuth(
 
   if (event.kind !== HTTP_AUTH_KIND) return null;
   if (Math.abs(nowSec - event.created_at) > HTTP_AUTH_SKEW_SEC) return null;
-  if (tagValue(event, "u") !== url) return null;
-  if (tagValue(event, "method") !== method.toUpperCase()) return null;
-  if (opts.payload !== undefined && tagValue(event, "payload") !== httpAuthPayloadHash(opts.payload)) return null;
-  if (!verifyEvent(event)) return null;
+  return event;
+}
 
+/**
+ * 這個標頭是誰簽的（SDK ADR 0133）：驗簽章與時間窗，**不看** `u`／`method`／`payload`。
+ *
+ * 給「讀請求內容之前先擋人」用：伺服器可以在還沒收任何內容時就拒絕不是自己人的請求。
+ * ⚠ 它**不是**授權——通過之後仍要用 {@link verifyHttpAuth} 綁定網址、方法與內容。
+ */
+export function httpAuthSigner(
+  header: string | null | undefined,
+  nowSec: number = Math.floor(Date.now() / 1000),
+): string | null {
+  const event = parseAuthEvent(header, nowSec);
+  if (event === null || !verifyEvent(event)) return null;
   return event.pubkey;
 }

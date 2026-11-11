@@ -7,7 +7,7 @@
 // 3. 事件類型只改**已存在**的清單：不從空清單起建（一行指令讓整站只收一種事件）、不刪最後一個。
 //
 // 純邏輯、無 I/O：套用（換掉 RelayCore 的 Set）、存檔、日誌都由宿主以回呼注入。
-import { rosterAllowlist, verifyHttpAuth, verifyOrgRoster, } from '../protocol/index.js';
+import { httpAuthSigner, rosterAllowlist, verifyHttpAuth, verifyOrgRoster, } from '../protocol/index.js';
 /** NIP-86 請求的 Content-Type。 */
 export const NIP86_CONTENT_TYPE = 'application/nostr+json+rpc';
 /** 請求內容上限（位元組）：一千人的名冊約 100 KiB，留十倍。 */
@@ -18,6 +18,9 @@ export const NIP86_NAME_MAX = 100;
 export const NIP86_DESCRIPTION_MAX = 2000;
 /** kind 的上限（NIP-01 的 kind 是 0–65535）。 */
 const KIND_MAX = 65535;
+/** 名冊的 `updatedAt` 最多能超前現在多久（秒）。客戶端為了遞增會 +1，留一天的餘裕。 */
+const ROSTER_FUTURE_SKEW_SEC = 86_400;
+const PERSIST_ERROR = 'internal: could not persist the change; nothing was applied';
 /** 成員類的寫入方法：一律拒絕、指向名冊流程。 */
 const MEMBER_WRITES = new Set(['allowpubkey', 'unallowpubkey', 'banpubkey', 'unbanpubkey']);
 const MEMBER_WRITE_ERROR = 'membership is managed by the signed organization roster; use cinder_applyroster (Cinderous ADR-0047/0261)';
@@ -72,7 +75,7 @@ export class Nip86Admin {
         return out;
     }
     /** 呼叫一個方法。`caller` 是已通過 NIP-98 的運維金鑰（只用於日誌）。 */
-    call(caller, method, params) {
+    call(caller, method, params, nowSec = Math.floor(Date.now() / 1000)) {
         const args = Array.isArray(params) ? params : [];
         if (MEMBER_WRITES.has(method))
             return { error: MEMBER_WRITE_ERROR };
@@ -94,16 +97,28 @@ export class Nip86Admin {
             case 'changerelaydescription':
                 return this.changeText(caller, method, 'description', args[0], NIP86_DESCRIPTION_MAX);
             case 'cinder_applyroster':
-                return this.applyRoster(caller, args[0]);
+                return this.applyRoster(caller, args[0], nowSec);
             default:
                 return { error: `unsupported method: ${method.slice(0, 64)}` };
         }
     }
-    commit(caller, method) {
-        this.opts.save?.({ ...this.state });
+    /**
+     * 先存檔、存成功才換掉記憶體裡的狀態（SDK ADR 0133）。回 `false`＝沒存成，呼叫端不得套用。
+     *
+     * 過去是先套用後存檔：存檔拋錯會變成「這次生效、重開就消失」，被移除的人重開後又寫得進。
+     */
+    persist(next, caller, method) {
+        try {
+            this.opts.save?.({ ...next });
+        }
+        catch {
+            return false;
+        }
+        this.state = next;
         this.opts.log?.(`NIP-86：${caller.slice(0, 8)} 執行 ${method}（SDK ADR 0132）`);
+        return true;
     }
-    applyRoster(caller, raw) {
+    applyRoster(caller, raw, nowSec) {
         if (this.rosterAdmin === undefined)
             return { error: 'cinder_applyroster is disabled: ROSTER_ADMIN_PUBKEY is not set' };
         if (!isEventShape(raw))
@@ -117,6 +132,11 @@ export class Nip86Admin {
         }
         if (doc === null)
             return { error: 'invalid: not a valid roster signed by the roster admin' };
+        // updatedAt 是秒（Cinderous 以 `created_at` 同值簽出）。不是非負整數、或遠在未來（多半是誤用毫秒）
+        // 一旦存進去，之後所有正常的名冊都會被當成「舊的」，只能手動改資料庫救（SDK ADR 0133）。
+        if (!Number.isInteger(doc.updatedAt) || doc.updatedAt < 0 || doc.updatedAt > nowSec + ROSTER_FUTURE_SKEW_SEC) {
+            return { error: 'invalid: roster updatedAt must be a unix time in seconds, not in the future' };
+        }
         const last = this.state.roster?.updatedAt;
         if (last !== undefined && doc.updatedAt <= last) {
             return { error: `stale: roster updatedAt ${doc.updatedAt} is not newer than the applied ${last}` };
@@ -125,10 +145,14 @@ export class Nip86Admin {
         // 全部成員都輪替作廢＝白名單是空的＝整站沒人寫得進：多半是佈建錯了，不套用
         if (allowed.length === 0)
             return { error: 'refused: the roster has no active members' };
+        // 白名單以 64 個小寫 hex 比對；別的寫法（npub、大寫）永遠比不中＝那個人寫不進。整份拒絕、讓人修好再送。
+        if (!allowed.every(isHexPubkey))
+            return { error: 'invalid: every active member pubkey must be 64 lowercase hex characters' };
+        const next = { ...this.state, roster: { updatedAt: doc.updatedAt, allowed, admin: this.rosterAdmin } };
+        if (!this.persist(next, caller, 'cinder_applyroster'))
+            return { error: PERSIST_ERROR };
         this.allowed = allowed;
-        this.state.roster = { updatedAt: doc.updatedAt, allowed };
         this.opts.apply.allowed([...allowed]);
-        this.commit(caller, 'cinder_applyroster');
         return { result: { allowed: allowed.length, updatedAt: doc.updatedAt } };
     }
     allowKind(caller, raw) {
@@ -137,9 +161,7 @@ export class Nip86Admin {
         // 沒有清單＝全部接受：本來就允許，不起建清單（SDK ADR 0132 §6）
         if (this.kinds === undefined || this.kinds.includes(raw))
             return { result: true };
-        this.setKinds([...this.kinds, raw]);
-        this.commit(caller, 'allowkind');
-        return { result: true };
+        return this.setKinds([...this.kinds, raw], caller, 'allowkind');
     }
     disallowKind(caller, raw) {
         if (!isKind(raw))
@@ -151,23 +173,75 @@ export class Nip86Admin {
             return { result: true };
         if (this.kinds.length === 1)
             return { error: 'refused: removing the last allowed kind would reject every event' };
-        this.setKinds(this.kinds.filter((k) => k !== raw));
-        this.commit(caller, 'disallowkind');
-        return { result: true };
+        return this.setKinds(this.kinds.filter((k) => k !== raw), caller, 'disallowkind');
     }
-    setKinds(list) {
+    setKinds(list, caller, method) {
+        if (!this.persist({ ...this.state, allowedKinds: [...list] }, caller, method))
+            return { error: PERSIST_ERROR };
         this.kinds = list;
-        this.state.allowedKinds = [...list];
         this.opts.apply.kinds([...list]);
+        return { result: true };
     }
     changeText(caller, method, field, raw, max) {
         if (typeof raw !== 'string' || raw.trim() === '' || [...raw].length > max) {
             return { error: `invalid: ${field} must be a non-empty string of at most ${max} characters` };
         }
-        this.state[field] = raw.trim();
-        this.commit(caller, method);
+        if (!this.persist({ ...this.state, [field]: raw.trim() }, caller, method))
+            return { error: PERSIST_ERROR };
         return { result: true };
     }
+}
+function isHexPubkey(v) {
+    return typeof v === 'string' && /^[0-9a-f]{64}$/.test(v);
+}
+/**
+ * 讀回存檔時驗結構（SDK ADR 0133）。任何一格不對就**整份不用**（回 `undefined`）：
+ * 壞掉的存檔不該變成政策——`allowed: "abc"` 會被逐字拆成三個「成員」、空的 `allowedKinds` 會讓整站拒收、
+ * 少了 `updatedAt` 會讓舊名冊重新被接受。
+ */
+export function parseNip86State(json) {
+    let raw;
+    try {
+        raw = JSON.parse(json);
+    }
+    catch {
+        return undefined;
+    }
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw))
+        return undefined;
+    const v = raw;
+    const out = {};
+    if (v.roster !== undefined) {
+        const r = v.roster;
+        if (typeof r !== 'object' || r === null)
+            return undefined;
+        if (!Number.isInteger(r.updatedAt) || r.updatedAt < 0)
+            return undefined;
+        if (!Array.isArray(r.allowed) || r.allowed.length === 0 || !r.allowed.every(isHexPubkey))
+            return undefined;
+        if (r.admin !== undefined && !isHexPubkey(r.admin))
+            return undefined;
+        out.roster = { updatedAt: r.updatedAt, allowed: [...r.allowed] };
+        if (r.admin !== undefined)
+            out.roster.admin = r.admin;
+    }
+    if (v.allowedKinds !== undefined) {
+        if (!Array.isArray(v.allowedKinds) || v.allowedKinds.length === 0 || !v.allowedKinds.every(isKind))
+            return undefined;
+        out.allowedKinds = [...v.allowedKinds];
+    }
+    for (const [field, max] of [
+        ['name', NIP86_NAME_MAX],
+        ['description', NIP86_DESCRIPTION_MAX],
+    ]) {
+        const text = v[field];
+        if (text === undefined)
+            continue;
+        if (typeof text !== 'string' || text === '' || [...text].length > max)
+            return undefined;
+        out[field] = text;
+    }
+    return out;
 }
 function isKind(v) {
     return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= KIND_MAX;
@@ -212,20 +286,40 @@ export function handleNip86Request(admin, req, nowSec = Math.floor(Date.now() / 
         return { status: 400, body: { error: 'invalid request: missing method' } };
     }
     const { method, params } = parsed;
-    return { status: 200, body: admin.call(caller, method, params) };
+    return { status: 200, body: admin.call(caller, method, params, nowSec) };
+}
+/**
+ * 讀請求內容**之前**的檢查（SDK ADR 0133）：標頭是運維金鑰簽的、還在時間窗內。
+ * 沒過就不必收內容——否則任何人都能讓伺服器替他緩衝 1 MiB。⚠ 這不是授權（沒綁網址與內容），
+ * 通過之後仍要走 {@link handleNip86Request}。
+ */
+export function nip86Precheck(admin, authorization, nowSec = Math.floor(Date.now() / 1000)) {
+    const who = httpAuthSigner(authorization, nowSec);
+    return who !== null && admin.isAdmin(who);
 }
 /** 驗 NIP-98 並確認是運維金鑰；`u` 接受 http／https、有無結尾斜線（反向代理後面分不出原本的協定）。 */
 function authorizedCaller(admin, req, nowSec) {
-    if (!req.authorization || !req.host)
+    if (!req.authorization)
         return undefined;
-    const path = req.path === '' ? '/' : req.path;
-    const paths = path === '/' ? ['/', ''] : [path, path.endsWith('/') ? path.slice(0, -1) : `${path}/`];
-    for (const scheme of ['https', 'http']) {
-        for (const p of paths) {
-            const who = verifyHttpAuth(req.authorization, `${scheme}://${req.host}${p}`, 'POST', nowSec, { payload: req.body });
-            if (who !== null)
-                return admin.isAdmin(who) ? who : undefined;
-        }
+    const urls = [];
+    if (req.publicUrl !== undefined) {
+        // 只認設定的對外網址（有無結尾斜線算同一個；協定要一樣）
+        const base = req.publicUrl.endsWith('/') ? req.publicUrl.slice(0, -1) : req.publicUrl;
+        urls.push(`${base}/`, base);
+    }
+    else {
+        if (!req.host)
+            return undefined;
+        const path = req.path === '' ? '/' : req.path;
+        const paths = path === '/' ? ['/', ''] : [path, path.endsWith('/') ? path.slice(0, -1) : `${path}/`];
+        for (const scheme of ['https', 'http'])
+            for (const p of paths)
+                urls.push(`${scheme}://${req.host}${p}`);
+    }
+    for (const url of urls) {
+        const who = verifyHttpAuth(req.authorization, url, 'POST', nowSec, { payload: req.body });
+        if (who !== null)
+            return admin.isAdmin(who) ? who : undefined;
     }
     return undefined;
 }
