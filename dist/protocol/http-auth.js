@@ -22,6 +22,8 @@
 // - **URL**：否則對 A 端點簽的可以拿去打 B 端點。
 // - **method**：否則 GET 的簽章可以拿去 POST。
 // - **時間**：否則永久可重放。
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex } from "@noble/hashes/utils.js";
 import { signWith } from "./key-ops.js";
 import { verifyEvent } from "./sign.js";
 /** NIP-98 HTTP Auth 事件 kind。 */
@@ -33,27 +35,29 @@ export const HTTP_AUTH_KIND = 27235;
  * 太鬆則放大重放窗口。60 秒是兩者的折衷。
  */
 export const HTTP_AUTH_SKEW_SEC = 60;
-/** 簽一個綁定 URL＋method＋時間的授權事件。 */
+/** 內容的 sha256（NIP-98 `payload` tag 的值）。 */
+export function httpAuthPayloadHash(payload) {
+    return bytesToHex(sha256(new TextEncoder().encode(payload)));
+}
+/** 簽一個綁定 URL＋method＋時間（＋可選的內容）的授權事件。 */
 export function buildHttpAuthEvent(url, method, 
 /** 原始私鑰或 `NostrSigner`（例如 `Identity`；SDK ADR 0023） */
-sk, nowSec = Math.floor(Date.now() / 1000)) {
-    return signWith(httpAuthTemplate(url, method, nowSec), sk);
+sk, nowSec = Math.floor(Date.now() / 1000), opts = {}) {
+    return signWith(httpAuthTemplate(url, method, nowSec, opts), sk);
 }
 /**
  * 未簽章的授權事件範本（SDK ADR 0017：從 `buildHttpAuthEvent` 抽出，
  * 讓不交出私鑰的簽章者——例如 SDK 的 `Identity`——也能簽出同一種格式）。
  */
-export function httpAuthTemplate(url, method, nowSec = Math.floor(Date.now() / 1000)) {
-    return {
-        kind: HTTP_AUTH_KIND,
-        created_at: nowSec,
-        // 大小寫正規化在**簽與驗兩側都做**，否則 "GET"／"get" 會驗不過。
-        tags: [
-            ["u", url],
-            ["method", method.toUpperCase()],
-        ],
-        content: "",
-    };
+export function httpAuthTemplate(url, method, nowSec = Math.floor(Date.now() / 1000), opts = {}) {
+    // 大小寫正規化在**簽與驗兩側都做**，否則 "GET"／"get" 會驗不過。
+    const tags = [
+        ["u", url],
+        ["method", method.toUpperCase()],
+    ];
+    if (opts.payload !== undefined)
+        tags.push(["payload", httpAuthPayloadHash(opts.payload)]);
+    return { kind: HTTP_AUTH_KIND, created_at: nowSec, tags, content: "" };
 }
 /**
  * UTF-8 安全的 base64。
@@ -119,7 +123,9 @@ function tagValue(event, name) {
  * ⚠ **回傳 `null` 不區分原因**——對外不說「是簽章壞了還是時間過期」，
  * 那對攻擊者是免費的偵錯資訊，對正常使用者也幫不上忙（他們的客戶端會自己重簽）。
  */
-export function verifyHttpAuth(header, url, method, nowSec = Math.floor(Date.now() / 1000)) {
+export function verifyHttpAuth(header, url, method, nowSec = Math.floor(Date.now() / 1000), 
+/** 給了 `payload`＝要求簽章綁定這份內容（SDK ADR 0132）；沒給＝不檢查，與之前相同 */
+opts = {}) {
     if (!header)
         return null;
     const m = /^Nostr\s+(.+)$/i.exec(header.trim());
@@ -143,6 +149,8 @@ export function verifyHttpAuth(header, url, method, nowSec = Math.floor(Date.now
     if (tagValue(event, "u") !== url)
         return null;
     if (tagValue(event, "method") !== method.toUpperCase())
+        return null;
+    if (opts.payload !== undefined && tagValue(event, "payload") !== httpAuthPayloadHash(opts.payload))
         return null;
     if (!verifyEvent(event))
         return null;

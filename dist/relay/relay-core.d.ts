@@ -199,10 +199,10 @@ export declare class RelayCore {
     private readonly rate;
     /** connId → 該時間窗內的進站訊息數與窗起點（ADR-0366 §容量）。 */
     private readonly connRate;
-    /** 企業封閉模式的發布 allowlist（hex pubkey）；undefined＝開放（ADR-0044）。 */
-    private readonly allowed;
-    /** 企業政策的事件類型 allowlist（kind）；undefined＝不限制（ADR-0048）。 */
-    private readonly allowedKinds;
+    /** 企業封閉模式的發布 allowlist（hex pubkey）；undefined＝開放（ADR-0044）。執行期可換（SDK ADR 0132）。 */
+    private allowed;
+    /** 企業政策的事件類型 allowlist（kind）；undefined＝不限制（ADR-0048）。執行期可換（SDK ADR 0132）。 */
+    private allowedKinds;
     /** connId → NIP-42 認證狀態（挑戰、已認證 pubkey、本站主機）；ADR-0057／0235 H2。 */
     private readonly authState;
     /** connId → 客戶端 IP（宿主有給才有；SDK ADR 0013） */
@@ -220,6 +220,13 @@ export declare class RelayCore {
     /** pubkey → 正在讀他自己收件匣的訂閱數（SDK ADR 0042 丟棄計數）。 */
     private readonly inboxSubs;
     constructor(opts?: RelayCoreOptions);
+    /**
+     * 執行期換掉發布白名單（SDK ADR 0132：NIP-86 `cinder_applyroster`）。之後的 AUTH 與 EVENT 照新名單判斷；
+     * 已連著、被移出名單的人下一則就寫不進。開放站換了名單就成為封閉站。
+     */
+    setAllowedAuthors(list: Iterable<string>): void;
+    /** 執行期換掉事件類型清單（SDK ADR 0132：NIP-86 `allowkind`／`disallowkind`）。 */
+    setAllowedKinds(list: Iterable<number>): void;
     private newChallenge;
     private isAuthed;
     /** 這條連線完成 NIP-42 認證了嗎（SDK ADR 0111 的診斷用：認證過的連線一律不記） */

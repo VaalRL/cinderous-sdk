@@ -9,15 +9,26 @@ export declare const HTTP_AUTH_KIND = 27235;
  * 太鬆則放大重放窗口。60 秒是兩者的折衷。
  */
 export declare const HTTP_AUTH_SKEW_SEC = 60;
-/** 簽一個綁定 URL＋method＋時間的授權事件。 */
+/**
+ * 授權事件的選項（SDK ADR 0132）。
+ *
+ * `payload`：把**請求內容**也綁進簽章（NIP-98 的 `payload` tag＝內容 UTF-8 的 sha256 小寫十六進位）。
+ * 有內容的請求（例如 NIP-86 的 POST）要帶，否則截到標頭的人在時間窗內能換掉內容重送。
+ */
+export interface HttpAuthOptions {
+    payload?: string;
+}
+/** 內容的 sha256（NIP-98 `payload` tag 的值）。 */
+export declare function httpAuthPayloadHash(payload: string): string;
+/** 簽一個綁定 URL＋method＋時間（＋可選的內容）的授權事件。 */
 export declare function buildHttpAuthEvent(url: string, method: string, 
 /** 原始私鑰或 `NostrSigner`（例如 `Identity`；SDK ADR 0023） */
-sk: SecretKeyOrSigner, nowSec?: number): NostrEvent;
+sk: SecretKeyOrSigner, nowSec?: number, opts?: HttpAuthOptions): NostrEvent;
 /**
  * 未簽章的授權事件範本（SDK ADR 0017：從 `buildHttpAuthEvent` 抽出，
  * 讓不交出私鑰的簽章者——例如 SDK 的 `Identity`——也能簽出同一種格式）。
  */
-export declare function httpAuthTemplate(url: string, method: string, nowSec?: number): EventTemplate;
+export declare function httpAuthTemplate(url: string, method: string, nowSec?: number, opts?: HttpAuthOptions): EventTemplate;
 /** 包成 `Authorization` 標頭的值。 */
 export declare function httpAuthHeader(event: NostrEvent): string;
 /**
@@ -34,5 +45,7 @@ export declare function isValidAuthEventShape(e: unknown): boolean;
  * ⚠ **回傳 `null` 不區分原因**——對外不說「是簽章壞了還是時間過期」，
  * 那對攻擊者是免費的偵錯資訊，對正常使用者也幫不上忙（他們的客戶端會自己重簽）。
  */
-export declare function verifyHttpAuth(header: string | null, url: string, method: string, nowSec?: number): string | null;
+export declare function verifyHttpAuth(header: string | null, url: string, method: string, nowSec?: number, 
+/** 給了 `payload`＝要求簽章綁定這份內容（SDK ADR 0132）；沒給＝不檢查，與之前相同 */
+opts?: HttpAuthOptions): string | null;
 //# sourceMappingURL=http-auth.d.ts.map

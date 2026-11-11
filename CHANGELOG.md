@@ -4,6 +4,12 @@ Releases are git tags; install one with `npm install github:VaalRL/cinderous-sdk
 
 每個版本是一個 git tag，安裝方式是 `npm install github:VaalRL/cinderous-sdk#vX.Y.Z`。每一版列出那一版的改動（取自 commit 紀錄）；每項改動的理由寫在它引用的 ADR 裡（[docs/adr/](docs/adr/README.md)）。
 
+## v0.88.0 — 2026-11-11
+
+- feat(relay): Node 主機的 NIP-86 管理 API，預設關（設 `NIP86_ADMIN_PUBKEYS` 才開）。NIP-98 授權並綁定內容（`payload` tag）；成員只能用 `cinder_applyroster` 送入 `ROSTER_ADMIN_PUBKEY` 簽的名冊（較新才套用，不含已輪替作廢的舊金鑰），`allowpubkey` 之類一律拒絕；名冊金鑰是運維金鑰之一就拒絕啟動；新環境變數 `ALLOWED_KINDS`，`allowkind`／`disallowkind` 只改既有清單、不刪最後一個；`changerelayname`／`changerelaydescription` 改 NIP-11；有 SQLite 檔時存在 `cinder_admin_state`、重開後蓋過環境變數；開了才在 NIP-11 宣告 86。`RelayCore` 新增 `setAllowedAuthors`、`setAllowedKinds`；轉出 `Nip86Admin`、`handleNip86Request`、`isNip86Request`、`allowedKindsFrom`。Worker 不變（ADR 0132）
+- feat(protocol): `buildHttpAuthEvent`／`httpAuthTemplate`／`verifyHttpAuth` 多一個選用的 `{ payload }`，把請求內容的 sha256 綁進 NIP-98；沒給就跟之前一樣。轉出 `httpAuthPayloadHash`（ADR 0132）
+- feat(protocol): 組織名冊（`signOrgRoster`、`verifyOrgRoster`、`rosterAllowlist`、`ORG_ROSTER_KIND` 等）自 Cinderous `packages/core` 搬進 `@cinderous/client/protocol`，行為不變（ADR 0132）
+
 ## v0.87.0 — 2026-10-30
 
 - feat(pool): 中繼以 1013 `rate-limited: reconnects`（重連太頻繁，ADR 0111）關閉時改從 60 秒起退避、連續被擋才加倍到最多 5 分鐘，那一座恢復服務或收下事件就從頭算；所有 1013 的等待多加 0～20% 抖動（中繼帶 `until` 的照它）。`RelayHealthCooldowns.reconnectLimitedMs`（預設 60 秒）。精確驗 5 分鐘的應用測試要固定 `Math.random`（ADR 0130）

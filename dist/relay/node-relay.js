@@ -5,9 +5,10 @@
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { WebSocketServer } from "ws";
-import { allowedPubkeysFrom, connectionsPerPubkeyFrom, eventsPerMinuteFrom, fileLanesMode, filePolicyFor, firstHost, guardFor, knownLanes, lanesOnlyFrom, maxConnectionsFrom, maxConnectionsPerIpFrom, laneStateOf, messagesPerMinuteFrom, messagesPerSecondPerIpFrom, nodeCapacityFrom, readOnlyLaneIds, readOnlyLanesFrom, inboxAckGraceFor, storeOptions, clientIpFrom, trustedProxyHopsFrom, } from "./host-config.js";
+import { allowedKindsFrom, allowedPubkeysFrom, connectionsPerPubkeyFrom, eventsPerMinuteFrom, fileLanesMode, filePolicyFor, firstHost, guardFor, knownLanes, lanesOnlyFrom, maxConnectionsFrom, maxConnectionsPerIpFrom, laneStateOf, messagesPerMinuteFrom, messagesPerSecondPerIpFrom, nodeCapacityFrom, readOnlyLaneIds, readOnlyLanesFrom, inboxAckGraceFor, storeOptions, clientIpFrom, trustedProxyHopsFrom, } from "./host-config.js";
 import { MessageStore } from "./message-store.js";
 import { buildRelayInfo, NIP11_HEADERS, wantsRelayInfo } from "./nip11.js";
+import { handleNip86Request, isNip86Request, Nip86Admin, NIP86_MAX_BODY_BYTES } from "./nip86.js";
 import { relayVersion } from "./version.js";
 import { closeSignalOf, RelayCore } from "./relay-core.js";
 import { SqlMessageStore } from "./sql-message-store.js";
@@ -107,7 +108,57 @@ export function startNodeRelay(env = process.env, opts = {}) {
     // 唯讀寬限期（SDK ADR 0052）：本宿主所有路徑共用一個 core，所以唯讀是**每條連線**的（連進來的路徑是唯讀車道）
     const readOnlyConns = new Map(); // connId → 車道 id
     coreOptions.readOnly = (connId) => readOnlyConns.has(connId);
+    // 事件類型清單（Cinderous ADR-0048、SDK ADR 0132）：寫錯任何一筆就在這裡丟例外、不開站。沒設＝全部接受
+    const envKinds = allowedKindsFrom(env.ALLOWED_KINDS);
+    if (envKinds)
+        coreOptions.allowedKinds = envKinds;
+    // NIP-86 管理 API（SDK ADR 0132）：設了 NIP86_ADMIN_PUBKEYS 才開；存過的狀態蓋過環境變數
+    const nip86Admins = allowedPubkeysFrom(env.NIP86_ADMIN_PUBKEYS, "NIP86_ADMIN_PUBKEYS");
+    const rosterAdmin = allowedPubkeysFrom(env.ROSTER_ADMIN_PUBKEY, "ROSTER_ADMIN_PUBKEY");
+    if (rosterAdmin !== undefined && rosterAdmin.length !== 1) {
+        db?.close();
+        throw new Error("ROSTER_ADMIN_PUBKEY 只能有一把（SDK ADR 0132）");
+    }
+    const savedNip86 = sqlExec === undefined ? undefined : loadNip86State(sqlExec);
+    if (nip86Admins === undefined && savedNip86 !== undefined) {
+        console.warn("資料庫裡有 NIP-86 存過的設定，但 NIP86_ADMIN_PUBKEYS 沒設：這次照環境變數（SDK ADR 0132）");
+    }
+    const nip86State = nip86Admins === undefined ? undefined : savedNip86;
+    if (nip86State?.roster)
+        coreOptions.allowedAuthors = nip86State.roster.allowed;
+    if (nip86State?.allowedKinds)
+        coreOptions.allowedKinds = nip86State.allowedKinds;
+    /** 目前生效的白名單（NIP-11 的 restricted_writes 跟著它） */
+    let currentAllowed = nip86State?.roster?.allowed ?? allowed;
     const core = new RelayCore(coreOptions);
+    let nip86;
+    if (nip86Admins !== undefined) {
+        if (sqlExec === undefined)
+            console.warn("純記憶體模式：NIP-86 改的設定重開就回到環境變數（SDK ADR 0132）");
+        const exec = sqlExec;
+        try {
+            nip86 = new Nip86Admin({
+                admins: nip86Admins,
+                rosterAdmin: rosterAdmin?.[0],
+                allowed: currentAllowed,
+                allowedKinds: nip86State?.allowedKinds ?? envKinds,
+                state: nip86State,
+                apply: {
+                    allowed: (list) => {
+                        core.setAllowedAuthors(list);
+                        currentAllowed = list;
+                    },
+                    kinds: (list) => core.setAllowedKinds(list),
+                },
+                save: exec === undefined ? undefined : (state) => saveNip86State(exec, state),
+                log: (line) => console.log(line),
+            });
+        }
+        catch (error) {
+            db?.close();
+            throw error;
+        }
+    }
     // 僅限車道（SDK ADR 0051）：與 Cloudflare 版同一個環境變數、同一個 `routeForPath`。本宿主沒有車道 DO，
     // 名單只當**門**用：通過的連線仍是本站唯一的嚴格政策（要 NIP-42 AUTH），不會因此變成寬鬆車道（ADR-0366 §決策 8）。
     // 沒開＝與過去完全相同（任何路徑都接受）。
@@ -133,10 +184,10 @@ export function startNodeRelay(env = process.env, opts = {}) {
         return route?.profile === "app" && route.readOnly === true ? route.laneId : undefined;
     };
     // NIP-11 文件（ADR-0260）：自架者以環境變數填站名/聯絡/贊助管道；未設的欄位不會出現。
-    // 只組一次——內容全部來自啟動時的環境，執行期不會變。
-    const relayInfo = buildRelayInfo({
-        name: env.RELAY_NAME,
-        description: env.RELAY_DESCRIPTION,
+    // 每次請求現組：NIP-86 能在執行期改站名、說明與白名單（SDK ADR 0132）。
+    const relayInfoOf = () => buildRelayInfo({
+        name: nip86?.info().name ?? env.RELAY_NAME,
+        description: nip86?.info().description ?? env.RELAY_DESCRIPTION,
         pubkey: env.RELAY_PUBKEY,
         contact: env.RELAY_CONTACT,
         // 未設或空白＝SDK 的中立預設（buildRelayInfo；SDK ADR 0019、0050）
@@ -145,7 +196,8 @@ export function startNodeRelay(env = process.env, opts = {}) {
         acceptsFiles: filePolicy.accept,
         authRequired: requireAuth,
         inboxAck: requireAuth,
-        writeRestricted: allowed !== undefined,
+        writeRestricted: currentAllowed !== undefined,
+        nip86: nip86 !== undefined,
         maxMessagesPerSecondPerIp: perIp,
         // 實際套用的值（SDK ADR 0129）；設 0 關掉時不宣告
         maxEventsPerMinute: rate ?? "off",
@@ -238,6 +290,36 @@ export function startNodeRelay(env = process.env, opts = {}) {
             res.end(JSON.stringify({ error: iotHttp.error }));
             return;
         }
+        // NIP-86 管理 API（SDK ADR 0132）：沒開＝當作一般請求，跟之前一樣
+        if (nip86 !== undefined && (req.method === "OPTIONS" || isNip86Request(req.method, req.headers["content-type"]))) {
+            if (!pathAllowed(req.url)) {
+                res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+                res.end(UNKNOWN_PATH_INFO_BODY);
+                return;
+            }
+            if (req.method === "OPTIONS") {
+                res.writeHead(204, NIP86_CORS_HEADERS);
+                res.end();
+                return;
+            }
+            const admin = nip86;
+            readBody(req, NIP86_MAX_BODY_BYTES, (body) => {
+                const host = firstHost((req.headers["x-forwarded-host"] ?? req.headers.host));
+                const out = body === undefined
+                    ? { status: 413, body: { error: "payload too large" } }
+                    : handleNip86Request(admin, {
+                        method: req.method ?? "POST",
+                        contentType: req.headers["content-type"],
+                        authorization: req.headers.authorization,
+                        body,
+                        host,
+                        path: (req.url ?? "/").split("?")[0] ?? "/",
+                    });
+                res.writeHead(out.status, { "content-type": "application/json; charset=utf-8", ...NIP86_CORS_HEADERS });
+                res.end(JSON.stringify(out.body));
+            });
+            return;
+        }
         // NIP-11（ADR-0260）：只有明確要 `application/nostr+json` 的請求拿到 JSON；其餘維持純文字 200
         // ——健康檢查靠那個 200（ADR-0089 的契約），改掉會讓部署中的站看起來像掛了。
         if (wantsRelayInfo(req.headers.accept)) {
@@ -251,6 +333,7 @@ export function startNodeRelay(env = process.env, opts = {}) {
             const readOnlyLane = readOnlyLaneOf(req.url);
             const readOnlyUntil = readOnlyLane === undefined ? undefined : readOnlyLanesFrom(env.READONLY_LANES).lanes.get(readOnlyLane);
             res.writeHead(200, NIP11_HEADERS);
+            const relayInfo = relayInfoOf();
             const base = readOnlyUntil === undefined ? relayInfo : { ...relayInfo, ...readOnlyInfo(relayInfo, readOnlyUntil) };
             res.end(JSON.stringify(meter === undefined ? base : { ...base, cinder_traffic: trafficInfo(meter, trafficBudget) }));
             return;
@@ -381,6 +464,52 @@ export function startNodeRelay(env = process.env, opts = {}) {
             db?.close();
         },
     };
+}
+/** NIP-86 回應的 CORS 標頭：網頁版的管理工具要能帶 Authorization 打進來（SDK ADR 0132） */
+const NIP86_CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type",
+};
+/** 讀完請求內容；超過上限就停止收集、回 undefined（不把整包讀進記憶體） */
+function readBody(req, max, done) {
+    const chunks = [];
+    let size = 0;
+    let finished = false;
+    const finish = (body) => {
+        if (finished)
+            return;
+        finished = true;
+        done(body);
+    };
+    req.on("data", (chunk) => {
+        size += chunk.length;
+        if (size > max) {
+            finish(undefined);
+            return;
+        }
+        if (!finished)
+            chunks.push(chunk);
+    });
+    req.on("end", () => finish(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", () => finish(undefined));
+}
+/** NIP-86 存檔的表（SDK ADR 0132）：一列 JSON，重開後蓋過環境變數 */
+function loadNip86State(exec) {
+    exec("CREATE TABLE IF NOT EXISTS cinder_admin_state (k TEXT PRIMARY KEY, v TEXT NOT NULL)");
+    const row = exec("SELECT v FROM cinder_admin_state WHERE k = ?", "nip86")[0];
+    if (row === undefined || typeof row.v !== "string")
+        return undefined;
+    try {
+        return JSON.parse(row.v);
+    }
+    catch {
+        console.warn("cinder_admin_state 的 NIP-86 設定壞了，這次照環境變數（SDK ADR 0132）");
+        return undefined;
+    }
+}
+function saveNip86State(exec, state) {
+    exec("INSERT INTO cinder_admin_state (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", "nip86", JSON.stringify(state));
 }
 /** WebSocket 收到的一則訊息有幾個位元組（`ws` 可能給 Buffer、ArrayBuffer 或分段的 Buffer 陣列） */
 function rawLength(data) {

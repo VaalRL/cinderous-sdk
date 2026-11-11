@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { generateSecretKey, getPublicKey, npubEncode } from '../../src/protocol/index.js';
-import { allowedPubkeysFrom } from '../../src/relay/host-config.js';
+import { allowedKindsFrom, allowedPubkeysFrom } from '../../src/relay/host-config.js';
 import { buildRelayInfo } from '../../src/relay/nip11.js';
 
 const alice = getPublicKey(generateSecretKey());
@@ -39,5 +39,29 @@ describe('NIP-11：白名單站要標示 restricted_writes', () => {
 
   it('沒設白名單也沒要求 AUTH → false', () => {
     expect(limitation(buildRelayInfo({})).restricted_writes).toBe(false);
+  });
+});
+
+describe('NIP-86 相關的環境變數（SDK ADR 0132）', () => {
+  it('allowedPubkeysFrom 可換錯誤訊息裡的變數名稱', () => {
+    expect(() => allowedPubkeysFrom('abc', 'NIP86_ADMIN_PUBKEYS')).toThrow(/NIP86_ADMIN_PUBKEYS 第 1 筆/);
+  });
+
+  it('allowedKindsFrom：沒設＝undefined（全部接受）；逗號空白分隔、去重', () => {
+    expect(allowedKindsFrom(undefined)).toBeUndefined();
+    expect(allowedKindsFrom(' , ')).toBeUndefined();
+    expect(allowedKindsFrom('1059, 20000 1059\n21000')).toEqual([1059, 20000, 21000]);
+  });
+
+  it('🔴 allowedKindsFrom：有一筆不是 0–65535 的整數就拒絕啟動', () => {
+    expect(() => allowedKindsFrom('1059,abc')).toThrow(/ALLOWED_KINDS 第 2 筆/);
+    expect(() => allowedKindsFrom('70000')).toThrow(/第 1 筆/);
+    expect(() => allowedKindsFrom('-1')).toThrow(/第 1 筆/);
+    expect(() => allowedKindsFrom('1.5')).toThrow(/第 1 筆/);
+  });
+
+  it('NIP-11：開了 NIP-86 才在 supported_nips 加 86', () => {
+    expect(buildRelayInfo({}).supported_nips).not.toContain(86);
+    expect(buildRelayInfo({ nip86: true }).supported_nips).toContain(86);
   });
 });

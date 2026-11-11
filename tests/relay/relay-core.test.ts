@@ -250,6 +250,31 @@ describe("RelayCore — 企業封閉模式 allowlist（ADR-0044）", () => {
     const e = signedHb(generateSecretKey());
     expect(core.handle("c", EVENT(e))[0]?.message[2]).toBe(true);
   });
+
+  /** 每次都是不同的事件（content 不同 ⇒ id 不同），免得被重放去重吃掉 */
+  let seq = 0;
+  const freshHb = (sk: Uint8Array): NostrEvent =>
+    finalizeEvent({ kind: 20000, created_at: 1700000000, tags: [], content: String(seq++) }, sk);
+
+  it("setAllowedAuthors：執行期換名單（SDK ADR 0132）——移出的人寫不進、新加的人寫得進；開放站也能變成封閉站", () => {
+    const aSk = generateSecretKey();
+    const bSk = generateSecretKey();
+    const core = new RelayCore();
+    core.setAllowedAuthors([getPublicKey(bSk)]);
+    expect(core.handle("a", EVENT(freshHb(aSk)))[0]?.message[2]).toBe(false);
+    expect(core.handle("b", EVENT(freshHb(bSk)))[0]?.message[2]).toBe(true);
+    core.setAllowedAuthors([getPublicKey(aSk)]);
+    expect(core.handle("a", EVENT(freshHb(aSk)))[0]?.message[2]).toBe(true);
+    expect(core.handle("b", EVENT(freshHb(bSk)))[0]?.message[2]).toBe(false);
+  });
+
+  it("setAllowedKinds：執行期換事件類型清單（SDK ADR 0132）", () => {
+    const sk = generateSecretKey();
+    const core = new RelayCore({ allowedKinds: [1] });
+    expect(core.handle("c", EVENT(freshHb(sk)))[0]?.message[2]).toBe(false);
+    core.setAllowedKinds([1, 20000]);
+    expect(core.handle("c", EVENT(freshHb(sk)))[0]?.message[2]).toBe(true);
+  });
 });
 
 describe("RelayCore — NIP-42 AUTH（ADR-0057）", () => {

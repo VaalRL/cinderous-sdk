@@ -643,7 +643,7 @@ this.registerEvent(this.app.vault.on('rename', (f, old) => sync.notifyLocalChang
 - **Vault 名單上的裝置能力宣告**（v0.30，ADR 0035）：`membership.declareCapabilities()` 在名單上加一筆裝置自己簽的 `{ sdk, maxRelayFileBytes }`（可再帶未來的旗標）；`membership.minCapability()` 回傳所有有效成員都支援的下限，沒有宣告的成員（≤ v0.29）一律當成舊版 16.5 MB。每次名單變動時呼叫 `coordinator.setMemberCapabilities(membership.minCapability())`——經中繼的單檔門檻變成 min(中繼上限, 成員)——之後才把 `setRelayLimits` 調過 16.5 MB。沒有 `caps` 的舊名單照收；舊版裝置略過並丟掉這一欄，不影響收斂。每台只能簽自己的能力；誇大的後果只是別台送它收不下的檔案。
 - **內容相同的檔案不再產生衝突副本**（v0.30，ADR 0035）：兩個不同的檔案搶同一個路徑、而**內容雜湊相同**時（最常見的是新裝置帶著已經有的筆記加入），協調器把輸的那個收斂進留下的那個（確定性的刪除版本、磁碟那一份改記在留下的名下、不動磁碟），不再改名成衝突副本。內容不同仍照舊產生副本。與 ≤ v0.29 的裝置混用時也收斂到同一個檔案。
 
-安裝：從公開的 GitHub repo 以 git 相依安裝，釘住 tag：`npm install github:VaalRL/cinderous-sdk#v0.87.0`（[ADR 0110](docs/adr/0110-public-github-repo-not-npm.md)）。
+安裝：從公開的 GitHub repo 以 git 相依安裝，釘住 tag：`npm install github:VaalRL/cinderous-sdk#v0.88.0`（[ADR 0110](docs/adr/0110-public-github-repo-not-npm.md)）。
 
 > ⚠ **沒有發布到 npm。** npm 上的 `@cinderous` 範圍是不相關的帳號，npm 上任何 `@cinderous/*` 套件都**不是我們發布的**。一律用 GitHub 網址加 tag，並保留 lockfile；不要寫成 `"@cinderous/client": "^0.76.1"` 這種版號範圍，npm 會去 registry 找。
 
@@ -806,6 +806,8 @@ npx cinderous relay deploy \
 | `--developer-docs-url` | | 無 | cloudflare：連線被拒時附上的開發文件網址（https）。 |
 | `--relay-software-url` | | SDK 的 repo | NIP-11 `software`（https）：改過中繼程式時指向修改後的原始碼（AGPL §13）。 |
 | `--config` | `-c` | 無 | 改用 `cinderous.config.json` 部署（只能再加 `--output-env`、`--dry-run`）。 |
+
+**Node 主機的 NIP-86 管理 API（SDK ADR 0132）。** 預設關。設了 `NIP86_ADMIN_PUBKEYS`（運維金鑰，npub 或 hex）才在中繼網址收 `Content-Type: application/nostr+json+rpc` 的 `POST`，以 NIP-98 授權、必須帶 `payload` tag。成員只能用 `cinder_applyroster` 改：送入 `ROSTER_ADMIN_PUBKEY` 簽的組織名冊，比上次新才套用；`allowpubkey`／`banpubkey` 一律拒絕。名冊金鑰不能是運維金鑰之一，否則拒絕啟動。新的 `ALLOWED_KINDS` 設事件類型清單；`allowkind`／`disallowkind` 只改既有清單、不刪最後一個。`changerelayname`／`changerelaydescription` 改 NIP-11。有 SQLite 檔時改過的設定重開後還在、蓋過環境變數。Cloudflare Worker 不提供。
 
 **反覆重連限速（SDK ADR 0111、0131）。** 主平面（`/`、`/s/<n>`、`/presence`；車道不套）的每顆 Durable Object 在記憶體裡以來源 IP 計算「沒認證就斷線」的連線：10 分鐘內滿 20 條，就擋那個 IP 10 分鐘。認證過的連線只算進所有升級的總上限（預設 10 分鐘 60 次，第一個數字的 3 倍），所以共用 IP 後面很多人一起重連不會被擋。用 `RECONNECT_GUARD=<次數>/<窗口秒>/<封鎖秒>[/<總上限>]` 調整，`off` 關掉。被擋的升級收到 `rate-limited: too many reconnects…` 的 NOTICE，以 1013 關閉，用戶端會退避。在 `wrangler.toml` 加一個名為 `STRICT_UPGRADE_LIMIT` 的 Cloudflare 限速 binding，Worker 會在碰到 Durable Object 之前再以「IP＋分片」限速；部署工具不會幫你加。`DIAG_UNAUTH_LOG=1` 會替每條沒認證就斷線的主平面連線印一行：訊息動詞、訂閱的 kind、中繼的回覆、存活秒數、關閉碼。不記內容、公鑰、IP；預設關閉。
 

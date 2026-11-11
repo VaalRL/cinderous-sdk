@@ -651,5 +651,11 @@ export declare const PRD_MAX_MESSAGES_PER_SECOND_PER_IP = 20;
  * 🔴 **有一筆寫錯就丟例外、整座站拒絕啟動**：略過壞的那筆，那個人會被擋在門外而站方不知道為什麼；
  * 把整份當沒設，更糟——私人站默默變成開放中繼。兩種都不會報錯，所以寧可開不起來。
  */
-export declare function allowedPubkeysFrom(raw: string | undefined): string[] | undefined;
+export declare function allowedPubkeysFrom(raw: string | undefined, label?: string): string[] | undefined;
+/**
+ * 事件類型清單（`ALLOWED_KINDS`；Cinderous ADR-0048、SDK ADR 0132）：只轉發／儲存這些 kind。
+ * 沒設＝undefined（全部接受，與之前相同）。🔴 有一筆不是 0–65535 的整數就丟例外、不開站
+ *（同 `allowedPubkeysFrom`：默默略過會讓那類事件莫名被拒）。
+ */
+export declare function allowedKindsFrom(raw: string | undefined): number[] | undefined;
 //# sourceMappingURL=host-config.d.ts.map

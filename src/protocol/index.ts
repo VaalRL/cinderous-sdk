@@ -27,3 +27,4 @@ export * from './video-quality.js';
 export * from './turn-fetch.js';
 export * from './signer.js';
 export * from './relay-reject.js';
+export * from './org-roster.js'; // SDK ADR 0132：企業名冊（自 Cinderous 搬來）

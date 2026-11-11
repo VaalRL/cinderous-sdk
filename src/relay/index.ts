@@ -14,5 +14,6 @@ export * from './relay-core.js';
 export * from './reject-messages.js';
 export * from './host-config.js';
 export * from './nip11.js';
+export * from './nip86.js';
 export * from './shard.js';
 export * from './version.js';

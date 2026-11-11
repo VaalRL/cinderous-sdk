@@ -933,7 +933,7 @@ const HEX_PUBKEY = /^[0-9a-f]{64}$/;
  * 🔴 **有一筆寫錯就丟例外、整座站拒絕啟動**：略過壞的那筆，那個人會被擋在門外而站方不知道為什麼；
  * 把整份當沒設，更糟——私人站默默變成開放中繼。兩種都不會報錯，所以寧可開不起來。
  */
-export function allowedPubkeysFrom(raw) {
+export function allowedPubkeysFrom(raw, label = "ALLOWED_PUBKEYS") {
     const entries = (raw ?? "").split(/[\s,]+/).filter((entry) => entry.length > 0);
     if (entries.length === 0)
         return undefined;
@@ -947,9 +947,28 @@ export function allowedPubkeysFrom(raw) {
             hex = undefined;
         }
         if (hex === undefined || !HEX_PUBKEY.test(hex)) {
-            throw new Error(`ALLOWED_PUBKEYS 第 ${index + 1} 筆不是有效的 npub 或 64 字元 hex 公鑰：${entry}`);
+            throw new Error(`${label} 第 ${index + 1} 筆不是有效的 npub 或 64 字元 hex 公鑰：${entry}`);
         }
         out.add(hex);
+    });
+    return [...out];
+}
+/**
+ * 事件類型清單（`ALLOWED_KINDS`；Cinderous ADR-0048、SDK ADR 0132）：只轉發／儲存這些 kind。
+ * 沒設＝undefined（全部接受，與之前相同）。🔴 有一筆不是 0–65535 的整數就丟例外、不開站
+ *（同 `allowedPubkeysFrom`：默默略過會讓那類事件莫名被拒）。
+ */
+export function allowedKindsFrom(raw) {
+    const entries = (raw ?? "").split(/[\s,]+/).filter((entry) => entry.length > 0);
+    if (entries.length === 0)
+        return undefined;
+    const out = new Set();
+    entries.forEach((entry, index) => {
+        const kind = /^\d+$/.test(entry) ? Number(entry) : Number.NaN;
+        if (!Number.isInteger(kind) || kind < 0 || kind > 65535) {
+            throw new Error(`ALLOWED_KINDS 第 ${index + 1} 筆不是 0–65535 的整數：${entry}`);
+        }
+        out.add(kind);
     });
     return [...out];
 }

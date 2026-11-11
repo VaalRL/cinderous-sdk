@@ -23,6 +23,9 @@
 // - **method**：否則 GET 的簽章可以拿去 POST。
 // - **時間**：否則永久可重放。
 
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex } from "@noble/hashes/utils.js";
+
 import type { EventTemplate, NostrEvent } from "./event.js";
 import { signWith } from "./key-ops.js";
 import { verifyEvent } from "./sign.js";
@@ -39,32 +42,50 @@ export const HTTP_AUTH_KIND = 27235;
  */
 export const HTTP_AUTH_SKEW_SEC = 60;
 
-/** 簽一個綁定 URL＋method＋時間的授權事件。 */
+/**
+ * 授權事件的選項（SDK ADR 0132）。
+ *
+ * `payload`：把**請求內容**也綁進簽章（NIP-98 的 `payload` tag＝內容 UTF-8 的 sha256 小寫十六進位）。
+ * 有內容的請求（例如 NIP-86 的 POST）要帶，否則截到標頭的人在時間窗內能換掉內容重送。
+ */
+export interface HttpAuthOptions {
+  payload?: string;
+}
+
+/** 內容的 sha256（NIP-98 `payload` tag 的值）。 */
+export function httpAuthPayloadHash(payload: string): string {
+  return bytesToHex(sha256(new TextEncoder().encode(payload)));
+}
+
+/** 簽一個綁定 URL＋method＋時間（＋可選的內容）的授權事件。 */
 export function buildHttpAuthEvent(
   url: string,
   method: string,
   /** 原始私鑰或 `NostrSigner`（例如 `Identity`；SDK ADR 0023） */
   sk: SecretKeyOrSigner,
   nowSec: number = Math.floor(Date.now() / 1000),
+  opts: HttpAuthOptions = {},
 ): NostrEvent {
-  return signWith(httpAuthTemplate(url, method, nowSec), sk);
+  return signWith(httpAuthTemplate(url, method, nowSec, opts), sk);
 }
 
 /**
  * 未簽章的授權事件範本（SDK ADR 0017：從 `buildHttpAuthEvent` 抽出，
  * 讓不交出私鑰的簽章者——例如 SDK 的 `Identity`——也能簽出同一種格式）。
  */
-export function httpAuthTemplate(url: string, method: string, nowSec: number = Math.floor(Date.now() / 1000)): EventTemplate {
-  return {
-    kind: HTTP_AUTH_KIND,
-    created_at: nowSec,
-    // 大小寫正規化在**簽與驗兩側都做**，否則 "GET"／"get" 會驗不過。
-    tags: [
-      ["u", url],
-      ["method", method.toUpperCase()],
-    ],
-    content: "",
-  };
+export function httpAuthTemplate(
+  url: string,
+  method: string,
+  nowSec: number = Math.floor(Date.now() / 1000),
+  opts: HttpAuthOptions = {},
+): EventTemplate {
+  // 大小寫正規化在**簽與驗兩側都做**，否則 "GET"／"get" 會驗不過。
+  const tags: string[][] = [
+    ["u", url],
+    ["method", method.toUpperCase()],
+  ];
+  if (opts.payload !== undefined) tags.push(["payload", httpAuthPayloadHash(opts.payload)]);
+  return { kind: HTTP_AUTH_KIND, created_at: nowSec, tags, content: "" };
 }
 
 /**
@@ -132,6 +153,8 @@ export function verifyHttpAuth(
   url: string,
   method: string,
   nowSec: number = Math.floor(Date.now() / 1000),
+  /** 給了 `payload`＝要求簽章綁定這份內容（SDK ADR 0132）；沒給＝不檢查，與之前相同 */
+  opts: HttpAuthOptions = {},
 ): string | null {
   if (!header) return null;
   const m = /^Nostr\s+(.+)$/i.exec(header.trim());
@@ -151,6 +174,7 @@ export function verifyHttpAuth(
   if (Math.abs(nowSec - event.created_at) > HTTP_AUTH_SKEW_SEC) return null;
   if (tagValue(event, "u") !== url) return null;
   if (tagValue(event, "method") !== method.toUpperCase()) return null;
+  if (opts.payload !== undefined && tagValue(event, "payload") !== httpAuthPayloadHash(opts.payload)) return null;
   if (!verifyEvent(event)) return null;
 
   return event.pubkey;

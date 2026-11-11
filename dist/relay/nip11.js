@@ -79,7 +79,7 @@ export function buildRelayInfo(cfg = {}) {
             "Cinderous 中繼站：只轉發密文的 Nostr relay（Ephemeral 純轉發、NIP-40 有界保留）。",
         pubkey: cfg.pubkey,
         contact: cfg.contact,
-        supported_nips: [...SUPPORTED_NIPS],
+        supported_nips: cfg.nip86 === true ? [...SUPPORTED_NIPS, 86] : [...SUPPORTED_NIPS],
         // 這座站跑的是 SDK 的中繼程式（SDK ADR 0007）：軟體來源就是 SDK
         software: cfg.software ?? "https://github.com/VaalRL/cinderous-sdk",
         version: cfg.version,

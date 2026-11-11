@@ -68,9 +68,9 @@ export class RelayCore {
     rate = new Map();
     /** connId → 該時間窗內的進站訊息數與窗起點（ADR-0366 §容量）。 */
     connRate = new Map();
-    /** 企業封閉模式的發布 allowlist（hex pubkey）；undefined＝開放（ADR-0044）。 */
+    /** 企業封閉模式的發布 allowlist（hex pubkey）；undefined＝開放（ADR-0044）。執行期可換（SDK ADR 0132）。 */
     allowed;
-    /** 企業政策的事件類型 allowlist（kind）；undefined＝不限制（ADR-0048）。 */
+    /** 企業政策的事件類型 allowlist（kind）；undefined＝不限制（ADR-0048）。執行期可換（SDK ADR 0132）。 */
     allowedKinds;
     /** connId → NIP-42 認證狀態（挑戰、已認證 pubkey、本站主機）；ADR-0057／0235 H2。 */
     authState = new Map();
@@ -95,6 +95,17 @@ export class RelayCore {
         this.requireAuth = opts.requireAuth === true;
         // 丟棄計數：正在線上收自己收件匣的人，他的留言被刪掉不算丟棄（SDK ADR 0042）
         opts.store?.setInboxProbe?.((recipient) => this.inboxSubs.has(recipient));
+    }
+    /**
+     * 執行期換掉發布白名單（SDK ADR 0132：NIP-86 `cinder_applyroster`）。之後的 AUTH 與 EVENT 照新名單判斷；
+     * 已連著、被移出名單的人下一則就寫不進。開放站換了名單就成為封閉站。
+     */
+    setAllowedAuthors(list) {
+        this.allowed = new Set(list);
+    }
+    /** 執行期換掉事件類型清單（SDK ADR 0132：NIP-86 `allowkind`／`disallowkind`）。 */
+    setAllowedKinds(list) {
+        this.allowedKinds = new Set(list);
     }
     newChallenge() {
         return (this.opts.authChallenge ?? (() => crypto.randomUUID()))();

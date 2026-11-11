@@ -121,3 +121,34 @@ describe("非 ASCII 端點（審查發現 #5）", () => {
     expect(verifyHttpAuth(h, "https://別的.example/turn", "GET", now)).toBeNull();
   });
 });
+
+describe("綁定請求內容（NIP-98 payload tag；SDK ADR 0132 的 NIP-86 用）", () => {
+  const sk = generateSecretKey();
+  const pk = getPublicKey(sk);
+  const now = 1_000_000;
+  const body = JSON.stringify({ method: "supportedmethods", params: [] });
+  const signed = (payload?: string) =>
+    httpAuthHeader(buildHttpAuthEvent(URL_A, "POST", sk, now, payload === undefined ? {} : { payload }));
+
+  it("簽的時候帶內容 → 驗的時候帶同一份內容就通過", () => {
+    expect(verifyHttpAuth(signed(body), URL_A, "POST", now, { payload: body })).toBe(pk);
+  });
+
+  it("內容被換掉 → 拒絕", () => {
+    expect(verifyHttpAuth(signed(body), URL_A, "POST", now, { payload: body + " " })).toBeNull();
+  });
+
+  it("要求綁定內容、但簽章沒帶 payload tag → 拒絕", () => {
+    expect(verifyHttpAuth(signed(), URL_A, "POST", now, { payload: body })).toBeNull();
+  });
+
+  it("沒要求綁定內容 → 有沒有 payload tag 都照舊通過（既有呼叫端不受影響）", () => {
+    expect(verifyHttpAuth(signed(body), URL_A, "POST", now)).toBe(pk);
+    expect(verifyHttpAuth(signed(), URL_A, "POST", now)).toBe(pk);
+  });
+
+  it("payload tag 是內容 UTF-8 的 sha256 小寫十六進位", () => {
+    const ev = buildHttpAuthEvent(URL_A, "POST", sk, now, { payload: "中文" });
+    expect(ev.tags.find((t) => t[0] === "payload")?.[1]).toBe("72726d8818f693066ceb69afa364218b692e62ea92b385782363780f47529c21");
+  });
+});

@@ -48,6 +48,8 @@ export interface Nip11Config {
     inboxAck?: boolean | undefined;
     /** 設了白名單（`ALLOWED_PUBKEYS`）：只有名單上的人能寫入（SDK ADR 0008）。 */
     writeRestricted?: boolean | undefined;
+    /** 開了 NIP-86 管理 API（只有 Node 主機、設了 `NIP86_ADMIN_PUBKEYS`；SDK ADR 0132）：`supported_nips` 加 86。 */
+    nip86?: boolean | undefined;
     /**
      * 本路徑在唯讀寬限期內（SDK ADR 0052）：到期時間（unix 秒）。有值時 `restricted_writes: true`、
      * `cinder_read_only_until` 宣告到期時間；宿主同時把 `acceptsFiles` 設成 false（寫入一律被拒，客戶端不必試）。
