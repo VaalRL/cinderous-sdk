@@ -11,6 +11,7 @@ import { buildRelayInfo, NIP11_HEADERS, wantsRelayInfo } from "./nip11.js";
 import { handleNip86Request, isNip86Request, Nip86Admin, NIP86_MAX_BODY_BYTES, nip86Precheck, parseNip86State, } from "./nip86.js";
 import { relayVersion } from "./version.js";
 import { closeSignalOf, RelayCore } from "./relay-core.js";
+import { ORG_ROSTER_KIND } from "../protocol/index.js";
 import { SqlMessageStore } from "./sql-message-store.js";
 import { trafficNearFullWarning, trafficQuotaRejection, UNKNOWN_PATH_INFO_BODY, UPGRADE_REJECT_CLOSE_CODE, UPGRADE_UNAVAILABLE_CLOSE_CODE, upgradeCloseCode, upgradeRejection, } from "./reject-messages.js";
 import { TRAFFIC_FLUSH_MS, trafficBudgetFrom, TrafficMeter } from "./traffic-budget.js";
@@ -137,12 +138,23 @@ export function startNodeRelay(env = process.env, opts = {}) {
     }
     const savedNip86 = sqlExec === undefined ? undefined : loadNip86State(sqlExec);
     if (nip86Admins === undefined && savedNip86 !== undefined) {
-        console.warn("資料庫裡有 NIP-86 存過的設定，但 NIP86_ADMIN_PUBKEYS 沒設：這次照環境變數（SDK ADR 0132）");
+        const otherThanRoster = savedNip86.allowedKinds !== undefined || savedNip86.name !== undefined || savedNip86.description !== undefined;
+        if (rosterAdmin === undefined) {
+            console.warn("資料庫裡有 NIP-86 存過的設定，但 NIP86_ADMIN_PUBKEYS 沒設：這次照環境變數（SDK ADR 0132）");
+        }
+        else if (otherThanRoster) {
+            console.warn("NIP86_ADMIN_PUBKEYS 沒設：只沿用存過的名冊，事件類型、站名與說明照環境變數（SDK ADR 0134）");
+        }
     }
     if (nip86Admins !== undefined && nip86PublicUrl === undefined) {
         console.warn("NIP-86 開著但沒設 NIP86_PUBLIC_URL：請求的簽章只綁到對方送來的 Host 標頭。同一把運維金鑰管不只一座站、或前面有反向代理時請設定它（SDK ADR 0133）");
     }
-    let nip86State = nip86Admins === undefined ? undefined : savedNip86;
+    // 名冊自動套用（SDK ADR 0134）只需要 ROSTER_ADMIN_PUBKEY：管理 API 沒開時只沿用存過的名冊
+    let nip86State = nip86Admins !== undefined
+        ? savedNip86
+        : rosterAdmin !== undefined && savedNip86?.roster !== undefined
+            ? { roster: savedNip86.roster }
+            : undefined;
     // 存過的名冊只在「同一把名冊金鑰還設著」時生效（SDK ADR 0133）：拿掉或換掉 ROSTER_ADMIN_PUBKEY
     // ＝回到環境變數的 ALLOWED_PUBKEYS。否則站方想用環境變數踢人會毫無效果，而且沒有任何管道能改回來。
     if (nip86State?.roster) {
@@ -166,24 +178,46 @@ export function startNodeRelay(env = process.env, opts = {}) {
         coreOptions.allowedAuthors = nip86State.roster.allowed;
     if (nip86State?.allowedKinds)
         coreOptions.allowedKinds = nip86State.allowedKinds;
+    // 名冊金鑰永遠寫得進（SDK ADR 0134）：否則它簽的下一份名冊會被白名單擋在門外，自動套用只能用一次。
+    // 它本來就能把自己加進名冊，所以這不多給任何權力。
+    const rosterSigner = rosterAdmin?.[0];
+    const withRosterAdmin = (list) => {
+        const out = [...list];
+        if (rosterSigner !== undefined && !out.includes(rosterSigner))
+            out.push(rosterSigner);
+        return out;
+    };
+    if (coreOptions.allowedAuthors !== undefined)
+        coreOptions.allowedAuthors = withRosterAdmin(coreOptions.allowedAuthors);
+    // 名冊金鑰簽的名冊發到這座站 → 直接套用（SDK ADR 0134）。照一般流程存檔與扇出（客戶端也要收到）。
+    if (rosterSigner !== undefined) {
+        coreOptions.intercept = (_connId, event) => {
+            if (event.kind === ORG_ROSTER_KIND && event.pubkey === rosterSigner && nip86 !== undefined) {
+                const r = nip86.applyRosterEvent(event);
+                if ("error" in r && !r.error.startsWith("stale:"))
+                    console.warn(`收到名冊金鑰簽的名冊，但沒有套用：${r.error}（SDK ADR 0134）`);
+            }
+            return undefined;
+        };
+    }
     /** 目前生效的白名單（NIP-11 的 restricted_writes 跟著它） */
     let currentAllowed = nip86State?.roster?.allowed ?? allowed;
     const core = new RelayCore(coreOptions);
     let nip86;
-    if (nip86Admins !== undefined) {
+    if (nip86Admins !== undefined || rosterAdmin !== undefined) {
         if (sqlExec === undefined)
-            console.warn("純記憶體模式：NIP-86 改的設定重開就回到環境變數（SDK ADR 0132）");
+            console.warn("純記憶體模式：NIP-86 或名冊改的設定重開就回到環境變數（SDK ADR 0132／0134）");
         const exec = sqlExec;
         try {
             nip86 = new Nip86Admin({
-                admins: nip86Admins,
+                admins: nip86Admins ?? [],
                 rosterAdmin: rosterAdmin?.[0],
                 allowed: currentAllowed,
                 allowedKinds: nip86State?.allowedKinds ?? envKinds,
                 state: nip86State,
                 apply: {
                     allowed: (list) => {
-                        core.setAllowedAuthors(list);
+                        core.setAllowedAuthors(withRosterAdmin(list));
                         currentAllowed = list;
                     },
                     kinds: (list) => core.setAllowedKinds(list),
@@ -235,7 +269,7 @@ export function startNodeRelay(env = process.env, opts = {}) {
         authRequired: requireAuth,
         inboxAck: requireAuth,
         writeRestricted: currentAllowed !== undefined,
-        nip86: nip86 !== undefined,
+        nip86: nip86 !== undefined && nip86Admins !== undefined,
         maxMessagesPerSecondPerIp: perIp,
         // 實際套用的值（SDK ADR 0129）；設 0 關掉時不宣告
         maxEventsPerMinute: rate ?? "off",
@@ -329,7 +363,8 @@ export function startNodeRelay(env = process.env, opts = {}) {
             return;
         }
         // NIP-86 管理 API（SDK ADR 0132）：沒開＝當作一般請求，跟之前一樣
-        if (nip86 !== undefined && (req.method === "OPTIONS" || isNip86Request(req.method, req.headers["content-type"]))) {
+        // 只設了 ROSTER_ADMIN_PUBKEY（名冊自動套用，SDK ADR 0134）時沒有運維金鑰＝不開這個端點
+        if (nip86 !== undefined && nip86Admins !== undefined && (req.method === "OPTIONS" || isNip86Request(req.method, req.headers["content-type"]))) {
             if (!pathAllowed(req.url)) {
                 res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
                 res.end(UNKNOWN_PATH_INFO_BODY);

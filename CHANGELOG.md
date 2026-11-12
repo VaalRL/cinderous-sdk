@@ -4,6 +4,10 @@ Releases are git tags; install one with `npm install github:VaalRL/cinderous-sdk
 
 每個版本是一個 git tag，安裝方式是 `npm install github:VaalRL/cinderous-sdk#vX.Y.Z`。每一版列出那一版的改動（取自 commit 紀錄）；每項改動的理由寫在它引用的 ADR 裡（[docs/adr/](docs/adr/README.md)）。
 
+## v0.89.0 — 2026-11-12
+
+- feat(relay): 名冊事件自動套用。自架 Node 中繼收到 `ROSTER_ADMIN_PUBKEY` 簽的名冊事件（kind 10038）就直接換成員，檢查與 `cinder_applyroster` 相同（驗簽、比上次新、`updatedAt` 是秒、成員 pubkey 是 64 個小寫 hex、先存檔後生效）；事件照常存檔與扇出。只設 `ROSTER_ADMIN_PUBKEY`、不開 NIP-86 管理 API 也能用——管理者不必經手運維金鑰。名冊金鑰一定寫得進這座站（加進生效中的白名單），否則它簽的下一份名冊會被擋。沒開管理 API 時不開 HTTP 端點、NIP-11 不宣告 86，存檔只沿用名冊。新增 `Nip86Admin.applyRosterEvent`（ADR 0134）
+
 ## v0.88.1 — 2026-11-11
 
 - fix(relay): NIP-86 管理 API 的補強（發版後獨立審查）。新環境變數 `NIP86_PUBLIC_URL`：設了就只認簽給它的請求，寫錯拒絕啟動，沒設啟動時警告；**不再信任 `X-Forwarded-Host`**（反向代理後面的站要設 `NIP86_PUBLIC_URL`）。先驗標頭是不是運維金鑰簽的才收請求內容，沒過回 401 並切斷連線；`Content-Length` 超過上限直接 413。先存檔、存成功才生效，存不進去回錯誤、不套用；請求處理的例外回 500，不讓程序結束。`cinder_applyroster` 拒絕 `updatedAt` 不是秒或遠在未來的名冊、以及成員 pubkey 不是 64 個小寫 hex 的名冊。存過的名冊記下簽它的名冊金鑰：`ROSTER_ADMIN_PUBKEY` 拿掉或換掉後不再生效、回到 `ALLOWED_PUBKEYS`；存檔蓋過不同的 `ALLOWED_PUBKEYS`／`ALLOWED_KINDS` 時啟動會警告。讀回存檔時驗結構，不對就整份不用。轉出 `nip86Precheck`、`parseNip86State`（ADR 0133）

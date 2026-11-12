@@ -67,6 +67,13 @@ export declare class Nip86Admin {
     /** 呼叫一個方法。`caller` 是已通過 NIP-98 的運維金鑰（只用於日誌）。 */
     call(caller: string, method: string, params: unknown, nowSec?: number): Nip86Response;
     /**
+     * 名冊金鑰簽的名冊事件**發到了這座中繼**：照 `cinder_applyroster` 同一套檢查套用（SDK ADR 0134）。
+     *
+     * 不需要運維金鑰：權威本來就是名冊的簽章（Cinderous ADR-0047），運維金鑰只是另一條送達管道。
+     * 舊的、重送的名冊回 `stale:` 錯誤（客戶端重新發布同一份名冊是常態，宿主不必當成問題）。
+     */
+    applyRosterEvent(event: unknown, nowSec?: number): Nip86Response;
+    /**
      * 先存檔、存成功才換掉記憶體裡的狀態（SDK ADR 0133）。回 `false`＝沒存成，呼叫端不得套用。
      *
      * 過去是先套用後存檔：存檔拋錯會變成「這次生效、重開就消失」，被移除的人重開後又寫得進。

@@ -55,7 +55,7 @@ describe('Nip86Admin：建構', () => {
   });
 
   it('沒有任何運維金鑰 → 拒絕（沒人能用的端點不該存在）', () => {
-    expect(() => make({ admins: [] })).toThrow(/NIP86_ADMIN_PUBKEYS/);
+    expect(() => make({ admins: [], rosterAdmin: undefined })).toThrow(/NIP86_ADMIN_PUBKEYS/);
   });
 });
 

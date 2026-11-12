@@ -7,6 +7,11 @@
 // 3. 事件類型只改**已存在**的清單：不從空清單起建（一行指令讓整站只收一種事件）、不刪最後一個。
 //
 // 純邏輯、無 I/O：套用（換掉 RelayCore 的 Set）、存檔、日誌都由宿主以回呼注入。
+//
+// 名冊有兩條送達管道，檢查完全相同（SDK ADR 0134）：
+//   - 運維金鑰呼叫 `cinder_applyroster`；
+//   - 名冊金鑰把名冊事件直接發到這座中繼（`applyRosterEvent`，宿主在收到事件時呼叫）。
+//     只設 `ROSTER_ADMIN_PUBKEY`、不開管理 API 也能用——管理者不必經手運維金鑰。
 import {
   httpAuthSigner,
   type NostrEvent,
@@ -76,7 +81,11 @@ export class Nip86Admin {
 
   constructor(private readonly opts: Nip86Options) {
     this.admins = new Set(opts.admins);
-    if (this.admins.size === 0) throw new Error('NIP86_ADMIN_PUBKEYS 是空的：沒有人能用的管理端點不該開（SDK ADR 0132）');
+    // 沒有運維金鑰時只剩「名冊事件自動套用」（SDK ADR 0134），那至少要有名冊金鑰。
+    // 宿主在這種情況下不開 HTTP 端點（沒人能用的端點不該存在）。
+    if (this.admins.size === 0 && opts.rosterAdmin === undefined) {
+      throw new Error('NIP86_ADMIN_PUBKEYS 是空的：沒有人能用的管理端點不該開（SDK ADR 0132）');
+    }
     this.rosterAdmin = opts.rosterAdmin;
     if (this.rosterAdmin !== undefined && this.admins.has(this.rosterAdmin)) {
       throw new Error('ROSTER_ADMIN_PUBKEY 不能同時是運維金鑰（NIP86_ADMIN_PUBKEYS）：名冊金鑰是成員權威，要分開保管（SDK ADR 0132 §5）');
@@ -144,6 +153,16 @@ export class Nip86Admin {
   }
 
   /**
+   * 名冊金鑰簽的名冊事件**發到了這座中繼**：照 `cinder_applyroster` 同一套檢查套用（SDK ADR 0134）。
+   *
+   * 不需要運維金鑰：權威本來就是名冊的簽章（Cinderous ADR-0047），運維金鑰只是另一條送達管道。
+   * 舊的、重送的名冊回 `stale:` 錯誤（客戶端重新發布同一份名冊是常態，宿主不必當成問題）。
+   */
+  applyRosterEvent(event: unknown, nowSec: number = Math.floor(Date.now() / 1000)): Nip86Response {
+    return this.applyRoster(this.rosterAdmin ?? '', event, nowSec, 'cinder_applyroster（名冊事件自動套用）');
+  }
+
+  /**
    * 先存檔、存成功才換掉記憶體裡的狀態（SDK ADR 0133）。回 `false`＝沒存成，呼叫端不得套用。
    *
    * 過去是先套用後存檔：存檔拋錯會變成「這次生效、重開就消失」，被移除的人重開後又寫得進。
@@ -159,7 +178,7 @@ export class Nip86Admin {
     return true;
   }
 
-  private applyRoster(caller: string, raw: unknown, nowSec: number): Nip86Response {
+  private applyRoster(caller: string, raw: unknown, nowSec: number, via = 'cinder_applyroster'): Nip86Response {
     if (this.rosterAdmin === undefined) return { error: 'cinder_applyroster is disabled: ROSTER_ADMIN_PUBKEY is not set' };
     if (!isEventShape(raw)) return { error: 'invalid: expected a signed roster event' };
     let doc: ReturnType<typeof verifyOrgRoster>;
@@ -184,7 +203,7 @@ export class Nip86Admin {
     // 白名單以 64 個小寫 hex 比對；別的寫法（npub、大寫）永遠比不中＝那個人寫不進。整份拒絕、讓人修好再送。
     if (!allowed.every(isHexPubkey)) return { error: 'invalid: every active member pubkey must be 64 lowercase hex characters' };
     const next: Nip86State = { ...this.state, roster: { updatedAt: doc.updatedAt, allowed, admin: this.rosterAdmin } };
-    if (!this.persist(next, caller, 'cinder_applyroster')) return { error: PERSIST_ERROR };
+    if (!this.persist(next, caller, via)) return { error: PERSIST_ERROR };
     this.allowed = allowed;
     this.opts.apply.allowed([...allowed]);
     return { result: { allowed: allowed.length, updatedAt: doc.updatedAt } };
