@@ -12,7 +12,7 @@
 //   - 運維金鑰呼叫 `cinder_applyroster`；
 //   - 名冊金鑰把名冊事件直接發到這座中繼（`applyRosterEvent`，宿主在收到事件時呼叫）。
 //     只設 `ROSTER_ADMIN_PUBKEY`、不開管理 API 也能用——管理者不必經手運維金鑰。
-import { httpAuthSigner, rosterAllowlist, verifyHttpAuth, verifyOrgRoster, } from '../protocol/index.js';
+import { httpAuthSigner, rosterAllowlist, verifyHttpAuth, verifyOrgRoster, rosterSigners, } from '../protocol/index.js';
 /** NIP-86 請求的 Content-Type。 */
 export const NIP86_CONTENT_TYPE = 'application/nostr+json+rpc';
 /** 請求內容上限（位元組）：一千人的名冊約 100 KiB，留十倍。 */
@@ -52,6 +52,13 @@ export class Nip86Admin {
         this.allowed = opts.allowed === undefined ? undefined : [...opts.allowed];
         this.kinds = opts.allowedKinds === undefined ? undefined : [...opts.allowedKinds];
         this.state = { ...(opts.state ?? {}) };
+    }
+    /**
+     * 現在可以簽名冊的 pubkey（擁有者在前，再接共同管理者；SDK ADR 0135）。沒設名冊金鑰回空陣列。
+     * 宿主據此決定收到的 kind 10038 要不要交給 `applyRosterEvent`。
+     */
+    rosterSigners() {
+        return this.rosterAdmin === undefined ? [] : rosterSigners(this.rosterAdmin, this.state.roster?.coAdmins);
     }
     /** 這個 pubkey 能不能呼叫管理 API。 */
     isAdmin(pubkey) {
@@ -140,22 +147,38 @@ export class Nip86Admin {
             return { error: 'cinder_applyroster is disabled: ROSTER_ADMIN_PUBKEY is not set' };
         if (!isEventShape(raw))
             return { error: 'invalid: expected a signed roster event' };
+        const prev = this.state.roster;
         let doc;
         try {
-            doc = verifyOrgRoster(raw, this.rosterAdmin);
+            // 擁有者或擁有者名冊列的共同管理者（SDK ADR 0135）
+            doc = verifyOrgRoster(raw, { owner: this.rosterAdmin, coAdmins: prev?.coAdmins ?? [] });
         }
         catch {
             doc = null;
         }
         if (doc === null)
-            return { error: 'invalid: not a valid roster signed by the roster admin' };
+            return { error: 'invalid: not a valid roster signed by the roster admin or a co-admin' };
         // updatedAt 是秒（Cinderous 以 `created_at` 同值簽出）。不是非負整數、或遠在未來（多半是誤用毫秒）
         // 一旦存進去，之後所有正常的名冊都會被當成「舊的」，只能手動改資料庫救（SDK ADR 0133）。
         if (!Number.isInteger(doc.updatedAt) || doc.updatedAt < 0 || doc.updatedAt > nowSec + ROSTER_FUTURE_SKEW_SEC) {
             return { error: 'invalid: roster updatedAt must be a unix time in seconds, not in the future' };
         }
-        const last = this.state.roster?.updatedAt;
+        // 共同管理者名單只看擁有者最新的那份（SDK ADR 0135）——即使成員那部分比已套用的舊，也照樣更新，與客戶端同一規則
+        const byOwner = raw.pubkey === this.rosterAdmin;
+        const ownerNewer = byOwner && (prev?.ownerUpdatedAt === undefined || doc.updatedAt > prev.ownerUpdatedAt);
+        const trust = ownerNewer
+            ? { ...(doc.admins ? { coAdmins: [...doc.admins] } : {}), ownerUpdatedAt: doc.updatedAt }
+            : {
+                ...(prev?.coAdmins ? { coAdmins: prev.coAdmins } : {}),
+                ...(prev?.ownerUpdatedAt !== undefined ? { ownerUpdatedAt: prev.ownerUpdatedAt } : {}),
+            };
+        const last = prev?.updatedAt;
         if (last !== undefined && doc.updatedAt <= last) {
+            if (ownerNewer && prev !== undefined) {
+                const { coAdmins: _old, ownerUpdatedAt: _oldAt, ...base } = prev;
+                if (!this.persist({ ...this.state, roster: { ...base, ...trust } }, caller, via))
+                    return { error: PERSIST_ERROR };
+            }
             return { error: `stale: roster updatedAt ${doc.updatedAt} is not newer than the applied ${last}` };
         }
         const allowed = rosterAllowlist(doc);
@@ -165,7 +188,7 @@ export class Nip86Admin {
         // 白名單以 64 個小寫 hex 比對；別的寫法（npub、大寫）永遠比不中＝那個人寫不進。整份拒絕、讓人修好再送。
         if (!allowed.every(isHexPubkey))
             return { error: 'invalid: every active member pubkey must be 64 lowercase hex characters' };
-        const next = { ...this.state, roster: { updatedAt: doc.updatedAt, allowed, admin: this.rosterAdmin } };
+        const next = { ...this.state, roster: { updatedAt: doc.updatedAt, allowed, admin: this.rosterAdmin, ...trust } };
         if (!this.persist(next, caller, via))
             return { error: PERSIST_ERROR };
         this.allowed = allowed;
@@ -238,9 +261,18 @@ export function parseNip86State(json) {
             return undefined;
         if (r.admin !== undefined && !isHexPubkey(r.admin))
             return undefined;
+        // 共同管理者（SDK ADR 0135）
+        if (r.coAdmins !== undefined && (!Array.isArray(r.coAdmins) || !r.coAdmins.every(isHexPubkey)))
+            return undefined;
+        if (r.ownerUpdatedAt !== undefined && (!Number.isInteger(r.ownerUpdatedAt) || r.ownerUpdatedAt < 0))
+            return undefined;
         out.roster = { updatedAt: r.updatedAt, allowed: [...r.allowed] };
         if (r.admin !== undefined)
             out.roster.admin = r.admin;
+        if (r.coAdmins !== undefined)
+            out.roster.coAdmins = [...r.coAdmins];
+        if (r.ownerUpdatedAt !== undefined)
+            out.roster.ownerUpdatedAt = r.ownerUpdatedAt;
     }
     if (v.allowedKinds !== undefined) {
         if (!Array.isArray(v.allowedKinds) || v.allowedKinds.length === 0 || !v.allowedKinds.every(isKind))

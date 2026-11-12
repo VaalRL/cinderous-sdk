@@ -75,7 +75,7 @@ describe('成員：只能用簽章名冊改', () => {
     const ev = roster([{ pubkey: alice, name: 'A' }, { pubkey: bob, name: 'B', supersededBy: carol }, { pubkey: carol, name: 'C' }], 100);
     expect(admin.call(ops, 'cinder_applyroster', [ev])).toEqual({ result: { allowed: 2, updatedAt: 100 } });
     expect([...(applied.allowed ?? [])].sort()).toEqual([alice, carol].sort());
-    expect(saved.at(-1)?.roster).toEqual({ updatedAt: 100, allowed: applied.allowed, admin: rosterAdmin }); // admin：SDK ADR 0133
+    expect(saved.at(-1)?.roster).toEqual({ updatedAt: 100, allowed: applied.allowed, admin: rosterAdmin, ownerUpdatedAt: 100 }); // admin：SDK ADR 0133；ownerUpdatedAt：0135
     expect(logs.at(-1)).toContain(ops.slice(0, 8));
     expect(logs.at(-1)).toContain('cinder_applyroster');
     expect(admin.call(ops, 'listallowedpubkeys', [])).toEqual({

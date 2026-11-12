@@ -9,6 +9,8 @@ import {
   type OrgRosterDoc,
   rosterAllowlist,
   rosterRemap,
+  rosterSigners,
+  ROSTER_MAX_ADMINS,
   shouldAdoptRoster,
   signOrgRoster,
   verifyOrgRoster,
@@ -339,5 +341,70 @@ describe("policyNotices（ADR-0312）：政策攤平成設定頁的條列", () =
       "ttlDays",
       "relayFilesMb",
     ]);
+  });
+});
+
+describe("共同管理者（SDK ADR 0135；Cinderous ADR-0418）", () => {
+  const coSk = generateSecretKey();
+  const co = getPublicKey(coSk);
+  const otherSk = generateSecretKey();
+  const members = [
+    { pubkey: a, name: "Alice" },
+    { pubkey: co, name: "Co" },
+  ];
+
+  it("擁有者簽的名冊帶 admins：round-trip 保留；不是在世成員、是擁有者自己、重複的都濾掉", () => {
+    const ev = signOrgRoster({ ...doc([...members, { pubkey: b, name: "Old", supersededBy: c }, { pubkey: c, name: "New" }]), admins: [co, co, b, admin, d] }, adminSk);
+    expect(verifyOrgRoster(ev, admin)?.admins).toEqual([co]);
+  });
+
+  it("沒有 admins＝欄位省略（舊格式照常）", () => {
+    const ev = signOrgRoster(doc(members), adminSk);
+    expect(JSON.parse(ev.content)).not.toHaveProperty("admins");
+    expect(verifyOrgRoster(ev, admin)).not.toHaveProperty("admins");
+  });
+
+  it("信任設定 {owner, coAdmins}：共同管理者簽的有效；名單外的人簽的無效", () => {
+    const trust = { owner: admin, coAdmins: [co] };
+    expect(verifyOrgRoster(signOrgRoster(doc(members, 2000), coSk), trust)?.updatedAt).toBe(2000);
+    expect(verifyOrgRoster(signOrgRoster(doc(members, 2000), otherSk), trust)).toBeNull();
+    expect(verifyOrgRoster(signOrgRoster(doc(members, 2000), adminSk), trust)?.updatedAt).toBe(2000);
+  });
+
+  it("🔴 共同管理者不能改管理者名單：它簽的 admins 一律忽略，換成信任設定裡的名單", () => {
+    const trust = { owner: admin, coAdmins: [co] };
+    const ev = signOrgRoster({ ...doc([...members, { pubkey: b, name: "B" }], 2000), admins: [co, b] }, coSk);
+    expect(verifyOrgRoster(ev, trust)?.admins).toEqual([co]);
+  });
+
+  it("🔴 共同管理者簽的名冊若把任何一位管理者移出在世成員 → 整份無效", () => {
+    const co2Sk = generateSecretKey();
+    const co2 = getPublicKey(co2Sk);
+    const trust = { owner: admin, coAdmins: [co, co2] };
+    // co 把 co2 踢掉
+    expect(verifyOrgRoster(signOrgRoster(doc(members, 2000), coSk), trust)).toBeNull();
+    // co 把 co2 標成已輪替作廢也一樣
+    const rotated = [...members, { pubkey: co2, name: "Co2", supersededBy: d }, { pubkey: d, name: "D" }];
+    expect(verifyOrgRoster(signOrgRoster(doc(rotated, 2000), coSk), trust)).toBeNull();
+    // 兩位都在 → 有效
+    expect(verifyOrgRoster(signOrgRoster(doc([...members, { pubkey: co2, name: "Co2" }], 2000), coSk), trust)).not.toBeNull();
+  });
+
+  it("擁有者簽的名冊不受「不能移除管理者」限制（擁有者本來就能改名單）", () => {
+    const trust = { owner: admin, coAdmins: [co] };
+    const ev = signOrgRoster(doc([{ pubkey: a, name: "Alice" }], 2000), adminSk);
+    expect(verifyOrgRoster(ev, trust)?.admins).toBeUndefined();
+  });
+
+  it("rosterSigners：擁有者在前，再接共同管理者（供訂閱 authors）", () => {
+    expect(rosterSigners(admin, [co, b])).toEqual([admin, co, b]);
+    expect(rosterSigners(admin, undefined)).toEqual([admin]);
+    expect(rosterSigners(admin, [admin, co])).toEqual([admin, co]);
+  });
+
+  it("共同管理者上限 ROSTER_MAX_ADMINS：多的截掉", () => {
+    const many = Array.from({ length: ROSTER_MAX_ADMINS + 5 }, (_, i) => ({ pubkey: getPublicKey(generateSecretKey()), name: `M${i}` }));
+    const ev = signOrgRoster({ ...doc(many), admins: many.map((m) => m.pubkey) }, adminSk);
+    expect(verifyOrgRoster(ev, admin)?.admins).toHaveLength(ROSTER_MAX_ADMINS);
   });
 });

@@ -43,6 +43,31 @@ export function policyNotices(policy) {
     }
     return out;
 }
+/** 共同管理者人數上限（SDK ADR 0135）。 */
+export const ROSTER_MAX_ADMINS = 16;
+/** 可以簽名冊的 pubkey（擁有者在前），供訂閱名冊事件的 `authors`。 */
+export function rosterSigners(owner, coAdmins) {
+    const out = [owner];
+    for (const pk of coAdmins ?? [])
+        if (!out.includes(pk))
+            out.push(pk);
+    return out;
+}
+/** 清洗共同管理者：字串、去重、不是擁有者、是在世成員、截到上限；空回 undefined。 */
+function parseAdmins(value, members, owner) {
+    if (!Array.isArray(value))
+        return undefined;
+    const live = new Set(members.filter((m) => !m.supersededBy).map((m) => m.pubkey));
+    const out = [];
+    for (const pk of value) {
+        if (typeof pk !== "string" || pk === owner || out.includes(pk) || !live.has(pk))
+            continue;
+        out.push(pk);
+        if (out.length >= ROSTER_MAX_ADMINS)
+            break;
+    }
+    return out.length > 0 ? out : undefined;
+}
 /** 歡迎詞長度上限（防惡意巨大名冊；sign/verify 兩側皆截斷防禦）。 */
 export const WELCOME_MAX_CHARS = 2000;
 const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -147,6 +172,8 @@ export function signOrgRoster(doc, adminSk) {
     const groups = parseGroups(doc.groups);
     const welcome = parseWelcome(doc.welcome); // ADR-0157
     const workHours = parseWorkHours(doc.workHours);
+    // 共同管理者（SDK ADR 0135）：簽的人若是共同管理者，驗證端會忽略這欄——照樣寫進去無害
+    const admins = parseAdmins(doc.admins, members, undefined);
     return finalizeEvent({
         kind: ORG_ROSTER_KIND,
         created_at: doc.updatedAt,
@@ -158,18 +185,27 @@ export function signOrgRoster(doc, adminSk) {
             ...(groups ? { groups } : {}),
             ...(welcome ? { welcome } : {}),
             ...(workHours ? { workHours } : {}),
+            ...(admins ? { admins } : {}),
             updatedAt: doc.updatedAt,
         }),
     }, adminSk);
 }
 /**
  * 驗證名冊事件並取出文件；任一條件不符回傳 null：
- * kind 不符、作者非指定管理者、簽章無效、內容非法、成員數不足。
+ * kind 不符、作者不是可以簽名冊的人、簽章無效、內容非法、成員數不足。
+ *
+ * `trust` 是單一 pubkey（只認這一把，舊用法）或 `RosterTrust`（擁有者＋共同管理者，SDK ADR 0135）：
+ * - 擁有者簽的：`admins` 取自內容（清洗過）。
+ * - 共同管理者簽的：內容裡的 `admins` 忽略、換成 `trust.coAdmins`；而且名冊必須保留**每一位**共同管理者
+ *   為在世成員，否則整份無效——共同管理者不能把彼此踢出組織。
  */
-export function verifyOrgRoster(event, adminPubkey) {
+export function verifyOrgRoster(event, trust) {
+    const owner = typeof trust === "string" ? trust : trust.owner;
+    const coAdmins = typeof trust === "string" ? [] : (trust.coAdmins ?? []).filter((pk) => pk !== owner);
     if (event.kind !== ORG_ROSTER_KIND)
         return null;
-    if (event.pubkey !== adminPubkey)
+    const byOwner = event.pubkey === owner;
+    if (!byOwner && !coAdmins.includes(event.pubkey))
         return null;
     if (!verifyEvent(event))
         return null;
@@ -193,6 +229,16 @@ export function verifyOrgRoster(event, adminPubkey) {
         (m.supersededBy === undefined || typeof m.supersededBy === "string")));
     if (members.length < MIN_ROSTER)
         return null;
+    let admins;
+    if (byOwner) {
+        admins = parseAdmins(doc.admins, members, owner);
+    }
+    else {
+        const live = new Set(members.filter((m) => !m.supersededBy).map((m) => m.pubkey));
+        if (!coAdmins.every((pk) => live.has(pk)))
+            return null;
+        admins = coAdmins.length > 0 ? [...coAdmins] : undefined;
+    }
     const policy = parsePolicy(doc.policy);
     const groups = parseGroups(doc.groups);
     const welcome = parseWelcome(doc.welcome); // ADR-0157：修剪/截斷防禦；壞值視為未設
@@ -204,6 +250,7 @@ export function verifyOrgRoster(event, adminPubkey) {
         ...(groups ? { groups } : {}),
         ...(welcome ? { welcome } : {}),
         ...(workHours ? { workHours } : {}),
+        ...(admins ? { admins } : {}),
         updatedAt: doc.updatedAt,
     };
 }

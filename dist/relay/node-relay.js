@@ -192,7 +192,8 @@ export function startNodeRelay(env = process.env, opts = {}) {
     // 名冊金鑰簽的名冊發到這座站 → 直接套用（SDK ADR 0134）。照一般流程存檔與扇出（客戶端也要收到）。
     if (rosterSigner !== undefined) {
         coreOptions.intercept = (_connId, event) => {
-            if (event.kind === ORG_ROSTER_KIND && event.pubkey === rosterSigner && nip86 !== undefined) {
+            // 擁有者或它列的共同管理者（SDK ADR 0135）
+            if (event.kind === ORG_ROSTER_KIND && nip86 !== undefined && nip86.rosterSigners().includes(event.pubkey)) {
                 const r = nip86.applyRosterEvent(event);
                 if ("error" in r && !r.error.startsWith("stale:"))
                     console.warn(`收到名冊金鑰簽的名冊，但沒有套用：${r.error}（SDK ADR 0134）`);

@@ -87,9 +87,27 @@ export interface OrgRosterDoc {
     welcome?: string;
     /** 表定上下班時間（可選，ADR-0157）：成員端下班時間自動靜音組織通知。 */
     workHours?: OrgWorkHours;
+    /**
+     * 共同管理者（SDK ADR 0135；Cinderous ADR-0418）：除了擁有者（信任根）之外也能簽名冊的 pubkey。
+     * **只有擁有者簽的名冊裡的這份名單算數**；共同管理者簽的名冊裡的值一律忽略。
+     * 必須是這份名冊的在世成員（不是的會被濾掉），上限 `ROSTER_MAX_ADMINS`。
+     */
+    admins?: PubkeyHex[];
     /** 發佈時間（unix 秒）；用於「較新才取代」。 */
     updatedAt: number;
 }
+/** 共同管理者人數上限（SDK ADR 0135）。 */
+export declare const ROSTER_MAX_ADMINS = 16;
+/**
+ * 名冊的信任設定（SDK ADR 0135）：`owner` 是信任根（邀請碼裡的管理者、自架站的 `ROSTER_ADMIN_PUBKEY`）；
+ * `coAdmins` 是**擁有者最新一份名冊**列的共同管理者——呼叫端自己記著，收到擁有者的新名冊就更新。
+ */
+export interface RosterTrust {
+    owner: PubkeyHex;
+    coAdmins?: readonly PubkeyHex[];
+}
+/** 可以簽名冊的 pubkey（擁有者在前），供訂閱名冊事件的 `authors`。 */
+export declare function rosterSigners(owner: PubkeyHex, coAdmins: readonly PubkeyHex[] | undefined): PubkeyHex[];
 /** 歡迎詞長度上限（防惡意巨大名冊；sign/verify 兩側皆截斷防禦）。 */
 export declare const WELCOME_MAX_CHARS = 2000;
 /**
@@ -103,9 +121,14 @@ export declare const MIN_ROSTER = 1;
 export declare function signOrgRoster(doc: OrgRosterDoc, adminSk: SecretKey): NostrEvent;
 /**
  * 驗證名冊事件並取出文件；任一條件不符回傳 null：
- * kind 不符、作者非指定管理者、簽章無效、內容非法、成員數不足。
+ * kind 不符、作者不是可以簽名冊的人、簽章無效、內容非法、成員數不足。
+ *
+ * `trust` 是單一 pubkey（只認這一把，舊用法）或 `RosterTrust`（擁有者＋共同管理者，SDK ADR 0135）：
+ * - 擁有者簽的：`admins` 取自內容（清洗過）。
+ * - 共同管理者簽的：內容裡的 `admins` 忽略、換成 `trust.coAdmins`；而且名冊必須保留**每一位**共同管理者
+ *   為在世成員，否則整份無效——共同管理者不能把彼此踢出組織。
  */
-export declare function verifyOrgRoster(event: NostrEvent, adminPubkey: PubkeyHex): OrgRosterDoc | null;
+export declare function verifyOrgRoster(event: NostrEvent, trust: PubkeyHex | RosterTrust): OrgRosterDoc | null;
 /**
  * 佈建輔助（ADR-0052）：把「舊→新」輪替套用到成員清單，供管理者發布名冊。
  * 每筆輪替：把舊成員標記 `supersededBy=新`（不存在則補一筆已作廢舊條目）、

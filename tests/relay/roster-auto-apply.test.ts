@@ -15,7 +15,7 @@ import {
   signOrgRoster,
   type OrgRosterDoc,
 } from '../../src/protocol/index.js';
-import { Nip86Admin, type Nip86State } from '../../src/relay/nip86.js';
+import { Nip86Admin, type Nip86State, parseNip86State } from '../../src/relay/nip86.js';
 import { startNodeRelay } from '../../src/relay/node-relay.js';
 import { opened } from '../node-relay-harness.js';
 
@@ -54,7 +54,8 @@ describe('Nip86Admin.applyRosterEvent', () => {
     const t = nowSec();
     expect(admin.applyRosterEvent(roster([{ pubkey: alice, name: 'A' }], t))).toEqual({ result: { allowed: 1, updatedAt: t } });
     expect(applied.allowed).toEqual([alice]);
-    expect(saved.at(-1)?.roster).toEqual({ updatedAt: t, allowed: [alice], admin: rosterAdmin });
+    // SDK ADR 0135：擁有者簽的名冊同時記下它的時間（共同管理者名單以它為準）
+    expect(saved.at(-1)?.roster).toEqual({ updatedAt: t, allowed: [alice], admin: rosterAdmin, ownerUpdatedAt: t });
   });
 
   it('重送同一份或更舊的 → stale，不動', () => {
@@ -168,5 +169,115 @@ describe('名冊事件自動套用 × Node 主機', () => {
     const port = await opened(handles, startNodeRelay({ ...e, ALLOWED_PUBKEYS: `${alice},${rosterAdmin}` }));
     expect(await send(port, roster([{ pubkey: bob, name: 'B' }], nowSec()))).toBe(true);
     expect(await send(port, note(bobSk))).toBe(false);
+  });
+});
+
+describe('共同管理者（SDK ADR 0135）', () => {
+  function make(state?: Nip86State) {
+    const applied: { allowed?: string[] } = {};
+    const saved: Nip86State[] = [];
+    const admin = new Nip86Admin({
+      admins: [],
+      rosterAdmin,
+      state,
+      apply: { allowed: (list) => (applied.allowed = list), kinds: () => {} },
+      save: (s) => saved.push(s),
+    });
+    return { admin, applied, saved };
+  }
+  const withAdmins = (members: OrgRosterDoc['members'], updatedAt: number, admins: string[], sk = rosterSk) =>
+    signOrgRoster({ org: '測試公司', members, updatedAt, admins }, sk);
+
+  it('擁有者的名冊列了共同管理者 → 它簽的較新名冊也套用；存檔記下名單與擁有者那份的時間', () => {
+    const { admin, applied, saved } = make();
+    const t = nowSec();
+    expect(admin.applyRosterEvent(withAdmins([{ pubkey: alice, name: 'A' }, { pubkey: bob, name: 'B' }], t, [alice]))).toHaveProperty('result');
+    expect(admin.rosterSigners()).toEqual([rosterAdmin, alice]);
+    expect(saved.at(-1)?.roster).toMatchObject({ coAdmins: [alice], ownerUpdatedAt: t, admin: rosterAdmin });
+    expect(admin.applyRosterEvent(roster([{ pubkey: alice, name: 'A' }], t + 1, aliceSk))).toHaveProperty('result');
+    expect(applied.allowed).toEqual([alice]);
+    // 存檔的 admin 仍是擁有者（ADR 0133：換掉 ROSTER_ADMIN_PUBKEY 就不再生效）
+    expect(saved.at(-1)?.roster).toMatchObject({ admin: rosterAdmin, coAdmins: [alice], updatedAt: t + 1 });
+  });
+
+  it('🔴 擁有者還沒列它之前，共同管理者簽的名冊不套用', () => {
+    const { admin, applied } = make();
+    expect(admin.applyRosterEvent(roster([{ pubkey: alice, name: 'A' }], nowSec(), aliceSk))).toHaveProperty('error');
+    expect(applied.allowed).toBeUndefined();
+  });
+
+  it('🔴 擁有者把它移出名單後，它簽的新名冊不再套用', () => {
+    const { admin, applied } = make();
+    const t = nowSec();
+    admin.applyRosterEvent(withAdmins([{ pubkey: alice, name: 'A' }, { pubkey: bob, name: 'B' }], t, [alice]));
+    admin.applyRosterEvent(roster([{ pubkey: alice, name: 'A' }, { pubkey: bob, name: 'B' }], t + 1));
+    expect(admin.rosterSigners()).toEqual([rosterAdmin]);
+    expect(admin.applyRosterEvent(roster([{ pubkey: alice, name: 'A' }], t + 2, aliceSk))).toHaveProperty('error');
+    expect(applied.allowed).toEqual([alice, bob]);
+  });
+
+  it('擁有者較舊的名冊：成員不動（stale），但共同管理者名單照樣更新——與客戶端同一規則', () => {
+    const t = nowSec();
+    const { admin, applied } = make({ roster: { updatedAt: t + 10, allowed: [alice, bob], admin: rosterAdmin } });
+    const r = admin.applyRosterEvent(withAdmins([{ pubkey: alice, name: 'A' }, { pubkey: bob, name: 'B' }], t, [bob]));
+    expect('error' in r && r.error.startsWith('stale:')).toBe(true);
+    expect(applied.allowed).toBeUndefined();
+    expect(admin.rosterSigners()).toEqual([rosterAdmin, bob]);
+  });
+
+  it('存檔讀回：coAdmins／ownerUpdatedAt 格式不對就整份不用', () => {
+    const ok = JSON.stringify({ roster: { updatedAt: 5, allowed: [alice], admin: rosterAdmin, coAdmins: [alice], ownerUpdatedAt: 5 } });
+    expect(parseNip86State(ok)?.roster).toMatchObject({ coAdmins: [alice], ownerUpdatedAt: 5 });
+    expect(parseNip86State(JSON.stringify({ roster: { updatedAt: 5, allowed: [alice], coAdmins: ['x'] } }))).toBeUndefined();
+    expect(parseNip86State(JSON.stringify({ roster: { updatedAt: 5, allowed: [alice], ownerUpdatedAt: -1 } }))).toBeUndefined();
+  });
+});
+
+describe('共同管理者 × Node 主機（SDK ADR 0135）', () => {
+  const handles: { close(): void }[] = [];
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const h of handles.splice(0)) h.close();
+    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  function send(port: number, ev: NostrEvent): Promise<boolean> {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+      const timer = setTimeout(() => reject(new Error('沒有收到 OK')), 3_000);
+      ws.addEventListener('open', () => ws.send(JSON.stringify(['EVENT', ev])));
+      ws.addEventListener('message', (m) => {
+        const msg = JSON.parse(String(m.data)) as unknown[];
+        if (msg[0] !== 'OK') return;
+        clearTimeout(timer);
+        ws.close();
+        resolve(msg[2] === true);
+      });
+      ws.addEventListener('error', () => reject(new Error('連不上')));
+    });
+  }
+  let n = 0;
+  const note = (sk: Uint8Array) => finalizeEvent({ kind: 1, created_at: nowSec(), tags: [], content: `co-${n++}` }, sk);
+
+  it('🔴 共同管理者把名冊發到站上 → 換成員；不是共同管理者的成員發的 → 不改', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const dir = mkdtempSync(join(tmpdir(), 'roster-co-'));
+    dirs.push(dir);
+    const port = await opened(
+      handles,
+      startNodeRelay({ PORT: '0', REQUIRE_AUTH: '0', ROSTER_ADMIN_PUBKEY: rosterAdmin, ALLOWED_PUBKEYS: alice, DB_PATH: join(dir, 'relay.db') }),
+    );
+    const t = nowSec();
+    const owner = signOrgRoster({ org: '測試公司', members: [{ pubkey: alice, name: 'A' }, { pubkey: bob, name: 'B' }], updatedAt: t, admins: [alice] }, rosterSk);
+    expect(await send(port, owner)).toBe(true);
+    expect(await send(port, note(bobSk))).toBe(true);
+    // bob 不是共同管理者：他簽的名冊存得進，但不改成員
+    await send(port, roster([{ pubkey: bob, name: 'B' }], t + 1, bobSk));
+    expect(await send(port, note(aliceSk))).toBe(true);
+    // alice 是共同管理者：她移除 bob → bob 寫不進
+    expect(await send(port, roster([{ pubkey: alice, name: 'A' }], t + 2, aliceSk))).toBe(true);
+    expect(await send(port, note(bobSk))).toBe(false);
+    expect(await send(port, note(aliceSk))).toBe(true);
   });
 });

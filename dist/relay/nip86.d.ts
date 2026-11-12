@@ -8,11 +8,16 @@ export declare const NIP86_NAME_MAX = 100;
 export declare const NIP86_DESCRIPTION_MAX = 2000;
 /** 執行期改過、要存起來的東西；重開後蓋過環境變數（SDK ADR 0132 §8）。 */
 export interface Nip86State {
-    /** `admin`＝簽這份名冊的名冊金鑰（SDK ADR 0133）：重開後名冊金鑰換了或拿掉，這份就不再生效。 */
+    /**
+     * `admin`＝名冊金鑰（擁有者，SDK ADR 0133）：重開後名冊金鑰換了或拿掉，這份就不再生效。
+     * `coAdmins`／`ownerUpdatedAt`＝擁有者最新一份名冊列的共同管理者與那份的時間（SDK ADR 0135）。
+     */
     roster?: {
         updatedAt: number;
         allowed: string[];
         admin?: string;
+        coAdmins?: string[];
+        ownerUpdatedAt?: number;
     };
     allowedKinds?: number[];
     name?: string;
@@ -55,6 +60,11 @@ export declare class Nip86Admin {
     private kinds;
     private state;
     constructor(opts: Nip86Options);
+    /**
+     * 現在可以簽名冊的 pubkey（擁有者在前，再接共同管理者；SDK ADR 0135）。沒設名冊金鑰回空陣列。
+     * 宿主據此決定收到的 kind 10038 要不要交給 `applyRosterEvent`。
+     */
+    rosterSigners(): string[];
     /** 這個 pubkey 能不能呼叫管理 API。 */
     isAdmin(pubkey: string): boolean;
     /** 實際提供的方法（NIP-86 `supportedmethods`）。 */

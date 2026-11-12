@@ -4,6 +4,11 @@ Releases are git tags; install one with `npm install github:VaalRL/cinderous-sdk
 
 每個版本是一個 git tag，安裝方式是 `npm install github:VaalRL/cinderous-sdk#vX.Y.Z`。每一版列出那一版的改動（取自 commit 紀錄）；每項改動的理由寫在它引用的 ADR 裡（[docs/adr/](docs/adr/README.md)）。
 
+## v0.90.0 — 2026-11-12
+
+- feat(protocol): 組織名冊的共同管理者。`OrgRosterDoc.admins`（擁有者簽的名冊才算數，必須是在世成員，上限 `ROSTER_MAX_ADMINS`＝16）；`verifyOrgRoster` 第二個參數可為 `RosterTrust { owner, coAdmins }`：共同管理者簽的名冊也有效，但它帶的 `admins` 一律忽略，而且必須保留每一位共同管理者為在世成員；傳字串的舊用法不變。新增 `rosterSigners`（ADR 0135）
+- feat(relay): 自架 Node 站的名冊自動套用與 `cinder_applyroster` 也收共同管理者簽的名冊；共同管理者名單只看擁有者最新的那份（即使成員那部分是舊的）。存檔的 `roster` 多 `coAdmins`、`ownerUpdatedAt` 兩格；新增 `Nip86Admin.rosterSigners()`（ADR 0135）
+
 ## v0.89.0 — 2026-11-12
 
 - feat(relay): 名冊事件自動套用。自架 Node 中繼收到 `ROSTER_ADMIN_PUBKEY` 簽的名冊事件（kind 10038）就直接換成員，檢查與 `cinder_applyroster` 相同（驗簽、比上次新、`updatedAt` 是秒、成員 pubkey 是 64 個小寫 hex、先存檔後生效）；事件照常存檔與扇出。只設 `ROSTER_ADMIN_PUBKEY`、不開 NIP-86 管理 API 也能用——管理者不必經手運維金鑰。名冊金鑰一定寫得進這座站（加進生效中的白名單），否則它簽的下一份名冊會被擋。沒開管理 API 時不開 HTTP 端點、NIP-11 不宣告 86，存檔只沿用名冊。新增 `Nip86Admin.applyRosterEvent`（ADR 0134）
