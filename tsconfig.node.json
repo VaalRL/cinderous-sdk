@@ -13,6 +13,8 @@
     "src/relay/dev-server.ts",
     "tests/relay/node-host.test.ts",
     "tests/relay/iot-node.test.ts",
+    "tests/relay/iot-longpoll-node.test.ts",
+    "tests/relay/iot-shelly-node.test.ts",
     "src/relay/node.ts",
     "src/cli/**/*.ts",
     "src/deploy/**/*.ts",

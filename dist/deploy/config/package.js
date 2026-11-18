@@ -3,7 +3,7 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 import { DEFAULT_COMPATIBILITY_DATE, DEFAULT_WORKER_NAME, RELAY_DO_BINDINGS } from '../shared.js';
-import { DEFAULT_DOCKER_PORT, DEFAULT_FLY_REGION, composeBindAddress, composeRequiredEnv, IOT_GATEWAY_KEYS_ENV, relayEnvironment, renderCompose, renderDockerfile, renderDockerignore, renderFlyToml, renderServerEntry, renderWranglerToml, } from '../render.js';
+import { DEFAULT_DOCKER_PORT, DEFAULT_FLY_REGION, composeBindAddress, composeRequiredEnv, IOT_GATEWAY_KEYS_ENV, IOT_PLAINTEXT_DEVICE_KEYS_ENV, relayEnvironment, renderCompose, renderDockerfile, renderDockerignore, renderFlyToml, renderServerEntry, renderWranglerToml, } from '../render.js';
 import { DEPLOY_GUIDE_FILES, DEPLOY_GUIDE_LOCALES, renderDeployGuide, SDK_SOURCE_REPO, secretEnvName } from './guide.js';
 import { assertDeployConfig } from './validate.js';
 import { renderPushGatewayEnvLines, renderPushGatewayFiles } from './push-package.js';
@@ -89,6 +89,10 @@ function renderEnvExample(config, sdkVersion) {
         add('iotGatewayKeys', 'C′ 的閘道私鑰（SDK ADR 0121）：JSON {"<homeTag>":"<64 位 hex>"}，`cinderous iot realtime home` 印出的那一行。🔴 等同家庭的鑰匙\n' +
             '# C′ gateway private keys (SDK ADR 0121): JSON {"<homeTag>":"<64 hex>"}, the line printed by `cinderous iot realtime home`. 🔴 It is a house key');
     }
+    if (config.site?.iotPlaintextDevices === true && serviceOfConfig(config) === 'relay') {
+        add('iotPlaintextDeviceKeys', 'Shelly 的設備金鑰（SDK ADR 0139）：JSON {"<homeTag>/<設備 id>":"<64 位 hex>"}，`cinderous iot realtime device --shelly-switch` 印出的那幾筆合起來\n' +
+            '# Shelly device keys (SDK ADR 0139): JSON {"<homeTag>/<device id>":"<64 hex>"}, the entries printed by `cinderous iot realtime device --shelly-switch`');
+    }
     const privateEnv = privateLaneEnvName(config);
     if (privateEnv !== undefined && serviceOfConfig(config) === 'relay') {
         lines.push('# 私人路徑（SDK ADR 0051）：至少 26 字的隨機車道 id，例如 `openssl rand -hex 16`。🔴 它等同密碼。', '# Private path (SDK ADR 0051): a random lane id of at least 26 characters, e.g. `openssl rand -hex 16`. 🔴 It is a password.', `${privateEnv}=`, '');
@@ -172,12 +176,15 @@ function devVarsExample(config, sdkVersion) {
     const lines = [...header('#', sdkVersion), '#'];
     const turn = config.site?.turnKeyId !== undefined;
     const iot = config.site?.iotRealtime !== undefined;
+    const plaintext = config.site?.iotPlaintextDevices === true;
     if (turn || iot) {
         lines.push('# `wrangler dev` 的本機秘密範本（複製成 .dev.vars，不要提交）。站台參數都在 wrangler.toml 的 [vars]。', '# Local secrets template for `wrangler dev` (copy to .dev.vars, never commit it). Site parameters are in [vars] of wrangler.toml.');
         if (turn)
             lines.push('', '# Cloudflare TURN 金鑰的 API Token（SDK ADR 0118）／API token of the Cloudflare TURN key', 'TURN_API_TOKEN=');
         if (iot)
             lines.push('', '# C′ 的閘道私鑰，JSON（SDK ADR 0121）／C′ gateway private keys, JSON', `${IOT_GATEWAY_KEYS_ENV}=`);
+        if (plaintext)
+            lines.push('', '# Shelly 的設備金鑰，JSON（SDK ADR 0139）／Shelly device keys, JSON', `${IOT_PLAINTEXT_DEVICE_KEYS_ENV}=`);
     }
     else {
         lines.push('# `wrangler dev` 的本機秘密範本（複製成 .dev.vars）。這座中繼沒有執行期秘密（沒有設 site.turnKeyId）；站台參數都在 wrangler.toml 的 [vars]。', '# Local secrets template for `wrangler dev` (copy to .dev.vars). The relay has no runtime secrets (no site.turnKeyId); site parameters are in [vars] of wrangler.toml.');
@@ -263,6 +270,9 @@ export function renderDeployPackage(config, ctx) {
         // C′ 的閘道私鑰（SDK ADR 0121）：Fly 以 `fly secrets set` 設定；compose 從 .env 代入，沒設就不啟動
         if (config.site?.iotRealtime !== undefined && config.target !== 'fly') {
             environment[IOT_GATEWAY_KEYS_ENV] = composeRequiredEnv(secretEnvName(config, 'iotGatewayKeys'), 'C′ gateway keys, SDK ADR 0121');
+        }
+        if (config.site?.iotPlaintextDevices === true && config.target !== 'fly') {
+            environment[IOT_PLAINTEXT_DEVICE_KEYS_ENV] = composeRequiredEnv(secretEnvName(config, 'iotPlaintextDeviceKeys'), 'Shelly device keys, SDK ADR 0139');
         }
         add('Dockerfile', renderDockerfile(v, { embedSdk: embed, header: header('#', v) }));
         add('server.mjs', renderServerEntry({ header: header('//', v) }));

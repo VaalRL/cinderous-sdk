@@ -18,11 +18,18 @@ export interface IotHomeEnv {
     /** 每個家庭每日的 DO 請求預算（§10.3）；沒設＝帳號每日 100,000 ÷ 家庭數 × 0.5 */
     IOT_HOME_DAILY_REQUESTS?: string;
     MAX_TTL_DAYS?: string;
+    /** Shelly 明文轉譯的危險旗標（`1`＝開；SDK ADR 0139）：還要有 `ALLOWED_PUBKEYS` 白名單與 `IOT_PLAINTEXT_DEVICE_KEYS` */
+    IOT_PLAINTEXT_DEVICES?: string;
+    /** Shelly 設備的金鑰（JSON `{ "<homeTag>/<設備 id>": "<64 位 hex>" }`；Worker secret） */
+    IOT_PLAINTEXT_DEVICE_KEYS?: string;
+    ALLOWED_PUBKEYS?: string;
 }
 /** 設備連線被新連線取代時的關閉碼 */
 export declare const IOT_DEVICE_REPLACED_CLOSE = 4409;
 /** 本家預算用完（§10.2）：reason `iot-quota:<reset unix 秒>`，設備據此睡到重置時間，不狂重連 */
 export declare const IOT_QUOTA_CLOSE = 4429;
+/** 長輪詢設備的三個端點（SDK ADR 0138）：`next`＝等下一個幀，`ack`／`state`＝上行 */
+export type IotLongPollOp = 'next' | 'ack' | 'state';
 export type IotPath = {
     kind: 'home';
     homeTag: string;
@@ -30,18 +37,33 @@ export type IotPath = {
     kind: 'dev';
     homeTag: string;
     blindId: string;
+    op?: IotLongPollOp;
+} | {
+    kind: 'shelly';
+    homeTag: string;
+    blindId: string;
 };
-/** 解析 `/iot/v1/home/<homeTag>`、`/iot/v1/dev/<homeTag>/<blindId>`；其他回 undefined */
+/**
+ * 解析 `/iot/v1/home/<homeTag>`、`/iot/v1/dev/<homeTag>/<blindId>`（長輪詢再加 `/next`、`/ack`、`/state`）、
+ * `/iot/v1/shelly/<homeTag>/<blindId>`；其他回 undefined
+ */
 export declare function iotPathOf(pathname: string): IotPath | undefined;
+type IotConfigEnv = Pick<IotHomeEnv, 'IOT_REALTIME' | 'IOT_GATEWAY_KEYS' | 'IOT_PLAINTEXT_DEVICES' | 'IOT_PLAINTEXT_DEVICE_KEYS' | 'ALLOWED_PUBKEYS'>;
 /** 從 env 解析 C′ 設定（同一個 isolate 內快取；設定有錯的家庭不啟用，錯誤印一次） */
-export declare function iotRealtimeFrom(env: Pick<IotHomeEnv, 'IOT_REALTIME' | 'IOT_GATEWAY_KEYS'>): ParsedIotRealtime;
+export declare function iotRealtimeFrom(env: IotConfigEnv): ParsedIotRealtime;
 /** relay 自己產生的 HTTP 錯誤（ADR 0049 §10.2）：一律帶 `Cinder-Relay: 1` 與 JSON `{ error }`，與平台的錯誤分得開 */
 export declare function iotErrorResponse(status: number, error: string, headers?: Record<string, string>): Response;
+/** 本家預算的結構化 503（§10.2）：`home-budget`＝今日用完，`home-shed`＝95% 分流（遙測先丟） */
+export declare function iotQuotaResponse(reset: number, quota?: 'home-budget' | 'home-shed'): Response;
 /**
  * Worker 端：`/iot/v1/*` 的路由。回 undefined＝不是 IoT 路徑（交給一般路由）。
  * 在碰 DO 之前擋掉：沒開、不認得的家、權杖錯、不是升級——這些都不花 DO 請求。
  */
 export declare function routeIotRequest(request: Request, env: IotHomeEnv): Promise<Response | undefined>;
+/**
+ * 設備的權杖：`Authorization: Bearer …`；Shelly 設不了標頭，另外接受網址的 `?token=`（會進存取記錄——SDK ADR 0139 的已知風險）
+ */
+export declare function iotDeviceAuthorization(request: Request, kind: 'dev' | 'shelly'): string | null;
 /** 家庭 DO（每個家庭一顆，`idFromName("iot:<homeTag>")`） */
 export declare class IotHomeRoom {
     private readonly ctx;
@@ -51,11 +73,18 @@ export declare class IotHomeRoom {
     private readonly conns;
     private readonly core;
     private rt;
+    /** Shelly 設備的金鑰（綁定家庭時取得）與轉譯器（記憶體；休眠後重建，計數器以時間為底不會倒退） */
+    private plaintextKeys;
+    private readonly shelly;
     private hydrated;
     private quota;
     constructor(ctx: DurableObjectState, env: IotHomeEnv);
     /** 綁定這顆 DO 服務的家庭（設定裡沒有或有錯＝不綁，指令一律拒收） */
     private bind;
+    /** 這台 Shelly 的轉譯器（沒有金鑰或不是 Shelly＝undefined） */
+    private translator;
+    /** Shelly 轉譯的輸出：RPC 送給 Shelly；up 幀交給家庭核心（與 E2EE 設備的幀走同一條路：kid、計數器、分流都一樣） */
+    private shellyOut;
     private aclStore;
     private deviceSockets;
     /**
@@ -65,6 +94,8 @@ export declare class IotHomeRoom {
     private count;
     alarm(): Promise<void>;
     fetch(request: Request): Promise<Response>;
+    /** 長輪詢設備的上行（SDK ADR 0138）：Worker 已經擋掉壞幀；解不開的信封照樣回 204（不給 oracle） */
+    private devicePost;
     webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): void;
     webSocketClose(ws: WebSocket): void;
     webSocketError(ws: WebSocket): void;
@@ -72,4 +103,5 @@ export declare class IotHomeRoom {
     private ensureHydrated;
     private dispatch;
 }
+export {};
 //# sourceMappingURL=iot-home-room.d.ts.map

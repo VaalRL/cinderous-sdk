@@ -23,6 +23,7 @@ export * from './subkey.js';
 export * from './ek-envelope.js';
 export * from './device-directory.js';
 export * from './call.js';
+export * from './group-call.js';
 export * from './video-quality.js';
 export * from './turn-fetch.js';
 export * from './signer.js';

@@ -34,7 +34,9 @@ export { chooseEngine, CRYPTO_ENGINES_TAG, engineCapabilityTag, engineConfigFor,
 export { blobSource, bytesSource, DEFAULT_FILE_CHUNK_BYTES, DEFAULT_MAX_FILE_BYTES, FileIntegrityError, FileRejectedError, FileTransfer, isFileTransferMessage, LargeFileOverRelayError, MemoryPartialStore, type ByteChannel, type FileOffer, type FileSource, type FileTransferOptions, type PartialFileStore, type ReceivedFile, type SendFileOptions, type TransferProgress, } from './transfer/file-transfer.js';
 export { P2PFileQueue, type P2PFileQueueOptions } from './transfer/p2p-queue.js';
 export { CallManager, type CallManagerOptions } from './call/call-manager.js';
-export type { CallPeerConnectionLike, CallRtcFactory, GetUserMedia, MediaStreamLike, MediaTrackLike, RtpSenderLike, RtpTransceiverLike, } from './call/media.js';
+export { GroupCallManager, type GroupCallEndReason, type GroupCallManagerOptions, type GroupCallState, type GroupIncomingCall, type GroupParticipant, type GroupParticipantStatus, } from './call/group-call.js';
+export { defaultCreateMediaStream, isCameraBusy } from './call/media.js';
+export type { CallPeerConnectionLike, CallRtcFactory, CreateMediaStream, GetUserMedia, MediaStreamLike, MediaTrackLike, RtpSenderLike, RtpTransceiverLike, } from './call/media.js';
 export { DEFAULT_STUN, TurnProvider, type TurnProviderOptions } from './call/turn-provider.js';
 export type { IceServer, TurnSigner } from './protocol/turn-fetch.js';
 //# sourceMappingURL=index.d.ts.map

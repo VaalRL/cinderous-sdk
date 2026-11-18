@@ -291,6 +291,12 @@ export interface RelaySiteOptions extends RelayFileOptions {
      * 超過時設備收到 4429 `iot-quota:<重置時間>`、手機收到 `quota`。只有 Cloudflare 版（Node 主機沒有請求計費）。要有 `iotRealtime`。
      */
     iotHomeDailyRequests?: number;
+    /**
+     * 🔴 危險：Shelly 明文轉譯（`IOT_PLAINTEXT_DEVICES=1`；SDK ADR 0139）。`transport: 'shelly'` 的設備不會封信封，
+     * relay 拿著那幾台的 deviceKey 替它封／解——**relay 看得到它們的指令與狀態**。只限自架站：要有 `allowedPubkeys` 白名單與 `iotRealtime`；
+     * 設備金鑰是秘密 `iotPlaintextDeviceKeys`（`IOT_PLAINTEXT_DEVICE_KEYS`）。門鎖類不行。
+     */
+    iotPlaintextDevices?: boolean;
 }
 /** 只有 Cloudflare 版中繼會讀的選項（Node 主機沒有車道、也不讀文件網址）。 */
 export declare const WORKER_ONLY_SITE_OPTIONS: readonly ["appLanes", "fileLanes", "appLanePow", "developerDocsUrl", "storageBudgetBytes", "turnKeyId", "turnTtlSeconds", "iotHomeDailyRequests"];
@@ -452,12 +458,23 @@ export interface RelayWorkerSecrets {
      * 要搭配 `iotRealtime`：每個 homeTag 都要在裡面、私鑰要對得上 `gatewayPubkey`。給了就要給**全部**家庭（secret 是整份換掉）。
      */
     iotGatewayKeys?: Readonly<Record<string, string>>;
+    /**
+     * Shelly 明文轉譯的設備金鑰（`{ "<homeTag>/<設備 id>": 64 位 hex }`）→ Worker secret `IOT_PLAINTEXT_DEVICE_KEYS`（SDK ADR 0139）。
+     * 只放 `transport: 'shelly'` 的設備（最小權限：不是家庭秘密）；給了就要給**全部** Shelly 設備。
+     */
+    iotPlaintextDeviceKeys?: Readonly<Record<string, string>>;
 }
 /**
  * 秘密 → Worker secret 的名稱與值。有 TURN 的 Token 卻沒有 `turnKeyId` 就丟例外（Worker 不會用它；多半是設定漏了）。
  * 🔴 例外訊息只有欄位名稱，不含值。
  */
 export declare function relayWorkerSecrets(opts: RelayWorkerSecrets & Pick<RelaySiteOptions, 'turnKeyId' | 'iotRealtime'>): Record<string, string>;
+/**
+ * 檢查 Shelly 的設備金鑰並寫成 `IOT_PLAINTEXT_DEVICE_KEYS` 的值（SDK ADR 0139；Node 主機的 `.env` 也用它）。
+ * 鍵是 `<homeTag>/<設備 id>`，只能是 `transport: 'shelly'` 的設備、要涵蓋每一台。
+ * 金鑰本身對不對（是不是那台的 deviceKey）這裡驗不了——錯的金鑰＝手機解不開回覆。🔴 例外訊息只有鍵（公開值），不含金鑰。
+ */
+export declare function iotPlaintextDeviceKeysSecret(keys: Readonly<Record<string, string>>, realtime: RelaySiteOptions['iotRealtime']): string;
 /**
  * 檢查 C′ 的閘道私鑰並寫成 `IOT_GATEWAY_KEYS` 的值（SDK ADR 0121；Node 主機的 `.env` 也用它）。
  * 🔴 例外訊息只有 homeTag（公開值），不含私鑰。

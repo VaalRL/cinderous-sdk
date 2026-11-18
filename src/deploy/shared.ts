@@ -412,6 +412,12 @@ export interface RelaySiteOptions extends RelayFileOptions {
    * 超過時設備收到 4429 `iot-quota:<重置時間>`、手機收到 `quota`。只有 Cloudflare 版（Node 主機沒有請求計費）。要有 `iotRealtime`。
    */
   iotHomeDailyRequests?: number;
+  /**
+   * 🔴 危險：Shelly 明文轉譯（`IOT_PLAINTEXT_DEVICES=1`；SDK ADR 0139）。`transport: 'shelly'` 的設備不會封信封，
+   * relay 拿著那幾台的 deviceKey 替它封／解——**relay 看得到它們的指令與狀態**。只限自架站：要有 `allowedPubkeys` 白名單與 `iotRealtime`；
+   * 設備金鑰是秘密 `iotPlaintextDeviceKeys`（`IOT_PLAINTEXT_DEVICE_KEYS`）。門鎖類不行。
+   */
+  iotPlaintextDevices?: boolean;
 }
 
 /** 只有 Cloudflare 版中繼會讀的選項（Node 主機沒有車道、也不讀文件網址）。 */
@@ -811,6 +817,7 @@ function siteVarsInto(issues: IssueList, opts: RelaySiteOptions, host: 'worker' 
 
 /** C′ 即時通道（SDK ADR 0121）：與 relay 同一份檢查；名單只看形狀（這裡不能帶進 `./iot`） */
 function iotRealtimeIn(issues: IssueList, opts: RelaySiteOptions, vars: Record<string, string>, host: 'worker' | 'node'): void {
+  iotPlaintextIn(issues, opts, vars);
   if (opts.iotRealtime !== undefined) {
     const checked = checkIotRealtimeConfig(opts.iotRealtime, checkIotRealtimeAclShape);
     for (const issue of checked.issues) {
@@ -831,6 +838,41 @@ function iotRealtimeIn(issues: IssueList, opts: RelaySiteOptions, vars: Record<s
       vars.IOT_HOME_DAILY_REQUESTS = daily;
     }
   }
+}
+
+/** Shelly 明文轉譯的危險旗標（SDK ADR 0139）：白名單與 iotRealtime 必填；有 Shelly 設備卻沒開旗標也擋（relay 會整個家不啟用） */
+function iotPlaintextIn(issues: IssueList, opts: RelaySiteOptions, vars: Record<string, string>): void {
+  const homes = Array.isArray(opts.iotRealtime?.homes) ? opts.iotRealtime.homes : [];
+  const hasShelly = homes.some((h) => Array.isArray(h?.devices) && h.devices.some((d: { transport?: unknown } | undefined) => d?.transport === 'shelly'));
+  if (opts.iotPlaintextDevices === undefined || opts.iotPlaintextDevices === false) {
+    if (hasShelly) {
+      issues.error(
+        'iotPlaintextDevices',
+        'iot-plaintext-disabled',
+        'iotRealtime 有 transport: "shelly" 的設備，卻沒有開 iotPlaintextDevices：relay 會整個家不啟用。確定要讓 relay 看得到那幾台的指令，才設 iotPlaintextDevices: true（SDK ADR 0139）',
+        'iotRealtime has transport: "shelly" devices but iotPlaintextDevices is off: the relay would disable the whole home. Set iotPlaintextDevices: true only if you accept that the relay sees those devices\' commands (SDK ADR 0139)',
+      );
+    }
+    return;
+  }
+  if (opts.iotPlaintextDevices !== true) {
+    return void issues.error('iotPlaintextDevices', 'type', 'iotPlaintextDevices 必須是 true 或 false', 'iotPlaintextDevices must be true or false');
+  }
+  let ok = true;
+  if (!Array.isArray(opts.allowedPubkeys) || opts.allowedPubkeys.length === 0) {
+    ok = false;
+    issues.error(
+      'iotPlaintextDevices',
+      'iot-plaintext-needs-allowlist',
+      'iotPlaintextDevices 只限有白名單（allowedPubkeys）的自架站：開放站與官方錨點不提供明文轉譯（SDK ADR 0139）',
+      'iotPlaintextDevices is only for self-hosted relays with an allowlist (allowedPubkeys): open relays and the official anchors do not offer plaintext translation (SDK ADR 0139)',
+    );
+  }
+  if (opts.iotRealtime === undefined) {
+    ok = false;
+    issues.error('iotPlaintextDevices', 'iot-needs-realtime', 'iotPlaintextDevices 要搭配 iotRealtime（沒有家庭就沒有設備要轉譯）', 'iotPlaintextDevices needs iotRealtime (without homes there are no devices to translate)');
+  }
+  if (ok) vars.IOT_PLAINTEXT_DEVICES = '1';
 }
 
 /** TURN（SDK ADR 0118）：Key ID 與憑證秒數寫成 Worker 變數；Token 是秘密，不在這裡 */
@@ -1108,6 +1150,11 @@ export interface RelayWorkerSecrets {
    * 要搭配 `iotRealtime`：每個 homeTag 都要在裡面、私鑰要對得上 `gatewayPubkey`。給了就要給**全部**家庭（secret 是整份換掉）。
    */
   iotGatewayKeys?: Readonly<Record<string, string>>;
+  /**
+   * Shelly 明文轉譯的設備金鑰（`{ "<homeTag>/<設備 id>": 64 位 hex }`）→ Worker secret `IOT_PLAINTEXT_DEVICE_KEYS`（SDK ADR 0139）。
+   * 只放 `transport: 'shelly'` 的設備（最小權限：不是家庭秘密）；給了就要給**全部** Shelly 設備。
+   */
+  iotPlaintextDeviceKeys?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -1123,7 +1170,30 @@ export function relayWorkerSecrets(opts: RelayWorkerSecrets & Pick<RelaySiteOpti
     out.TURN_API_TOKEN = opts.turnApiToken;
   }
   if (opts.iotGatewayKeys !== undefined) out.IOT_GATEWAY_KEYS = iotGatewayKeysSecret(opts.iotGatewayKeys, opts.iotRealtime);
+  if (opts.iotPlaintextDeviceKeys !== undefined) out.IOT_PLAINTEXT_DEVICE_KEYS = iotPlaintextDeviceKeysSecret(opts.iotPlaintextDeviceKeys, opts.iotRealtime);
   return out;
+}
+
+/**
+ * 檢查 Shelly 的設備金鑰並寫成 `IOT_PLAINTEXT_DEVICE_KEYS` 的值（SDK ADR 0139；Node 主機的 `.env` 也用它）。
+ * 鍵是 `<homeTag>/<設備 id>`，只能是 `transport: 'shelly'` 的設備、要涵蓋每一台。
+ * 金鑰本身對不對（是不是那台的 deviceKey）這裡驗不了——錯的金鑰＝手機解不開回覆。🔴 例外訊息只有鍵（公開值），不含金鑰。
+ */
+export function iotPlaintextDeviceKeysSecret(keys: Readonly<Record<string, string>>, realtime: RelaySiteOptions['iotRealtime']): string {
+  if (realtime === undefined) throw new Error('有 Shelly 的設備金鑰（iotPlaintextDeviceKeys）卻沒有 iotRealtime：relay 不知道要服務哪些設備');
+  const shelly = new Set<string>();
+  for (const home of Array.isArray(realtime.homes) ? realtime.homes : []) {
+    for (const d of Array.isArray(home.devices) ? home.devices : []) if (d.transport === 'shelly') shelly.add(`${home.homeTag}/${d.id}`);
+  }
+  for (const k of Object.keys(keys)) {
+    if (!shelly.has(k)) throw new Error(`iotPlaintextDeviceKeys 有不是 Shelly 的設備：${k}（只放 transport: "shelly" 的設備，最小權限）`);
+  }
+  for (const k of shelly) {
+    const key = keys[k];
+    if (key === undefined) throw new Error(`iotPlaintextDeviceKeys 缺 ${k} 的設備金鑰（secret 是整份換掉，要給全部 Shelly 設備）`);
+    if (typeof key !== 'string' || !/^[0-9a-f]{64}$/.test(key)) throw new Error(`iotPlaintextDeviceKeys.${k} 必須是 64 位小寫 hex`);
+  }
+  return JSON.stringify(keys);
 }
 
 /**

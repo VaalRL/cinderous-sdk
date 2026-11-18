@@ -1,14 +1,11 @@
-import type { IncomingMessage } from 'node:http';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Duplex } from 'node:stream';
 import type { SqlExec } from './sql-message-store.js';
 export interface IotNodeHub {
     /** 這是 IoT 路徑嗎；是的話已處理（接受或拒絕） */
     handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): boolean;
-    /** 一般 HTTP 請求打到 `/iot/`：回錯誤；不是 IoT 路徑回 false */
-    handleHttp(path: string): {
-        status: number;
-        error: string;
-    } | undefined;
+    /** 一般 HTTP 請求打到 `/iot/`：長輪詢（SDK ADR 0138）或錯誤；不是 IoT 路徑回 false（沒處理） */
+    handleHttp(req: IncomingMessage, res: ServerResponse): boolean;
     close(): void;
 }
 /**

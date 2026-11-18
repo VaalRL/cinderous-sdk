@@ -5,14 +5,20 @@
 // - 設備心跳 `{"t":"hb"}` 由這裡回 `{"t":"hb-ack"}`（Node 沒有平台自動回覆）；協定層 ping 也算心跳。
 // - 角色名單（`$sys/acl`）存在主資料庫的 `iot_acl` 表；純記憶體模式只在記憶體。retained（31170）在記憶體——
 //   重啟後設備下一次回報就補回來（每台至少每 5 分鐘一次）。
-import type { IncomingMessage } from 'node:http';
+// - 長輪詢（SDK ADR 0138）：`GET …/<blindId>/next?wait=` 直接掛住 HTTP 回應（Node 沒有休眠計費的顧慮）；`POST …/ack`、`…/state`
+//   的本體就是設備幀。與 Workers 版同一套端點、狀態碼與空檔保留。
+// - Shelly 明文轉譯（SDK ADR 0139，只限自架＋白名單＋危險旗標）：`/iot/v1/shelly/<homeTag>/<blindId>?token=…`，
+//   以這台的 deviceKey 透過 {@link IotShellyTranslator} 替它封／解信封。
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer, type WebSocket } from 'ws';
 
 import { parseIotAcl, type IotAcl } from '../iot/acl.js';
 import { IOT_KIND_ACK, IOT_KIND_COMMAND, IOT_KIND_HEARTBEAT, IOT_KIND_QUERY, IOT_KIND_RETAINED, IOT_KIND_STATE } from '../iot/kinds.js';
 import { firstHost } from './host-config.js';
-import { IotRealtimeHome, IOT_REALTIME_REJECT, parseIotRealtimeConfig, type IotRealtimeSockets } from './iot-realtime.js';
+import { IOT_DEVICE_FRAME_MAX_BYTES, parseIotDeviceFrame } from '../iot/device-frame.js';
+import { iotLongPollWaitSec, iotPlaintextFrom, IotRealtimeHome, IOT_REALTIME_REJECT, parseIotRealtimeConfig, type IotRealtimeSockets } from './iot-realtime.js';
+import { IotShellyTranslator } from './iot-shelly.js';
 import { IOT_REALTIME_ADDRESSABLE_PER_AUTHOR } from './iot-realtime-config.js';
 import { MessageStore } from './message-store.js';
 import { closeSignalOf, RelayCore, type Outbound } from './relay-core.js';
@@ -20,9 +26,18 @@ import type { SqlExec } from './sql-message-store.js';
 
 const IOT_PHONE_KINDS = [IOT_KIND_COMMAND, IOT_KIND_ACK, IOT_KIND_STATE, IOT_KIND_QUERY, IOT_KIND_RETAINED, IOT_KIND_HEARTBEAT];
 const REPLACED_CLOSE = 4409;
-const PATH = /^\/iot\/v1\/(home|dev)\/([A-Za-z0-9_-]{22})(?:\/([A-Za-z0-9_-]{22}))?\/?$/;
+const PATH = /^\/iot\/v1\/(home|dev|shelly)\/([A-Za-z0-9_-]{22})(?:\/([A-Za-z0-9_-]{22}))?\/?$/;
+/** 長輪詢的端點（SDK ADR 0138） */
+const LONGPOLL_PATH = /^\/iot\/v1\/dev\/([A-Za-z0-9_-]{22})\/([A-Za-z0-9_-]{22})\/(next|ack|state)\/?$/;
 
 const STATUS_TEXT: Record<number, string> = { 401: 'Unauthorized', 403: 'Forbidden', 404: 'Not Found', 409: 'Conflict', 426: 'Upgrade Required' };
+const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8', 'Cinder-Relay': '1' };
+
+function httpError(res: ServerResponse, status: number, error: string, headers: Record<string, string> = {}): void {
+  if (res.headersSent) return void res.end();
+  res.writeHead(status, { ...JSON_HEADERS, ...headers });
+  res.end(JSON.stringify({ error }));
+}
 
 /** 在 socket 上直接回一個 HTTP 錯誤（升級被拒）：JSON＋`Cinder-Relay: 1` */
 function rejectUpgrade(socket: Duplex, status: number, error: string): void {
@@ -35,18 +50,26 @@ function rejectUpgrade(socket: Duplex, status: number, error: string): void {
   socket.destroy();
 }
 
+/** 一台設備目前的連線：常駐 WebSocket，或掛著的一輪長輪詢 */
+type DeviceSlot =
+  | { kind: 'ws'; ws: WebSocket; lastHb: number }
+  | { kind: 'longpoll'; res: ServerResponse; timer: ReturnType<typeof setTimeout> }
+  | { kind: 'shelly'; ws: WebSocket; translator: IotShellyTranslator };
+
 interface HomeRuntime {
   rt: IotRealtimeHome;
   core: RelayCore;
   phones: Map<string, WebSocket>;
-  devices: Map<string, { ws: WebSocket; lastHb: number }>;
+  devices: Map<string, DeviceSlot>;
+  /** Shelly 設備的金鑰（設備 id → deviceKey；SDK ADR 0139） */
+  plaintextKeys: ReadonlyMap<string, Uint8Array>;
 }
 
 export interface IotNodeHub {
   /** 這是 IoT 路徑嗎；是的話已處理（接受或拒絕） */
   handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): boolean;
-  /** 一般 HTTP 請求打到 `/iot/`：回錯誤；不是 IoT 路徑回 false */
-  handleHttp(path: string): { status: number; error: string } | undefined;
+  /** 一般 HTTP 請求打到 `/iot/`：長輪詢（SDK ADR 0138）或錯誤；不是 IoT 路徑回 false（沒處理） */
+  handleHttp(req: IncomingMessage, res: ServerResponse): boolean;
   close(): void;
 }
 
@@ -67,20 +90,43 @@ export function createIotNodeHub(env: Record<string, string | undefined>, opts: 
     } catch {
       raw = undefined;
     }
-    const parsed = parseIotRealtimeConfig(raw, keys);
+    const parsed = parseIotRealtimeConfig(raw, keys, iotPlaintextFrom(env));
     // 🔴 自架站的設定錯誤要讓人看見；只印路徑與代碼（不印值）
     if (parsed.issues.length > 0) console.warn(`IOT_REALTIME 有 ${parsed.issues.length} 個問題，相關家庭不啟用：${parsed.issues.map((i) => `${i.path}(${i.code})`).join(', ')}`);
     const exec = opts.exec;
     exec?.('CREATE TABLE IF NOT EXISTS iot_acl (home TEXT PRIMARY KEY, acl TEXT NOT NULL)');
     for (const [homeTag, entry] of parsed.homes) {
       const phones = new Map<string, WebSocket>();
-      const devices = new Map<string, { ws: WebSocket; lastHb: number }>();
+      const devices = new Map<string, DeviceSlot>();
+      let rtRef: IotRealtimeHome | undefined;
+      const plaintextKeys = entry.plaintextKeys;
       const sockets: IotRealtimeSockets = {
         isConnected: (b) => devices.has(b),
-        lastHeartbeatMs: (b) => devices.get(b)?.lastHb,
+        lastHeartbeatMs: (b) => {
+          const d = devices.get(b);
+          return d?.kind === 'ws' ? d.lastHb : undefined;
+        },
+        transportOf: (b) => devices.get(b)?.kind,
         send: (b, text) => {
           const d = devices.get(b);
-          if (!d || d.ws.readyState !== d.ws.OPEN) return false;
+          if (!d) return false;
+          if (d.kind === 'longpoll') {
+            // 一輪只回一個幀
+            devices.delete(b);
+            clearTimeout(d.timer);
+            d.res.writeHead(200, JSON_HEADERS);
+            d.res.end(text);
+            rtRef?.longPollEnded(b);
+            return true;
+          }
+          if (d.ws.readyState !== d.ws.OPEN) return false;
+          if (d.kind === 'shelly') {
+            const out = d.translator.fromRelay(text);
+            for (const rpc of out.toDevice) d.ws.send(rpc);
+            // 馬上能回答的 up（不認得的 topic、過期）晚一拍再交給核心：現在還在核心處理手機訊息的途中
+            if (out.up.length > 0) queueMicrotask(() => feedUp(homeTag, b, out.up));
+            return true;
+          }
           d.ws.send(text);
           return true;
         },
@@ -100,6 +146,7 @@ export function createIotNodeHub(env: Record<string, string | undefined>, opts: 
           }
         : undefined;
       const rt = new IotRealtimeHome(entry.config, entry.gatewaySecret, { sockets, ...(aclStore ? { aclStore } : {}) });
+      rtRef = rt;
       const core: RelayCore = new RelayCore({
         store: new MessageStore({ addressablePerAuthor: IOT_REALTIME_ADDRESSABLE_PER_AUTHOR }),
         allowedKinds: IOT_PHONE_KINDS,
@@ -112,7 +159,7 @@ export function createIotNodeHub(env: Record<string, string | undefined>, opts: 
           return r ? [...r.outbound, ...r.publish.flatMap((e) => core.publishLocal(e))] : undefined;
         },
       });
-      homes.set(homeTag, { rt, core, phones, devices });
+      homes.set(homeTag, { rt, core, phones, devices, plaintextKeys });
     }
     enabled = homes.size > 0;
   }
@@ -129,6 +176,76 @@ export function createIotNodeHub(env: Record<string, string | undefined>, opts: 
     }
   };
 
+  /** Shelly 轉譯出來的 up 幀交給家庭核心（與 E2EE 設備的幀走同一條路） */
+  function feedUp(homeTag: string, blindId: string, frames: readonly string[]): void {
+    const h = homes.get(homeTag);
+    if (!h) return;
+    for (const frame of frames) for (const e of h.rt.onDeviceFrame(blindId, frame).publish) dispatch(h, h.core.publishLocal(e));
+  }
+
+  /** 把舊的那條讓出來（4409／409 replaced） */
+  const replace = (h: HomeRuntime, blindId: string): void => {
+    const old = h.devices.get(blindId);
+    if (!old) return;
+    h.devices.delete(blindId);
+    if (old.kind === 'ws' || old.kind === 'shelly') return void old.ws.close(REPLACED_CLOSE, 'replaced');
+    clearTimeout(old.timer);
+    httpError(old.res, 409, 'restricted: iot-replaced: another connection for this device took over (token leaked?)');
+  };
+
+  /** 長輪詢的三個端點（SDK ADR 0138） */
+  const longPoll = (h: HomeRuntime, blindId: string, op: 'next' | 'ack' | 'state', req: IncomingMessage, res: ServerResponse): void => {
+    const auth = h.rt.authenticateDevice(blindId, req.headers.authorization);
+    if (!auth.ok) return httpError(res, auth.status, auth.error);
+    if (auth.device.transport === 'shelly') return httpError(res, 404, IOT_REALTIME_REJECT.device);
+    if (op === 'next') {
+      if (req.method !== 'GET') return httpError(res, 405, 'invalid: iot-method: GET /next to wait for the next frame', { Allow: 'GET' });
+      const held = h.rt.longPollStart(blindId);
+      if (held !== undefined) {
+        res.writeHead(200, JSON_HEADERS);
+        return void res.end(held);
+      }
+      replace(h, blindId);
+      const wait = iotLongPollWaitSec(new URL(req.url ?? '/', 'http://x').searchParams.get('wait'));
+      const slot: DeviceSlot = {
+        kind: 'longpoll',
+        res,
+        timer: setTimeout(() => {
+          if (h.devices.get(blindId) !== slot) return;
+          h.devices.delete(blindId);
+          res.writeHead(204, { 'Cinder-Relay': '1' });
+          res.end();
+          h.rt.longPollEnded(blindId);
+        }, wait * 1000),
+      };
+      h.devices.set(blindId, slot);
+      // 設備那頭斷了（或反向代理逾時）：開始算空檔
+      res.on('close', () => {
+        if (h.devices.get(blindId) !== slot) return;
+        h.devices.delete(blindId);
+        clearTimeout(slot.timer);
+        h.rt.longPollEnded(blindId);
+      });
+      return;
+    }
+    if (req.method !== 'POST') return httpError(res, 405, `invalid: iot-method: POST the device frame to /${op}`, { Allow: 'POST' });
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on('data', (c: Buffer) => {
+      size += c.length;
+      if (size <= IOT_DEVICE_FRAME_MAX_BYTES) chunks.push(c);
+    });
+    req.on('end', () => {
+      const text = Buffer.concat(chunks).toString('utf8');
+      const frame = size <= IOT_DEVICE_FRAME_MAX_BYTES ? parseIotDeviceFrame(text, 'device') : undefined;
+      if (!frame || frame.t !== op) return httpError(res, 400, `invalid: iot-frame: the body must be one device frame with t="${op}"`);
+      // 解不開的信封照樣回 204（不給 oracle）
+      for (const e of h.rt.onDeviceFrame(blindId, text).publish) dispatch(h, h.core.publishLocal(e));
+      res.writeHead(204, { 'Cinder-Relay': '1' });
+      res.end();
+    });
+  };
+
   let counter = 0;
   return {
     handleUpgrade(req, socket, head) {
@@ -139,18 +256,42 @@ export function createIotNodeHub(env: Record<string, string | undefined>, opts: 
       const kind = m?.[1];
       const homeTag = m?.[2];
       const blindId = m?.[3];
-      if (!m || (kind === 'home' && blindId !== undefined) || (kind === 'dev' && blindId === undefined)) {
+      if (!m || (kind === 'home' && blindId !== undefined) || (kind !== 'home' && blindId === undefined)) {
         return void rejectUpgrade(socket, 404, 'invalid: iot-path: not an IoT endpoint (see SDK ADR 0049)'), true;
       }
       const h = homes.get(homeTag!);
       if (!h) return void rejectUpgrade(socket, 403, IOT_REALTIME_REJECT.home), true;
+      if (kind === 'shelly') {
+        // Shelly 設不了標頭：權杖放網址（會進存取記錄——SDK ADR 0139 的已知風險）
+        const token = new URL(req.url ?? '/', 'http://x').searchParams.get('token');
+        const auth = h.rt.authenticateDevice(blindId!, req.headers.authorization ?? (token ? `Bearer ${token}` : undefined));
+        if (!auth.ok) return void rejectUpgrade(socket, auth.status, auth.error), true;
+        const key = auth.device.transport === 'shelly' ? h.plaintextKeys.get(auth.device.id) : undefined;
+        if (!key) return void rejectUpgrade(socket, 404, IOT_REALTIME_REJECT.device), true;
+        wss.handleUpgrade(req, socket, head, (ws) => {
+          replace(h, blindId!);
+          const slot: DeviceSlot = { kind: 'shelly', ws, translator: new IotShellyTranslator({ device: auth.device, deviceKey: key }) };
+          h.devices.set(blindId!, slot);
+          ws.on('message', (data) => {
+            const out = slot.translator.fromDevice(data.toString());
+            for (const rpc of out.toDevice) ws.send(rpc);
+            feedUp(homeTag!, blindId!, out.up);
+          });
+          const gone = (): void => {
+            if (h.devices.get(blindId!) === slot) h.devices.delete(blindId!);
+          };
+          ws.on('close', gone);
+          ws.on('error', gone);
+        });
+        return true;
+      }
       if (kind === 'dev') {
         const auth = h.rt.authenticateDevice(blindId!, req.headers.authorization);
         if (!auth.ok) return void rejectUpgrade(socket, auth.status, auth.error), true;
+        if (auth.device.transport === 'shelly') return void rejectUpgrade(socket, 404, IOT_REALTIME_REJECT.device), true;
         wss.handleUpgrade(req, socket, head, (ws) => {
-          const old = h.devices.get(blindId!);
-          if (old) old.ws.close(REPLACED_CLOSE, 'replaced');
-          const slot = { ws, lastHb: Date.now() };
+          replace(h, blindId!);
+          const slot: DeviceSlot & { kind: 'ws' } = { kind: 'ws', ws, lastHb: Date.now() };
           h.devices.set(blindId!, slot);
           ws.on('ping', () => void (slot.lastHb = Date.now()));
           ws.on('message', (data, isBinary) => {
@@ -187,14 +328,27 @@ export function createIotNodeHub(env: Record<string, string | undefined>, opts: 
       });
       return true;
     },
-    handleHttp(path) {
-      if (!path.startsWith('/iot/')) return undefined;
-      if (!enabled) return { status: 404, error: 'blocked: iot-disabled: this relay does not run the IoT realtime channel' };
-      return { status: 426, error: 'invalid: iot-upgrade: WebSocket upgrade required' };
+    handleHttp(req, res) {
+      const path = (req.url ?? '/').split('?')[0] ?? '/';
+      if (!path.startsWith('/iot/')) return false;
+      if (!enabled) return httpError(res, 404, 'blocked: iot-disabled: this relay does not run the IoT realtime channel'), true;
+      const lp = LONGPOLL_PATH.exec(path);
+      if (lp) {
+        const h = homes.get(lp[1]!);
+        if (!h) return httpError(res, 403, IOT_REALTIME_REJECT.home), true;
+        return longPoll(h, lp[2]!, lp[3] as 'next' | 'ack' | 'state', req, res), true;
+      }
+      return httpError(res, 426, 'invalid: iot-upgrade: WebSocket upgrade required', { Upgrade: 'websocket' }), true;
     },
     close() {
       for (const h of homes.values()) {
-        for (const d of h.devices.values()) d.ws.terminate();
+        for (const d of h.devices.values()) {
+          if (d.kind === 'ws' || d.kind === 'shelly') d.ws.terminate();
+          else {
+            clearTimeout(d.timer);
+            d.res.destroy();
+          }
+        }
         for (const ws of h.phones.values()) ws.terminate();
       }
       wss.close();

@@ -11,6 +11,9 @@
 // - 0337：視訊用畫質檔位的限制，不是裸 `true`（手機預設常是 720p 以上）。
 // - 0243：連線失敗分「從未打通」與「連上後斷線」。
 // - 相機一定真的 `stop()`：指示燈要誠實。
+// - 0424（真機發現，SDK ADR 0141 一併修）：遠端軌可能沒帶 stream；答方自己鋪的視訊 transceiver 不會被 offer 採用
+//   （mid=null），鏡頭要放在協商過的那條；那條也不能停（Chrome 的 addTrack 會挑到已停的並丟例外）；
+//   本地／遠端串流變動一律送新物件。
 import type { Identity } from '../identity.js';
 import type { NostrEvent } from '../protocol/event.js';
 import {
@@ -29,10 +32,14 @@ import type { RelayTransport, Subscription } from '../relay-pool.js';
 import {
   type CallPeerConnectionLike,
   type CallRtcFactory,
+  type CreateMediaStream,
   defaultCallRtc,
+  defaultCreateMediaStream,
   defaultGetUserMedia,
   type GetUserMedia,
+  isNegotiated,
   type MediaStreamLike,
+  type MediaTrackLike,
   type RtpSenderLike,
   type RtpTransceiverLike,
 } from './media.js';
@@ -47,6 +54,10 @@ export interface CallManagerOptions {
   /** 封鎖的人打來：不響鈴、不回應 */
   isBlocked?: (pubkey: string) => boolean;
   videoQuality?: VideoQuality;
+  /** 建新的串流物件（預設 `new MediaStream(tracks)`）；串流內容變了一律送新物件，UI 才會重綁 */
+  createStream?: CreateMediaStream;
+  /** 另一個通話（例如 `GroupCallManager`）進行中：來電一律回忙線（SDK ADR 0141） */
+  isBusy?: () => boolean;
 }
 
 const SEEN_MEMORY = 4_096;
@@ -64,6 +75,9 @@ export class CallManager {
   readonly #getUserMedia: GetUserMedia;
   readonly #iceServers: CallManagerOptions['iceServers'];
   readonly #isBlocked: (pubkey: string) => boolean;
+  readonly #isBusyElsewhere: () => boolean;
+  readonly #createStream: CreateMediaStream;
+  #remoteTracks: MediaTrackLike[] = [];
   readonly #subscription: Subscription;
   readonly #seen = new Set<string>();
   #session = new CallSession();
@@ -97,6 +111,8 @@ export class CallManager {
     this.#getUserMedia = getUserMedia;
     this.#iceServers = opts.iceServers;
     this.#isBlocked = opts.isBlocked ?? (() => false);
+    this.#isBusyElsewhere = opts.isBusy ?? (() => false);
+    this.#createStream = opts.createStream ?? defaultCreateMediaStream();
     this.#videoQuality = opts.videoQuality ?? DEFAULT_VIDEO_QUALITY;
     this.#subscription = this.#transport.subscribe([{ kinds: [CALL_SIGNAL_KIND], '#p': [this.#identity.pubkey] }], {
       onEvent: (event) => void this.#onEvent(event as NostrEvent),
@@ -146,7 +162,7 @@ export class CallManager {
 
   // ── 操作 ─────────────────────────────────────────────────────────────────
   async startCall(peer: string, media: CallMedia): Promise<void> {
-    if (this.#closed || this.#busy()) return;
+    if (this.#closed || this.#busy() || this.#isBusyElsewhere()) return;
     this.#session = new CallSession();
     this.#peer = peer;
     this.#media = media;
@@ -261,7 +277,7 @@ export class CallManager {
     }
 
     if (signal.type === 'call-invite') {
-      if (this.#busy()) {
+      if (this.#busy() || this.#isBusyElsewhere()) {
         await this.#publish({ type: 'call-reject', callId: signal.callId, reason: 'busy' }, sender).catch(() => {});
         return;
       }
@@ -281,6 +297,7 @@ export class CallManager {
 
   #ensurePc(): void {
     this.#everConnected = false;
+    this.#remoteTracks = [];
     const servers = typeof this.#iceServers === 'function' ? this.#iceServers() : this.#iceServers;
     const pc = this.#rtc(servers ? { iceServers: servers } : {});
     pc.onicecandidate = (event) => {
@@ -297,8 +314,17 @@ export class CallManager {
       void this.#publish(signal, this.#peer).catch(() => {});
     };
     pc.ontrack = (event) => {
-      const stream = event.streams[0];
-      if (stream) this.#fire('remoteStream', stream);
+      // 🔴 ADR-0424：對方的 transceiver 沒綁 stream 時 `streams` 是空的——只看 streams[0] 會把視訊丟掉。
+      // 每條軌都併進這一通的遠端串流，並送新物件。
+      const incoming = [...(event.streams[0]?.getTracks() ?? []), ...(event.track ? [event.track] : [])];
+      let changed = false;
+      for (const track of incoming) {
+        if (!this.#remoteTracks.includes(track)) {
+          this.#remoteTracks.push(track);
+          changed = true;
+        }
+      }
+      if (changed) this.#fire('remoteStream', this.#createStream(this.#remoteTracks));
     };
     pc.onconnectionstatechange = () => {
       if (this.#pc !== pc) return;
@@ -325,7 +351,9 @@ export class CallManager {
   #videoSender(): RtpSenderLike | null {
     const pc = this.#pc;
     if (!pc) return null;
-    const transceiver = pc.getTransceivers?.().find(isVideoTransceiver);
+    const videos = (pc.getTransceivers?.() ?? []).filter((t) => isVideoTransceiver(t) && t.direction !== 'stopped');
+    // ADR-0424：答方自己鋪的那條 mid=null、不在 SDP 裡，從它送的畫格對方收不到——先挑協商過的
+    const transceiver = videos.find(isNegotiated) ?? videos[0];
     if (transceiver) return transceiver.sender;
     return pc.getSenders().find((s) => s.track?.kind === 'video') ?? null;
   }
@@ -338,24 +366,27 @@ export class CallManager {
     if (!track) throw new Error('取不到視訊軌');
     try {
       await sender.replaceTrack(track);
-      this.#localStream?.addTrack?.(track);
     } catch (error) {
       track.stop(); // 取到之後失敗一定要停掉：不然相機一直亮著
       throw error;
     }
+    this.#replaceLocalTrack(track, null);
     this.#applyVideoQuality();
-    if (this.#localStream) this.#fire('localStream', this.#localStream);
   }
 
   #detachVideo(): void {
     const sender = this.#videoSender();
     const track = sender?.track ?? null;
     void sender?.replaceTrack(null);
-    if (track) {
-      track.stop(); // 真的關相機，不只是送黑畫面
-      this.#localStream?.removeTrack?.(track);
-    }
-    if (this.#localStream) this.#fire('localStream', this.#localStream);
+    if (track) track.stop(); // 真的關相機，不只是送黑畫面
+    this.#replaceLocalTrack(null, track);
+  }
+
+  /** 本地串流換一條軌：送**新的**串流物件（UI 只在物件變了才重綁 srcObject；ADR-0424） */
+  #replaceLocalTrack(add: MediaTrackLike | null, remove: MediaTrackLike | null): void {
+    const kept = (this.#localStream?.getTracks() ?? []).filter((t) => t !== remove && t !== add);
+    this.#localStream = this.#createStream(add ? [...kept, add] : kept);
+    this.#fire('localStream', this.#localStream);
   }
 
   async #run(actions: CallAction[]): Promise<void> {
@@ -394,7 +425,17 @@ export class CallManager {
         await pc.setRemoteDescription({ type: action.kind, sdp: action.sdp });
         // 🔴 ADR-0338 §3：答方為對方視訊 m-line 自動建立的 transceiver 是 recvonly，不改就永遠送不出視訊
         if (action.kind === 'offer') {
-          for (const t of pc.getTransceivers?.() ?? []) if (isVideoTransceiver(t) && t.direction === 'recvonly') t.direction = 'sendrecv';
+          const videos = (pc.getTransceivers?.() ?? []).filter(isVideoTransceiver);
+          const negotiated = videos.some(isNegotiated);
+          for (const t of videos) {
+            if (t.mid === null) {
+              // ADR-0424：自己鋪的那條沒被 offer 採用。不能停（Chrome 的 addTrack 會挑到已停的並丟例外）；
+              // 只有 offer 根本沒有視訊（舊版）時才停，canChangeMedia 才會照實回 false。
+              if (!negotiated) t.stop?.();
+            } else if (t.direction === 'recvonly') {
+              t.direction = 'sendrecv';
+            }
+          }
         }
         this.#hasRemote = true;
         for (const candidate of this.#pendingCandidates.splice(0)) await pc.addIceCandidate(candidate).catch(() => {});
@@ -420,9 +461,24 @@ export class CallManager {
       video: media === 'video' ? videoConstraints(this.#videoQuality) : false,
     });
     this.#localStream = stream;
-    for (const track of stream.getTracks()) this.#pc.addTrack(track, stream);
+    for (const track of stream.getTracks()) {
+      // 🔴 ADR-0424：答方（已套用 offer）有協商過、還沒上軌的視訊 transceiver 就直接放上去；
+      // 交給 addTrack 會重用自己鋪、沒進 SDP 的那條 ⇒ 鏡頭開了、對方看不到。setStreams 補上 msid。
+      const target = track.kind === 'video' ? this.#unusedNegotiatedVideoSender() : null;
+      if (target) {
+        await target.replaceTrack(track);
+        target.setStreams?.(stream);
+      } else {
+        this.#pc.addTrack(track, stream);
+      }
+    }
     this.#applyVideoQuality();
     this.#fire('localStream', stream);
+  }
+
+  #unusedNegotiatedVideoSender(): RtpSenderLike | null {
+    const tr = this.#pc?.getTransceivers?.().find((t) => isVideoTransceiver(t) && t.mid != null && t.direction !== 'stopped' && !t.sender.track);
+    return tr?.sender ?? null;
   }
 
   #applyVideoQuality(): void {
@@ -465,6 +521,7 @@ export class CallManager {
     }
     this.#pc = null;
     this.#localStream = null;
+    this.#remoteTracks = [];
     this.#hasRemote = false;
     this.#pendingCandidates = [];
     this.#fire('localStream', null);

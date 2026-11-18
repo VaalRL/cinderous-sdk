@@ -9,10 +9,10 @@ import { join } from 'node:path';
 import { allowedPubkeysFrom } from '../relay/host-config.js';
 import { assertRelayName, commandFailure, defaultRunner, waitForHealthy, } from './common.js';
 import { prepareNodeRelayContext } from './container.js';
-import { DEFAULT_FLY_REGION, FLY_VOLUME_NAME as VOLUME_NAME, IOT_GATEWAY_KEYS_ENV, relayEnvironment, renderFlyToml } from './render.js';
+import { DEFAULT_FLY_REGION, FLY_VOLUME_NAME as VOLUME_NAME, IOT_GATEWAY_KEYS_ENV, IOT_PLAINTEXT_DEVICE_KEYS_ENV, relayEnvironment, renderFlyToml } from './render.js';
 // 產生器搬到不碰 Node 的 render.ts（SDK ADR 0050），這裡轉出以維持原本的匯出
 export { DEFAULT_FLY_REGION, renderFlyToml } from './render.js';
-import { iotGatewayKeysSecret, privateLaneEndpoint } from './shared.js';
+import { iotGatewayKeysSecret, iotPlaintextDeviceKeysSecret, privateLaneEndpoint } from './shared.js';
 export async function deployFlyRelay(opts = {}) {
     const name = opts.name ?? 'cinderous-relay';
     assertRelayName(name, 'Fly app 名稱');
@@ -28,6 +28,7 @@ export async function deployFlyRelay(opts = {}) {
     const environment = relayEnvironment({ ...opts, ...(allowed ? { allowedPubkeys: allowed } : {}), persist, trustProxy: true });
     // C′ 的閘道私鑰（SDK ADR 0121）：不進 fly.toml（會被提交、儀表板看得到），部署前以 `fly secrets import` 從標準輸入上傳
     const gatewayKeys = opts.iotGatewayKeys !== undefined ? iotGatewayKeysSecret(opts.iotGatewayKeys, opts.iotRealtime) : undefined;
+    const plaintextKeys = opts.iotPlaintextDeviceKeys !== undefined ? iotPlaintextDeviceKeysSecret(opts.iotPlaintextDeviceKeys, opts.iotRealtime) : undefined;
     const workDir = opts.workDir ?? join(process.cwd(), '.cinderous', name);
     prepareNodeRelayContext({ workDir, ...(opts.sdkRoot ? { sdkRoot: opts.sdkRoot } : {}), ...(opts.version ? { version: opts.version } : {}) });
     const configPath = join(workDir, 'fly.toml');
@@ -58,8 +59,9 @@ export async function deployFlyRelay(opts = {}) {
                 throw commandFailure('fly volumes create', createdVolume);
         }
     }
-    if (gatewayKeys !== undefined) {
-        const imported = await run('fly', ['secrets', 'import', '--app', name, '--stage'], env, `${IOT_GATEWAY_KEYS_ENV}=${gatewayKeys}\n`);
+    if (gatewayKeys !== undefined || plaintextKeys !== undefined) {
+        const lines = [...(gatewayKeys !== undefined ? [`${IOT_GATEWAY_KEYS_ENV}=${gatewayKeys}`] : []), ...(plaintextKeys !== undefined ? [`${IOT_PLAINTEXT_DEVICE_KEYS_ENV}=${plaintextKeys}`] : [])];
+        const imported = await run('fly', ['secrets', 'import', '--app', name, '--stage'], env, `${lines.join('\n')}\n`);
         if (imported.code !== 0)
             throw commandFailure('fly secrets import', imported);
     }

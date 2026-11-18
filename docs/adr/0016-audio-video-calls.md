@@ -33,7 +33,8 @@ Cinderous 已經出貨一對一的音訊與視訊通話，分兩層：
 
 ## 還沒做
 
-- 多人通話：Cinderous 也只有一對一。
+- ~~多人通話：Cinderous 也只有一對一。~~ **已做（SDK ADR 0141）**：網狀小群組 `GroupCallManager`，預設 4 人、硬上限 6。
+  同一份 ADR 也修了本 ADR 的 `CallManager` 從 Cinderous 帶過來的三個真機問題（Cinderous ADR-0424）。
 - TURN 憑證的便利函式：Cinderous 中繼的 `/turn` 要 NIP-98 授權。目前 `iceServers` 由 App 傳入；`unreachable` 的通話要靠 TURN 才打得通。
 - ICE 路徑觀測（Cinderous ADR-0344：直連或經 TURN）與鏡頭切換（ADR-0339）。
 

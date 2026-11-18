@@ -16,6 +16,8 @@ export const IOT_KEY_GRACE_DEFAULT_SEC = 86_400;
 export const IOT_KEY_GRACE_MAX_SEC = 604_800;
 /** 盲化 id 的長度（＝`./iot` 的 `IOT_BLIND_LENGTH`；這裡不能引用 `./iot`，測試比對兩者一致） */
 export const IOT_REALTIME_BLIND_LENGTH = 22;
+/** Shelly 一台最多幾個開關（`switch:0`–`switch:15`） */
+export const IOT_SHELLY_MAX_SWITCHES = 16;
 export const IOT_REALTIME_BLIND_PATTERN = new RegExp(`^[A-Za-z0-9_-]{${IOT_REALTIME_BLIND_LENGTH}}$`);
 const HEX64 = /^[0-9a-f]{64}$/;
 const ROLES = ['viewer', 'operator', 'owner'];
@@ -98,6 +100,7 @@ export function checkIotRealtimeConfig(raw, checkAcl) {
                     add(`${p}.localFallback`, 'lock-local-fallback', `門鎖類設備必須列出不依賴 relay 的開啟方式（${IOT_LOCAL_FALLBACKS.join('／')}），ADR 0049 §10.5`);
                 }
             }
+            shellyIn(dev, p, add);
             const prev = dev.previousEpoch;
             if (prev !== undefined && (!Number.isSafeInteger(prev.epoch) || !Number.isSafeInteger(prev.until)))
                 add(`${p}.previousEpoch`, 'epoch', 'previousEpoch 需要整數 epoch 與 until（unix 秒）');
@@ -107,6 +110,40 @@ export function checkIotRealtimeConfig(raw, checkAcl) {
         homes.push({ index: i, home, ok: issues.length === before });
     });
     return { issues, homes };
+}
+/** Shelly 開關對應的 topic：與 `./iot` 的 `isValidIotTopic` 同一套規則（這裡不能帶進 `./iot` 的程式） */
+function isPlainTopic(v) {
+    if (typeof v !== 'string' || v.length === 0 || v.length > 256 || v.includes('\u0000') || v.startsWith('$'))
+        return false;
+    const levels = v.split('/');
+    return levels.length <= 16 && !levels.some((l) => l.includes('+') || l.includes('#'));
+}
+/** `transport: 'shelly'` 的形狀（SDK ADR 0139）；危險旗標與金鑰由 relay 另外檢查（部署設定器手上沒有金鑰） */
+function shellyIn(dev, p, add) {
+    if (dev.transport !== undefined && dev.transport !== 'shelly')
+        return add(`${p}.transport`, 'shape', 'transport 只能是 shelly（沒給＝設備自己封信封）');
+    if (dev.transport === undefined) {
+        if (dev.shelly !== undefined)
+            add(`${p}.shelly`, 'shelly', 'shelly 只能搭配 transport: "shelly"');
+        return;
+    }
+    if (dev.class === 'lock')
+        add(`${p}.class`, 'shelly-lock', '門鎖類不能走 Shelly 明文轉譯：relay 要拿到 operatorSecret 才能替它解指令，等於放棄 §9.5（SDK ADR 0139）');
+    const switches = dev.shelly?.switches;
+    if (!Array.isArray(switches) || switches.length === 0 || switches.length > IOT_SHELLY_MAX_SWITCHES) {
+        return add(`${p}.shelly.switches`, 'shelly', `shelly.switches 必須是 1–${IOT_SHELLY_MAX_SWITCHES} 個 { id, topic }`);
+    }
+    const seen = new Set();
+    switches.forEach((sw, k) => {
+        const { id, topic } = (sw ?? {});
+        if (!Number.isInteger(id) || id < 0 || id >= IOT_SHELLY_MAX_SWITCHES || seen.has(id)) {
+            add(`${p}.shelly.switches[${k}].id`, 'shelly', `開關 id 必須是 0–${IOT_SHELLY_MAX_SWITCHES - 1} 的整數、不重複`);
+        }
+        else
+            seen.add(id);
+        if (!isPlainTopic(topic))
+            add(`${p}.shelly.switches[${k}].topic`, 'shelly', 'topic 必須是具體的 topic（不能有 + 或 #、不能以 $ 開頭）');
+    });
 }
 /**
  * 部署設定器用的名單形狀檢查（不帶進 `./iot`）：陣列、每項有 pubkey（npub 或 64 位 hex）與合法角色。

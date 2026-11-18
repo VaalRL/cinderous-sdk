@@ -64,6 +64,7 @@ describe('描述表 DEPLOY_OPTION_SPECS', () => {
         turnTtlSeconds: 3600,
         iotRealtime: { homes: [{ homeTag: 'h'.repeat(22), homePub: alice, gatewayPubkey: alice, acl: [], devices: [] }] },
         iotHomeDailyRequests: 1000,
+        iotPlaintextDevices: true,
       },
       'worker',
     );

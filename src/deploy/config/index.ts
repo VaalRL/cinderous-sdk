@@ -42,6 +42,7 @@ export {
   PRIVATE_LANE_PLACEHOLDER,
   READ_ONLY_LANE_PLACEHOLDER,
   resolveIotGatewayKeys,
+  resolveIotPlaintextDeviceKeys,
   resolveSecret,
   resolveSiteSecrets,
   resolveStringOrSecret,

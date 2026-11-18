@@ -183,7 +183,7 @@ describe('NIP-11 cinder_iot.realtime（SDK ADR 0120）', () => {
       throw new Error('不該碰 DO');
     }).ns as unknown as Env['IOT_HOME'];
     const doc = relayInfoFrom(env({ IOT_HOME: ns }));
-    expect(doc.cinder_iot).toEqual({ realtime: { ws: true, longpoll: false, heartbeat_sec: 30 } });
+    expect(doc.cinder_iot).toEqual({ realtime: { ws: true, longpoll: true, heartbeat_sec: 30 } });
     expect(JSON.stringify(doc)).not.toContain(home.homeTag);
     expect(relayInfoFrom(env()).cinder_iot).toBeUndefined(); // 沒有綁定
     expect(relayInfoFrom(env({ IOT_HOME: ns, IOT_GATEWAY_KEYS: '{}' })).cinder_iot).toBeUndefined(); // 家庭無效

@@ -4,6 +4,8 @@ export { parseIotDownMessage, parseIotUpMessage, IOT_DEVICE_ACK_STATUSES } from 
 export type { IotDeviceAckStatus, IotDownCommand, IotDownMessage, IotDownQuery, IotUpAck, IotUpMessage, IotUpState } from './device-message.js';
 export { generateIotDeviceToken, hashIotDeviceToken, IOT_DEVICE_HEARTBEAT, IOT_DEVICE_HEARTBEAT_ACK } from './device-frame.js';
 export { deriveIotDeviceKeyDown, iotKid } from './envelope.js';
+export { classifyIotDeviceDisconnect, iotDeviceRetryDelayMs, IOT_DEVICE_MIN_RETRY_MS, IOT_DEVICE_PROBE_INTERVAL_MS, IOT_DEVICE_QUOTA_JITTER_MS, IOT_DEVICE_REPLACED_RETRY_MS, } from './device-backoff.js';
+export type { IotDeviceDisconnect, IotDeviceDisconnectClass, IotDeviceObservation, IotDeviceRetryContext } from './device-backoff.js';
 export declare const IOT_DEVICE_DEFAULT_HEARTBEAT_SEC = 30;
 export declare const IOT_DEVICE_DEFAULT_HEARTBEAT_TIMEOUT_SEC = 10;
 /** 設備端的時間窗（秒）：一般設備 ±60；門類建議設 15（§9.4） */

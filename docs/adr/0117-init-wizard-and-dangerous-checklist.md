@@ -61,6 +61,8 @@ npx cinderous init [--out cinderous.config.json] [--provider <目標>] [--advanc
 
 ADR 0050 P1 的其他項目還沒做：`config migrate`、`cloudflareApiOptionsFromConfig`＋REST `secret_text`、隱藏輸入與 `.secrets/`。精靈只問環境變數的名稱、不收秘密值，所以目前不需要隱藏輸入。
 
+> **後續**：`config migrate`、`cloudflareApiOptionsFromConfig`＋REST `secret_text` 已由 [SDK ADR 0118](0118-turn-secrets-rest-config-deploy-and-migrate.md)（v0.79.0）做完；`.secrets/`（`--save-secrets`／`--secrets-dir`）與「隱藏輸入不做」的理由見 [SDK ADR 0137](0137-one-time-secrets-dir.md)。
+
 ## Consequences
 
 - ＋ `dangerous` 從「只是標記」變成真的有作用：精靈要確認、說明會列出、參考頁會寫明（ADR 0116 決策 4 的文字一起改）。

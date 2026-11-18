@@ -7,8 +7,8 @@ import { join } from 'node:path';
 import { allowedPubkeysFrom } from '../relay/host-config.js';
 import { assertRelayName, commandFailure, defaultRunner, waitForHealthy, } from './common.js';
 import { prepareNodeRelayContext } from './container.js';
-import { BIND_ADDRESS_PATTERN, composeBindAddress, composeRequiredEnv, DEFAULT_DOCKER_PORT, IOT_GATEWAY_KEYS_ENV, relayEnvironment, renderCompose, WILDCARD_BIND_ADDRESSES } from './render.js';
-import { iotGatewayKeysSecret, privateLaneEndpoint } from './shared.js';
+import { BIND_ADDRESS_PATTERN, composeBindAddress, composeRequiredEnv, DEFAULT_DOCKER_PORT, IOT_GATEWAY_KEYS_ENV, IOT_PLAINTEXT_DEVICE_KEYS_ENV, relayEnvironment, renderCompose, WILDCARD_BIND_ADDRESSES } from './render.js';
+import { iotGatewayKeysSecret, iotPlaintextDeviceKeysSecret, privateLaneEndpoint } from './shared.js';
 // 產生器搬到不碰 Node 的 render.ts（SDK ADR 0050），這裡轉出以維持原本的匯出
 export { DEFAULT_DOCKER_PORT, renderCompose } from './render.js';
 export async function deployDockerRelay(opts = {}) {
@@ -39,6 +39,10 @@ export async function deployDockerRelay(opts = {}) {
     const gatewayKeys = opts.iotGatewayKeys !== undefined ? iotGatewayKeysSecret(opts.iotGatewayKeys, opts.iotRealtime) : undefined;
     if (opts.iotRealtime !== undefined)
         environment.IOT_GATEWAY_KEYS = composeRequiredEnv(IOT_GATEWAY_KEYS_ENV, 'C′ gateway keys, SDK ADR 0121');
+    // Shelly 的設備金鑰（SDK ADR 0139）：同一個做法；只有開了危險旗標才要
+    const plaintextKeys = opts.iotPlaintextDeviceKeys !== undefined ? iotPlaintextDeviceKeysSecret(opts.iotPlaintextDeviceKeys, opts.iotRealtime) : undefined;
+    if (opts.iotPlaintextDevices === true)
+        environment.IOT_PLAINTEXT_DEVICE_KEYS = composeRequiredEnv(IOT_PLAINTEXT_DEVICE_KEYS_ENV, 'Shelly device keys, SDK ADR 0139');
     const workDir = opts.workDir ?? join(process.cwd(), '.cinderous', name);
     prepareNodeRelayContext({ workDir, ...(opts.sdkRoot ? { sdkRoot: opts.sdkRoot } : {}), ...(opts.version ? { version: opts.version } : {}) });
     const configPath = join(workDir, 'docker-compose.yml');
@@ -57,6 +61,8 @@ export async function deployDockerRelay(opts = {}) {
     const runEnv = tunnel?.token !== undefined ? { [tunnel.tokenEnv]: tunnel.token } : {};
     if (gatewayKeys !== undefined)
         runEnv[IOT_GATEWAY_KEYS_ENV] = gatewayKeys;
+    if (plaintextKeys !== undefined)
+        runEnv[IOT_PLAINTEXT_DEVICE_KEYS_ENV] = plaintextKeys;
     const result = await (opts.run ?? defaultRunner)('docker', ['compose', '-f', configPath, '-p', name, 'up', '-d', '--build'], runEnv);
     if (result.code !== 0)
         throw commandFailure('docker compose', result);

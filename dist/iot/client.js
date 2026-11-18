@@ -213,7 +213,7 @@ export class IotClient {
         if (!ack)
             return { transport: 'ws', status: r.status === 'timeout' ? 'unknown' : r.status };
         return {
-            transport: 'ws',
+            transport: ack.transport === 'longpoll' || ack.transport === 'shelly' ? ack.transport : 'ws',
             status: ack.status,
             ...(ack.status === 'ok' ? { online: ack.online === true } : {}),
             ...(ack.lastHeartbeat !== undefined ? { lastHeartbeat: ack.lastHeartbeat } : {}),

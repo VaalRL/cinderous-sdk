@@ -4,6 +4,16 @@ Releases are git tags; install one with `npm install github:VaalRL/cinderous-sdk
 
 每個版本是一個 git tag，安裝方式是 `npm install github:VaalRL/cinderous-sdk#vX.Y.Z`。每一版列出那一版的改動（取自 commit 紀錄）；每項改動的理由寫在它引用的 ADR 裡（[docs/adr/](docs/adr/README.md)）。
 
+## v0.91.0 — 2026-11-18
+
+- feat(call): 網狀小群組通話 `GroupCallManager`：每人直連每人，預設上限 4 人（`GROUP_CALL_DEFAULT_MAX`），硬上限 6（`GROUP_CALL_HARD_MAX`）；信令同一對一走 NIP-59（kind 21002），逐人封裝，內容帶 `v`＋`groupId`；每對由 pubkey 字典序較小者發 offer（`groupCallOfferer`），不會 glare；某一條連線失敗只影響那一對（`onPeerFailed`）；鏡頭忙碌時先停舊軌再開新軌。舊版的 `parseCallSignal` 會忽略群組信令。一對一線上格式不變。`@cinderous/client/protocol` 新增 `parseGroupCallSignal` 等（ADR 0141）
+- fix(call): 一對一 `CallManager` 修正三個真機才會出現的問題（Cinderous ADR-0424 同類）：沒帶 stream 的遠端軌被丟掉；答方的鏡頭放到沒協商的 transceiver（`mid=null`），對方收到 0 畫格；本地串流就地改、UI 不重綁。🔴 行為改變：`onRemoteStream`／`onLocalStream` 現在給 SDK 新建的 `MediaStream`，不再是 `ontrack` 給的那個，且每次變動都是新物件。新選項 `createStream`、`isBusy`；媒體介面只加選用欄位（`enabled`、`setStreams`、`mid`、`stop`、`streams`、`track`），既有注入實作不受影響（ADR 0141）
+- feat(relay): 名冊移除成員後切斷他已連著的連線。`RelayCore.setAllowedAuthors` 回傳 `Outbound[]`：已認證、但不在新名單上的連線先收 NOTICE 再以 4003 `restricted` 關閉，訂閱當場拆掉；仍在名單上的人與未認證連線不受影響。Node 主機的 `cinder_applyroster` 與名冊事件自動套用都會送出。🔴 自己直接呼叫 `setAllowedAuthors` 的宿主要把回傳值送出去，否則只有擋寫入的舊行為。新增 `REJECT.removedFromWhitelist`。Worker 執行期不換名單，不受影響（ADR 0136）
+- feat(cli): 一次性秘密寫檔：`iot keygen`、`iot push-keygen`、`iot realtime home`、`iot realtime device` 加 `--save-secrets`／`--secrets-dir <目錄>`，秘密不印在終端，寫進新的 `.env` 檔（權限 600、不覆寫、資料夾自帶 `.gitignore`）；寫不進去就改印在終端並警告。不給旗標時輸出不變。`config migrate` 與 `cloudflareApiOptionsFromConfig`＋`secret_text` 早在 v0.79.0（ADR 0118）就有，ADR 0117 已回寫（ADR 0137）
+- feat(iot): C′ R4 長輪詢：`GET /iot/v1/dev/<home>/<blind>/next?wait=`（10–50 秒）與 `POST …/ack`、`POST …/state`，給維持不住 WebSocket 的設備；兩次輪詢之間的指令留 10 秒、每台最多 8 則；家庭額度到 95% 時只拒 `POST state`（503 `home-shed`）。NIP-11 改宣告 `longpoll: true`；手機查設備連線多 `transport` 欄位。順修：DO 休眠喚醒後設備比手機先送訊息時，手機收不到回覆（ADR 0138）
+- feat(iot): C′ R5 Shelly Outbound WebSocket 明文轉譯：`wss://…/iot/v1/shelly/<home>/<blind>?token=`。只在三個條件都成立時啟用：`IOT_PLAINTEXT_DEVICES=1`（站台參數 `site.iotPlaintextDevices`，標 `dangerous`）、`ALLOWED_PUBKEYS` 白名單非空、秘密 `IOT_PLAINTEXT_DEVICE_KEYS` 有這台的金鑰；relay 只拿每台 Shelly 的 deviceKey，不拿家庭秘密；門鎖類不能用。CLI `iot realtime device <id> --shelly-switch 0=home/plug`。NIP-11 不宣告 Shelly（ADR 0139）
+- feat(iot): C′ R3 設備參考實作（部分）：`./iot/device` 新增 §10.2 斷線分類與重連間隔純函式；跨語言測試向量 `tests/fixtures/iot-device-v1.vectors.json`（182 組，TS 產生並驗證）；`examples/iot-device-python/` Python 參考設備（MIT-0，向量逐位元組一致，含 Home Assistant 整合骨架）；ESP-IDF／ESPHome 只有規格對照與骨架，未經實機驗證。🔴 行為改變：`connectIotDevice` 收到 4429 時，知道重置時間就於重置後再隨機等 0–20 分鐘（原 0–60 秒），不知道就每 60 分鐘探測一次（原 60 秒）（ADR 0140）
+
 ## v0.90.0 — 2026-11-12
 
 - feat(protocol): 組織名冊的共同管理者。`OrgRosterDoc.admins`（擁有者簽的名冊才算數，必須是在世成員，上限 `ROSTER_MAX_ADMINS`＝16）；`verifyOrgRoster` 第二個參數可為 `RosterTrust { owner, coAdmins }`：共同管理者簽的名冊也有效，但它帶的 `admins` 一律忽略，而且必須保留每一位共同管理者為在世成員；傳字串的舊用法不變。新增 `rosterSigners`（ADR 0135）

@@ -275,7 +275,8 @@ export function startNodeRelay(env: NodeRelayEnv = process.env, opts: NodeRelayO
         state: nip86State,
         apply: {
           allowed: (list) => {
-            core.setAllowedAuthors(withRosterAdmin(list));
+            // 被移出名冊的人已連著的連線一起切（SDK ADR 0136）。只在執行期套用名冊時呼叫，`dispatch` 已就緒
+            dispatch(core.setAllowedAuthors(withRosterAdmin(list)));
             currentAllowed = list;
           },
           kinds: (list) => core.setAllowedKinds(list),
@@ -409,12 +410,7 @@ export function startNodeRelay(env: NodeRelayEnv = process.env, opts: NodeRelayO
   // IoT 即時通道（SDK ADR 0049 C′）：`/iot/` 自己一套（沒設 IOT_REALTIME＝一律 404 iot-disabled，與 Cloudflare 版相同）
   const iot = createIotNodeHub(env, sqlExec ? { exec: sqlExec } : {});
   const httpServer = createServer((req, res) => {
-    const iotHttp = iot.handleHttp((req.url ?? "/").split("?")[0] ?? "/");
-    if (iotHttp) {
-      res.writeHead(iotHttp.status, { "content-type": "application/json; charset=utf-8", "Cinder-Relay": "1" });
-      res.end(JSON.stringify({ error: iotHttp.error }));
-      return;
-    }
+    if (iot.handleHttp(req, res)) return;
     // NIP-86 管理 API（SDK ADR 0132）：沒開＝當作一般請求，跟之前一樣
     // 只設了 ROSTER_ADMIN_PUBKEY（名冊自動套用，SDK ADR 0134）時沒有運維金鑰＝不開這個端點
     if (nip86 !== undefined && nip86Admins !== undefined && (req.method === "OPTIONS" || isNip86Request(req.method, req.headers["content-type"]))) {

@@ -24,6 +24,13 @@ export function resolveStringOrSecret(value, env, defaultEnv) {
  * 這裡只檢查形狀；與 `site.iotRealtime` 的比對在部署函式（`iotGatewayKeysSecret`）。🔴 訊息只有變數名稱，不含值。
  */
 export function resolveIotGatewayKeys(ref, env, defaultEnv) {
+    return resolveJsonKeys(ref, env, defaultEnv, '{"<homeTag>": "<64 位 hex>"}（C′ 的閘道私鑰，SDK ADR 0121）');
+}
+/** Shelly 的設備金鑰（SDK ADR 0139）：JSON `{ "<homeTag>/<設備 id>": "<64 位 hex>" }`。只檢查形狀；🔴 訊息只有變數名稱。 */
+export function resolveIotPlaintextDeviceKeys(ref, env, defaultEnv) {
+    return resolveJsonKeys(ref, env, defaultEnv, '{"<homeTag>/<設備 id>": "<64 位 hex>"}（Shelly 的設備金鑰，SDK ADR 0139）');
+}
+function resolveJsonKeys(ref, env, defaultEnv, shape) {
     const raw = resolveSecret(ref, env, defaultEnv);
     if (raw === undefined)
         return undefined;
@@ -35,7 +42,7 @@ export function resolveIotGatewayKeys(ref, env, defaultEnv) {
         parsed = undefined;
     }
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed) || !Object.values(parsed).every((v) => typeof v === 'string')) {
-        throw new Error(`環境變數 ${ref?.$env ?? defaultEnv} 必須是 JSON 物件 {"<homeTag>": "<64 位 hex>"}（C′ 的閘道私鑰，SDK ADR 0121）`);
+        throw new Error(`環境變數 ${ref?.$env ?? defaultEnv} 必須是 JSON 物件 ${shape}`);
     }
     return parsed;
 }

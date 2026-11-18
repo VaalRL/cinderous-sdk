@@ -59,6 +59,8 @@ export const REJECT = {
   scopeLane:
     "restricted: scope: app lanes need a tag filter (e.g. #t, #d), authors, or #p set to yourself after NIP-42 AUTH (ADR-0366)",
   notOnWhitelist: "restricted: not-allowed: 不在這座站的白名單上",
+  /** 名冊換了、這個人被移出（SDK ADR 0136）：NOTICE 後以 4003 關閉。詞元與 `notOnWhitelist` 相同 */
+  removedFromWhitelist: "restricted: not-allowed: 已被移出這座站的白名單",
   vanishSelfOnly: "restricted: self-only: 只能清除自己的資料（NIP-62）",
   /** 收件確認（SDK ADR 0067）：簽章者不是這條連線認證的身分 */
   ackSelfOnly: "restricted: self-only: 只能確認自己的收件匣（SDK ADR 0067）",

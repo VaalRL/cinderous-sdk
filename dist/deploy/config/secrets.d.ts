@@ -11,6 +11,8 @@ export declare function resolveStringOrSecret(value: string | SecretRef | undefi
  * 這裡只檢查形狀；與 `site.iotRealtime` 的比對在部署函式（`iotGatewayKeysSecret`）。🔴 訊息只有變數名稱，不含值。
  */
 export declare function resolveIotGatewayKeys(ref: SecretRef | undefined, env: Readonly<Record<string, string | undefined>>, defaultEnv: string): Record<string, string> | undefined;
+/** Shelly 的設備金鑰（SDK ADR 0139）：JSON `{ "<homeTag>/<設備 id>": "<64 位 hex>" }`。只檢查形狀；🔴 訊息只有變數名稱。 */
+export declare function resolveIotPlaintextDeviceKeys(ref: SecretRef | undefined, env: Readonly<Record<string, string | undefined>>, defaultEnv: string): Record<string, string> | undefined;
 /**
  * 私人路徑（SDK ADR 0051）的佔位值：驗證設定檔與產生部署包時用它代替真正的值（部署包不含秘密）。
  * 一個合法的車道 id，產生器會把用到它的變數改寫成從環境讀。

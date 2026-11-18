@@ -3,7 +3,7 @@ import type { NostrEvent } from '../protocol/event.js';
 import { type SecretKey } from '../protocol/keys.js';
 import type { Outbound } from './relay-core.js';
 import { type IotRealtimeDeviceConfig, type IotRealtimeHomeConfig, type IotRealtimeIssue } from './iot-realtime-config.js';
-export { checkIotRealtimeAclShape, checkIotRealtimeConfig, IOT_LOCAL_FALLBACKS, IOT_REALTIME_BLIND_LENGTH, IOT_REALTIME_DEFAULT_HEARTBEAT_SEC, IOT_REALTIME_DEFAULT_TTL_MAX_SEC, IOT_REALTIME_MAX_DEVICES, IOT_REALTIME_MAX_HOMES, type IotLocalFallback, type IotRealtimeDeviceConfig, type IotRealtimeHomeConfig, type IotRealtimeIssue, } from './iot-realtime-config.js';
+export { checkIotRealtimeAclShape, checkIotRealtimeConfig, IOT_LOCAL_FALLBACKS, IOT_REALTIME_BLIND_LENGTH, IOT_REALTIME_DEFAULT_HEARTBEAT_SEC, IOT_REALTIME_DEFAULT_TTL_MAX_SEC, IOT_REALTIME_MAX_DEVICES, IOT_REALTIME_MAX_HOMES, IOT_SHELLY_MAX_SWITCHES, type IotLocalFallback, type IotRealtimeDeviceConfig, type IotRealtimeHomeConfig, type IotRealtimeIssue, } from './iot-realtime-config.js';
 /** retained 每台最少隔多久寫一次（SQLite 每日寫入列是最可能先到頂的額度，§9.4） */
 export declare const IOT_REALTIME_RETAINED_MIN_INTERVAL_SEC = 300;
 /** 拒收訊息（ADR 0040 詞元句：「前綴: 詞元: 說明」） */
@@ -26,9 +26,26 @@ export interface IotRealtimeSockets {
     isConnected(blindId: string): boolean;
     /** 最後一次心跳（毫秒）；還沒有心跳回 undefined（視為剛連上、仍新鮮） */
     lastHeartbeatMs(blindId: string): number | undefined;
-    /** 送一個幀給設備；沒有連線或送不出去回 false */
+    /** 送一個幀給設備；沒有連線或送不出去回 false。長輪詢（SDK ADR 0138）：送出一個幀就結束那一輪 */
     send(blindId: string, text: string): boolean;
+    /** 這台設備現在走哪一種連線（SDK ADR 0138）；沒給＝一律 `ws` */
+    transportOf?(blindId: string): IotRealtimeTransport | undefined;
 }
+/**
+ * 設備連線的型態：常駐 WebSocket、HTTP 長輪詢（SDK ADR 0138，給 Tasmota Berry／ESPHome），
+ * 或 Shelly 的 Outbound WebSocket 明文轉譯（SDK ADR 0139，relay 替它封／解信封）。
+ */
+export type IotRealtimeTransport = 'ws' | 'longpoll' | 'shelly';
+/** 長輪詢兩輪之間的空檔：設備在這麼多秒內結束過一輪，就還當作在線，指令短暫保留到下一輪（SDK ADR 0138） */
+export declare const IOT_LONGPOLL_HOLD_SEC = 10;
+/** 空檔內每台最多保留幾則（再多回 offline——這不是排隊，§10.5-4） */
+export declare const IOT_LONGPOLL_HOLD_MAX = 8;
+/** `/next?wait=` 的預設與上下限（秒，ADR 0049 §9.3）：上限低於常見反向代理與 Cloudflare 的 100 秒逾時 */
+export declare const IOT_LONGPOLL_DEFAULT_WAIT_SEC = 45;
+export declare const IOT_LONGPOLL_MIN_WAIT_SEC = 10;
+export declare const IOT_LONGPOLL_MAX_WAIT_SEC = 50;
+/** 解析 `/next?wait=`：不是整數＝預設 45；夾在 10–50 */
+export declare function iotLongPollWaitSec(raw: string | null | undefined): number;
 /** 角色名單的持久化（Workers：DO storage；Node：檔案或記憶體）；沒給＝只用設定裡的名單 */
 export interface IotRealtimeAclStore {
     load(): IotAcl | undefined;
@@ -67,7 +84,15 @@ export declare class IotRealtimeHome {
     linkState(blindId: string): {
         state: 'online' | 'stale' | 'offline';
         lastHeartbeat?: number;
+        transport?: IotRealtimeTransport;
     };
+    /**
+     * 長輪詢的一輪開始（SDK ADR 0138）：空檔內有保留的幀就交出第一則（這一輪隨即結束，宿主直接回 200），
+     * 否則回 undefined，宿主掛著等。
+     */
+    longPollStart(blindId: string): string | undefined;
+    /** 長輪詢的一輪結束（逾時 204、設備斷線、或宿主送出幀之後）：開始算空檔 */
+    longPollEnded(blindId: string): void;
     /**
      * 給 `RelayCore` 的 `intercept`：這個家的 IoT 指令由轉送半處理；閘道專屬 kind 一律拒收；其他 kind 回 undefined（照一般流程）。
      * 呼叫時事件已經驗過簽章、kind 政策、時鐘窗與速率限制。
@@ -100,14 +125,31 @@ export interface ParsedIotRealtime {
     readonly homes: Map<string, {
         readonly config: IotRealtimeHomeConfig;
         readonly gatewaySecret: SecretKey;
+        /** Shelly 明文轉譯的設備金鑰（設備 id → deviceKey；SDK ADR 0139）；沒有 Shelly 設備＝空 */
+        readonly plaintextKeys: ReadonlyMap<string, Uint8Array>;
     }>;
     readonly issues: IotRealtimeIssue[];
 }
 /**
+ * 明文設備（Shelly 轉譯，SDK ADR 0139）的開關與金鑰。三個條件都要有才算開：
+ * `IOT_PLAINTEXT_DEVICES=1`（危險旗標）、`ALLOWED_PUBKEYS` 白名單不是空的（開放站與官方錨點沒有白名單）、這台設備的金鑰。
+ */
+export interface IotPlaintextOptions {
+    readonly enabled: boolean;
+    /** `IOT_PLAINTEXT_DEVICE_KEYS`：`{ "<homeTag>/<設備 id>": "<64 位 hex deviceKey>" }`（Worker secret／.env） */
+    readonly deviceKeys: Readonly<Record<string, string>>;
+}
+/** 從環境變數讀明文設備的開關（兩個宿主共用；壞 JSON 或壞白名單＝沒開） */
+export declare function iotPlaintextFrom(env: {
+    IOT_PLAINTEXT_DEVICES?: string | undefined;
+    ALLOWED_PUBKEYS?: string | undefined;
+    IOT_PLAINTEXT_DEVICE_KEYS?: string | undefined;
+}): IotPlaintextOptions;
+/**
  * 解析 C′ 的設定（`IOT_REALTIME`，JSON；非秘密）與閘道金鑰（`IOT_GATEWAY_KEYS`，JSON `{homeTag: 64 位 hex}`；Worker secret）。
  * 收集式：一次列出所有問題，有問題的家庭不啟用（不默默套用一半）。形狀的檢查與部署設定器共用（`checkIotRealtimeConfig`）。
  */
-export declare function parseIotRealtimeConfig(raw: unknown, gatewayKeys: Record<string, string>): ParsedIotRealtime;
+export declare function parseIotRealtimeConfig(raw: unknown, gatewayKeys: Record<string, string>, plaintext?: IotPlaintextOptions): ParsedIotRealtime;
 /**
  * NIP-11 `cinder_iot.realtime` 要宣告的內容（SDK ADR 0120）：至少一個家庭有效才有；心跳取各家庭最短的那個。
  * 兩個宿主都從環境變數算（與實際啟用的家庭同一個解析函式），壞 JSON＝沒開。

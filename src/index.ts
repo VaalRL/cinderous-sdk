@@ -199,9 +199,20 @@ export {
 } from './transfer/file-transfer.js';
 export { P2PFileQueue, type P2PFileQueueOptions } from './transfer/p2p-queue.js';
 export { CallManager, type CallManagerOptions } from './call/call-manager.js';
+export {
+  GroupCallManager,
+  type GroupCallEndReason,
+  type GroupCallManagerOptions,
+  type GroupCallState,
+  type GroupIncomingCall,
+  type GroupParticipant,
+  type GroupParticipantStatus,
+} from './call/group-call.js';
+export { defaultCreateMediaStream, isCameraBusy } from './call/media.js';
 export type {
   CallPeerConnectionLike,
   CallRtcFactory,
+  CreateMediaStream,
   GetUserMedia,
   MediaStreamLike,
   MediaTrackLike,

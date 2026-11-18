@@ -195,7 +195,11 @@ export interface IotRealtimeClientOptions {
 
 /** `deviceLink()` 的結果：C′ 由 relay 即時回答（不落庫）；其他路線看 retained 的 `online` */
 export interface IotDeviceLink {
-  readonly transport: 'ws' | 'gateway';
+  /**
+   * C′：`ws`＝常駐 WebSocket（設備離線時也回 `ws`），`longpoll`＝HTTP 長輪詢（SDK ADR 0138），
+   * `shelly`＝Shelly 明文轉譯（SDK ADR 0139；relay 看得到這台的指令內容）；`gateway`＝其他路線
+   */
+  readonly transport: 'ws' | 'longpoll' | 'shelly' | 'gateway';
   /** 問到了沒：`ok`，或 relay 的拒絕（`not-allowed`）、`unknown`（沒回）、`quota`… */
   readonly status: IotCommandStatus;
   readonly online?: boolean;
@@ -432,7 +436,7 @@ export class IotClient {
     const ack = r.ack;
     if (!ack) return { transport: 'ws', status: r.status === 'timeout' ? 'unknown' : r.status };
     return {
-      transport: 'ws',
+      transport: ack.transport === 'longpoll' || ack.transport === 'shelly' ? ack.transport : 'ws',
       status: ack.status,
       ...(ack.status === 'ok' ? { online: ack.online === true } : {}),
       ...(ack.lastHeartbeat !== undefined ? { lastHeartbeat: ack.lastHeartbeat } : {}),

@@ -17,8 +17,9 @@ import { IOT_KIND_ACK, IOT_KIND_COMMAND, IOT_KIND_QUERY, IOT_KIND_RETAINED, IOT_
 import { getPublicKey } from '../protocol/keys.js';
 import { decryptDM, encryptDM } from '../protocol/nip44.js';
 import { finalizeEvent } from '../protocol/sign.js';
+import { allowedPubkeysFrom } from './host-config.js';
 import { checkIotRealtimeConfig, IOT_REALTIME_DEFAULT_HEARTBEAT_SEC, IOT_REALTIME_DEFAULT_TTL_MAX_SEC, IOT_REALTIME_MAX_DEVICES, } from './iot-realtime-config.js';
-export { checkIotRealtimeAclShape, checkIotRealtimeConfig, IOT_LOCAL_FALLBACKS, IOT_REALTIME_BLIND_LENGTH, IOT_REALTIME_DEFAULT_HEARTBEAT_SEC, IOT_REALTIME_DEFAULT_TTL_MAX_SEC, IOT_REALTIME_MAX_DEVICES, IOT_REALTIME_MAX_HOMES, } from './iot-realtime-config.js';
+export { checkIotRealtimeAclShape, checkIotRealtimeConfig, IOT_LOCAL_FALLBACKS, IOT_REALTIME_BLIND_LENGTH, IOT_REALTIME_DEFAULT_HEARTBEAT_SEC, IOT_REALTIME_DEFAULT_TTL_MAX_SEC, IOT_REALTIME_MAX_DEVICES, IOT_REALTIME_MAX_HOMES, IOT_SHELLY_MAX_SWITCHES, } from './iot-realtime-config.js';
 /** retained 每台最少隔多久寫一次（SQLite 每日寫入列是最可能先到頂的額度，§9.4） */
 export const IOT_REALTIME_RETAINED_MIN_INTERVAL_SEC = 300;
 /** 拒收訊息（ADR 0040 詞元句：「前綴: 詞元: 說明」） */
@@ -36,6 +37,19 @@ export const IOT_REALTIME_REJECT = {
     msgTime: 'invalid: iot: message timestamp outside the realtime window',
     duplicate: 'duplicate: iot-msgid: already delivered to the device',
 };
+/** 長輪詢兩輪之間的空檔：設備在這麼多秒內結束過一輪，就還當作在線，指令短暫保留到下一輪（SDK ADR 0138） */
+export const IOT_LONGPOLL_HOLD_SEC = 10;
+/** 空檔內每台最多保留幾則（再多回 offline——這不是排隊，§10.5-4） */
+export const IOT_LONGPOLL_HOLD_MAX = 8;
+/** `/next?wait=` 的預設與上下限（秒，ADR 0049 §9.3）：上限低於常見反向代理與 Cloudflare 的 100 秒逾時 */
+export const IOT_LONGPOLL_DEFAULT_WAIT_SEC = 45;
+export const IOT_LONGPOLL_MIN_WAIT_SEC = 10;
+export const IOT_LONGPOLL_MAX_WAIT_SEC = 50;
+/** 解析 `/next?wait=`：不是整數＝預設 45；夾在 10–50 */
+export function iotLongPollWaitSec(raw) {
+    const n = raw !== null && raw !== undefined && /^\d{1,6}$/.test(raw) ? Number(raw) : IOT_LONGPOLL_DEFAULT_WAIT_SEC;
+    return Math.min(IOT_LONGPOLL_MAX_WAIT_SEC, Math.max(IOT_LONGPOLL_MIN_WAIT_SEC, n));
+}
 const PENDING_MAX_PER_DEVICE = 16;
 const DELIVERED_MAX = 1024;
 export class IotRealtimeHome {
@@ -51,6 +65,10 @@ export class IotRealtimeHome {
     #pending = new Map();
     /** 已經送到設備的 msgId → 到期（毫秒）：QoS 重送不再送一次；沒送到的（offline）之後重送照送 */
     #delivered = new Map();
+    /** 長輪詢：每台設備上一輪結束的時間（毫秒）；只在空檔判斷用，不落庫 */
+    #longPollEnded = new Map();
+    /** 長輪詢：空檔內保留的幀（到期就丟，不重送、不落庫） */
+    #held = new Map();
     #upCounters = new IotUpCounterGuard({ maxEntries: IOT_REALTIME_MAX_DEVICES * 2 });
     #lastRetained = new Map();
     #heartbeatMs;
@@ -97,11 +115,52 @@ export class IotRealtimeHome {
     /** 設備是 `online`、`stale` 還是 `offline` */
     linkState(blindId) {
         if (!this.#sockets.isConnected(blindId))
-            return { state: 'offline' };
+            return this.#inPollGap(blindId) ? { state: 'online', transport: 'longpoll' } : { state: 'offline' };
+        const transport = this.#sockets.transportOf?.(blindId) ?? 'ws';
+        // 長輪詢沒有心跳：掛著的一輪本身就是「剛剛還在」的證據。Shelly 不送我們的應用層心跳：連線在就算在線（斷線靠 TCP／平台）
+        if (transport === 'longpoll' || transport === 'shelly')
+            return { state: 'online', transport };
         const hb = this.#sockets.lastHeartbeatMs(blindId);
         if (hb !== undefined && this.#now() - hb > this.#heartbeatMs * 3)
-            return { state: 'stale', lastHeartbeat: hb };
-        return hb === undefined ? { state: 'online' } : { state: 'online', lastHeartbeat: hb };
+            return { state: 'stale', lastHeartbeat: hb, transport };
+        return hb === undefined ? { state: 'online', transport } : { state: 'online', lastHeartbeat: hb, transport };
+    }
+    /**
+     * 長輪詢的一輪開始（SDK ADR 0138）：空檔內有保留的幀就交出第一則（這一輪隨即結束，宿主直接回 200），
+     * 否則回 undefined，宿主掛著等。
+     */
+    longPollStart(blindId) {
+        const now = this.#now();
+        const held = (this.#held.get(blindId) ?? []).filter((h) => h.until > now);
+        const next = held.shift();
+        if (held.length > 0)
+            this.#held.set(blindId, held);
+        else
+            this.#held.delete(blindId);
+        if (next)
+            this.#longPollEnded.set(blindId, now);
+        else
+            this.#longPollEnded.delete(blindId);
+        return next?.frame;
+    }
+    /** 長輪詢的一輪結束（逾時 204、設備斷線、或宿主送出幀之後）：開始算空檔 */
+    longPollEnded(blindId) {
+        this.#longPollEnded.set(blindId, this.#now());
+        while (this.#longPollEnded.size > IOT_REALTIME_MAX_DEVICES * 2)
+            this.#longPollEnded.delete(this.#longPollEnded.keys().next().value);
+    }
+    #inPollGap(blindId) {
+        const ended = this.#longPollEnded.get(blindId);
+        return ended !== undefined && this.#now() - ended <= IOT_LONGPOLL_HOLD_SEC * 1000;
+    }
+    /** 空檔內保留一個幀；滿了回 false */
+    #hold(blindId, frame, now) {
+        const held = (this.#held.get(blindId) ?? []).filter((h) => h.until > now);
+        if (held.length >= IOT_LONGPOLL_HOLD_MAX)
+            return false;
+        held.push({ frame, until: now + IOT_LONGPOLL_HOLD_SEC * 1000 });
+        this.#held.set(blindId, held);
+        return true;
     }
     /**
      * 給 `RelayCore` 的 `intercept`：這個家的 IoT 指令由轉送半處理；閘道專屬 kind 一律拒收；其他 kind 回 undefined（照一般流程）。
@@ -151,7 +210,13 @@ export class IotRealtimeHome {
             const link = this.linkState(device.blindId);
             return {
                 outbound: [ok],
-                publish: [this.#ack(event, body.msgId, device, 'ok', { online: link.state !== 'offline', ...(link.lastHeartbeat !== undefined ? { lastHeartbeat: link.lastHeartbeat } : {}) })],
+                publish: [
+                    this.#ack(event, body.msgId, device, 'ok', {
+                        online: link.state !== 'offline',
+                        ...(link.lastHeartbeat !== undefined ? { lastHeartbeat: link.lastHeartbeat } : {}),
+                        ...(link.transport !== undefined ? { transport: link.transport } : {}),
+                    }),
+                ],
             };
         }
         const env = body.env;
@@ -166,7 +231,9 @@ export class IotRealtimeHome {
         if (link.state !== 'online')
             return { outbound: [ok], publish: [this.#ack(event, body.msgId, device, link.state)] };
         const frame = encodeIotDeviceFrame({ t: event.kind === IOT_KIND_COMMAND ? 'cmd' : 'query', env });
-        if (!this.#sockets.send(device.blindId, frame))
+        // 長輪詢兩輪之間（SDK ADR 0138）：送不出去但設備剛剛還在 → 短暫保留，下一輪一開始就交
+        const sent = this.#sockets.send(device.blindId, frame) || (this.#inPollGap(device.blindId) && this.#hold(device.blindId, frame, now));
+        if (!sent)
             return { outbound: [ok], publish: [this.#ack(event, body.msgId, device, 'offline')] };
         this.#delivered.set(body.msgId, now + this.#windowMs);
         while (this.#delivered.size > DELIVERED_MAX)
@@ -282,6 +349,7 @@ export class IotRealtimeHome {
             ...(extra.reason !== undefined ? { reason: extra.reason } : {}),
             ...(extra.online !== undefined ? { online: extra.online } : {}),
             ...(extra.lastHeartbeat !== undefined ? { lastHeartbeat: extra.lastHeartbeat } : {}),
+            ...(extra.transport !== undefined ? { transport: extra.transport } : {}),
         };
         return this.#sign(IOT_KIND_ACK, [['h', this.config.homeTag], ['p', event.pubkey], ['e', event.id]], body);
     }
@@ -305,12 +373,32 @@ function tag(event, name) {
 function uniq(items) {
     return [...new Set(items)];
 }
+/** 從環境變數讀明文設備的開關（兩個宿主共用；壞 JSON 或壞白名單＝沒開） */
+export function iotPlaintextFrom(env) {
+    let allowlisted = false;
+    try {
+        allowlisted = (allowedPubkeysFrom(env.ALLOWED_PUBKEYS)?.length ?? 0) > 0;
+    }
+    catch {
+        allowlisted = false;
+    }
+    let deviceKeys = {};
+    try {
+        const parsed = env.IOT_PLAINTEXT_DEVICE_KEYS ? JSON.parse(env.IOT_PLAINTEXT_DEVICE_KEYS) : {};
+        if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed))
+            deviceKeys = parsed;
+    }
+    catch {
+        deviceKeys = {};
+    }
+    return { enabled: env.IOT_PLAINTEXT_DEVICES === '1' && allowlisted, deviceKeys };
+}
 const HEX64 = /^[0-9a-f]{64}$/;
 /**
  * 解析 C′ 的設定（`IOT_REALTIME`，JSON；非秘密）與閘道金鑰（`IOT_GATEWAY_KEYS`，JSON `{homeTag: 64 位 hex}`；Worker secret）。
  * 收集式：一次列出所有問題，有問題的家庭不啟用（不默默套用一半）。形狀的檢查與部署設定器共用（`checkIotRealtimeConfig`）。
  */
-export function parseIotRealtimeConfig(raw, gatewayKeys) {
+export function parseIotRealtimeConfig(raw, gatewayKeys, plaintext = { enabled: false, deviceKeys: {} }) {
     const checked = checkIotRealtimeConfig(raw, (acl) => void parseIotAcl(acl));
     const issues = [...checked.issues];
     const homes = new Map();
@@ -330,8 +418,30 @@ export function parseIotRealtimeConfig(raw, gatewayKeys) {
             if (!keyOk)
                 issues.push({ path: `${at}.gatewayKey`, code: 'gateway-key-mismatch', message: '閘道私鑰與 gatewayPubkey 不符' });
         }
-        if (ok && keyOk && secret && !homes.has(homeTag))
-            homes.set(homeTag, { config: home, gatewaySecret: secret });
+        // Shelly 明文轉譯（SDK ADR 0139）：沒開或缺金鑰＝整個家不啟用（與其他設定錯誤一樣，不默默套用一半）
+        const plaintextKeys = new Map();
+        let plaintextOk = true;
+        const devices = Array.isArray(home.devices) ? home.devices : [];
+        devices.forEach((d, j) => {
+            if (d?.transport !== 'shelly' || typeof d.id !== 'string')
+                return;
+            if (!plaintext.enabled) {
+                plaintextOk = false;
+                return void issues.push({
+                    path: `${at}.devices[${j}].transport`,
+                    code: 'plaintext-disabled',
+                    message: 'Shelly 明文轉譯要同時有 IOT_PLAINTEXT_DEVICES=1 與 ALLOWED_PUBKEYS 白名單（只限自架站；開放站與官方錨點不提供）',
+                });
+            }
+            const hex = plaintext.deviceKeys[`${homeTag}/${d.id}`];
+            if (typeof hex !== 'string' || !HEX64.test(hex)) {
+                plaintextOk = false;
+                return void issues.push({ path: `${at}.devices[${j}]`, code: 'plaintext-key-missing', message: `IOT_PLAINTEXT_DEVICE_KEYS 沒有 ${homeTag}/${d.id} 的設備金鑰（64 位 hex）` });
+            }
+            plaintextKeys.set(d.id, hexToBytes(hex));
+        });
+        if (ok && keyOk && plaintextOk && secret && !homes.has(homeTag))
+            homes.set(homeTag, { config: home, gatewaySecret: secret, plaintextKeys });
     }
     return { homes, issues };
 }

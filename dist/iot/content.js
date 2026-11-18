@@ -56,6 +56,8 @@ export function parseIotBody(raw) {
                 return undefined;
             if (!optional(raw.lastHeartbeat, isTs) || !optional(raw.reset, isTs))
                 return undefined;
+            if (raw.transport !== undefined && raw.transport !== 'ws' && raw.transport !== 'longpoll' && raw.transport !== 'shelly')
+                return undefined;
             return raw;
         case 'dev-cmd':
         case 'dev-query': {

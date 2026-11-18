@@ -1,6 +1,6 @@
 import { CALL_SIGNAL_KIND, CallSession, parseCallSignal, } from '../protocol/call.js';
 import { DEFAULT_VIDEO_QUALITY, videoConstraints, videoProfile } from '../protocol/video-quality.js';
-import { defaultCallRtc, defaultGetUserMedia, } from './media.js';
+import { defaultCallRtc, defaultCreateMediaStream, defaultGetUserMedia, isNegotiated, } from './media.js';
 const SEEN_MEMORY = 4_096;
 function isVideoTransceiver(t) {
     return t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video';
@@ -12,6 +12,9 @@ export class CallManager {
     #getUserMedia;
     #iceServers;
     #isBlocked;
+    #isBusyElsewhere;
+    #createStream;
+    #remoteTracks = [];
     #subscription;
     #seen = new Set();
     #session = new CallSession();
@@ -45,6 +48,8 @@ export class CallManager {
         this.#getUserMedia = getUserMedia;
         this.#iceServers = opts.iceServers;
         this.#isBlocked = opts.isBlocked ?? (() => false);
+        this.#isBusyElsewhere = opts.isBusy ?? (() => false);
+        this.#createStream = opts.createStream ?? defaultCreateMediaStream();
         this.#videoQuality = opts.videoQuality ?? DEFAULT_VIDEO_QUALITY;
         this.#subscription = this.#transport.subscribe([{ kinds: [CALL_SIGNAL_KIND], '#p': [this.#identity.pubkey] }], {
             onEvent: (event) => void this.#onEvent(event),
@@ -91,7 +96,7 @@ export class CallManager {
     }
     // ── 操作 ─────────────────────────────────────────────────────────────────
     async startCall(peer, media) {
-        if (this.#closed || this.#busy())
+        if (this.#closed || this.#busy() || this.#isBusyElsewhere())
             return;
         this.#session = new CallSession();
         this.#peer = peer;
@@ -206,7 +211,7 @@ export class CallManager {
             return;
         }
         if (signal.type === 'call-invite') {
-            if (this.#busy()) {
+            if (this.#busy() || this.#isBusyElsewhere()) {
                 await this.#publish({ type: 'call-reject', callId: signal.callId, reason: 'busy' }, sender).catch(() => { });
                 return;
             }
@@ -226,6 +231,7 @@ export class CallManager {
     }
     #ensurePc() {
         this.#everConnected = false;
+        this.#remoteTracks = [];
         const servers = typeof this.#iceServers === 'function' ? this.#iceServers() : this.#iceServers;
         const pc = this.#rtc(servers ? { iceServers: servers } : {});
         pc.onicecandidate = (event) => {
@@ -243,9 +249,18 @@ export class CallManager {
             void this.#publish(signal, this.#peer).catch(() => { });
         };
         pc.ontrack = (event) => {
-            const stream = event.streams[0];
-            if (stream)
-                this.#fire('remoteStream', stream);
+            // 🔴 ADR-0424：對方的 transceiver 沒綁 stream 時 `streams` 是空的——只看 streams[0] 會把視訊丟掉。
+            // 每條軌都併進這一通的遠端串流，並送新物件。
+            const incoming = [...(event.streams[0]?.getTracks() ?? []), ...(event.track ? [event.track] : [])];
+            let changed = false;
+            for (const track of incoming) {
+                if (!this.#remoteTracks.includes(track)) {
+                    this.#remoteTracks.push(track);
+                    changed = true;
+                }
+            }
+            if (changed)
+                this.#fire('remoteStream', this.#createStream(this.#remoteTracks));
         };
         pc.onconnectionstatechange = () => {
             if (this.#pc !== pc)
@@ -276,7 +291,9 @@ export class CallManager {
         const pc = this.#pc;
         if (!pc)
             return null;
-        const transceiver = pc.getTransceivers?.().find(isVideoTransceiver);
+        const videos = (pc.getTransceivers?.() ?? []).filter((t) => isVideoTransceiver(t) && t.direction !== 'stopped');
+        // ADR-0424：答方自己鋪的那條 mid=null、不在 SDP 裡，從它送的畫格對方收不到——先挑協商過的
+        const transceiver = videos.find(isNegotiated) ?? videos[0];
         if (transceiver)
             return transceiver.sender;
         return pc.getSenders().find((s) => s.track?.kind === 'video') ?? null;
@@ -291,26 +308,27 @@ export class CallManager {
             throw new Error('取不到視訊軌');
         try {
             await sender.replaceTrack(track);
-            this.#localStream?.addTrack?.(track);
         }
         catch (error) {
             track.stop(); // 取到之後失敗一定要停掉：不然相機一直亮著
             throw error;
         }
+        this.#replaceLocalTrack(track, null);
         this.#applyVideoQuality();
-        if (this.#localStream)
-            this.#fire('localStream', this.#localStream);
     }
     #detachVideo() {
         const sender = this.#videoSender();
         const track = sender?.track ?? null;
         void sender?.replaceTrack(null);
-        if (track) {
+        if (track)
             track.stop(); // 真的關相機，不只是送黑畫面
-            this.#localStream?.removeTrack?.(track);
-        }
-        if (this.#localStream)
-            this.#fire('localStream', this.#localStream);
+        this.#replaceLocalTrack(null, track);
+    }
+    /** 本地串流換一條軌：送**新的**串流物件（UI 只在物件變了才重綁 srcObject；ADR-0424） */
+    #replaceLocalTrack(add, remove) {
+        const kept = (this.#localStream?.getTracks() ?? []).filter((t) => t !== remove && t !== add);
+        this.#localStream = this.#createStream(add ? [...kept, add] : kept);
+        this.#fire('localStream', this.#localStream);
     }
     async #run(actions) {
         for (const action of actions) {
@@ -351,9 +369,19 @@ export class CallManager {
                 await pc.setRemoteDescription({ type: action.kind, sdp: action.sdp });
                 // 🔴 ADR-0338 §3：答方為對方視訊 m-line 自動建立的 transceiver 是 recvonly，不改就永遠送不出視訊
                 if (action.kind === 'offer') {
-                    for (const t of pc.getTransceivers?.() ?? [])
-                        if (isVideoTransceiver(t) && t.direction === 'recvonly')
+                    const videos = (pc.getTransceivers?.() ?? []).filter(isVideoTransceiver);
+                    const negotiated = videos.some(isNegotiated);
+                    for (const t of videos) {
+                        if (t.mid === null) {
+                            // ADR-0424：自己鋪的那條沒被 offer 採用。不能停（Chrome 的 addTrack 會挑到已停的並丟例外）；
+                            // 只有 offer 根本沒有視訊（舊版）時才停，canChangeMedia 才會照實回 false。
+                            if (!negotiated)
+                                t.stop?.();
+                        }
+                        else if (t.direction === 'recvonly') {
                             t.direction = 'sendrecv';
+                        }
+                    }
                 }
                 this.#hasRemote = true;
                 for (const candidate of this.#pendingCandidates.splice(0))
@@ -381,10 +409,24 @@ export class CallManager {
             video: media === 'video' ? videoConstraints(this.#videoQuality) : false,
         });
         this.#localStream = stream;
-        for (const track of stream.getTracks())
-            this.#pc.addTrack(track, stream);
+        for (const track of stream.getTracks()) {
+            // 🔴 ADR-0424：答方（已套用 offer）有協商過、還沒上軌的視訊 transceiver 就直接放上去；
+            // 交給 addTrack 會重用自己鋪、沒進 SDP 的那條 ⇒ 鏡頭開了、對方看不到。setStreams 補上 msid。
+            const target = track.kind === 'video' ? this.#unusedNegotiatedVideoSender() : null;
+            if (target) {
+                await target.replaceTrack(track);
+                target.setStreams?.(stream);
+            }
+            else {
+                this.#pc.addTrack(track, stream);
+            }
+        }
         this.#applyVideoQuality();
         this.#fire('localStream', stream);
+    }
+    #unusedNegotiatedVideoSender() {
+        const tr = this.#pc?.getTransceivers?.().find((t) => isVideoTransceiver(t) && t.mid != null && t.direction !== 'stopped' && !t.sender.track);
+        return tr?.sender ?? null;
     }
     #applyVideoQuality() {
         const pc = this.#pc;
@@ -433,6 +475,7 @@ export class CallManager {
         }
         this.#pc = null;
         this.#localStream = null;
+        this.#remoteTracks = [];
         this.#hasRemote = false;
         this.#pendingCandidates = [];
         this.#fire('localStream', null);

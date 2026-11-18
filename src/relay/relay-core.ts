@@ -336,10 +336,23 @@ export class RelayCore {
 
   /**
    * 執行期換掉發布白名單（SDK ADR 0132：NIP-86 `cinder_applyroster`）。之後的 AUTH 與 EVENT 照新名單判斷；
-   * 已連著、被移出名單的人下一則就寫不進。開放站換了名單就成為封閉站。
+   * 開放站換了名單就成為封閉站。
+   *
+   * 🔴 回傳要送出的訊息（SDK ADR 0136）：**已認證、但不在新名單上**的連線各收到一則 NOTICE 並以
+   * 4003 `restricted` 關閉——與 AUTH 時擋白名單外的人同一個關閉碼。只擋寫入不夠：他已開的訂閱
+   * 在斷線前仍收得到投遞給他的事件。這些連線的訂閱在這裡就先拆掉，關閉完成之前的事件也不會再給他。
+   * 還沒認證的連線不動（讀不到東西；之後 AUTH 時照新名單判斷）。宿主必須把回傳值送出去。
    */
-  setAllowedAuthors(list: Iterable<string>): void {
-    this.allowed = new Set(list);
+  setAllowedAuthors(list: Iterable<string>): Outbound[] {
+    const allowed = new Set(list);
+    this.allowed = allowed;
+    const out: Outbound[] = [];
+    for (const [connId, state] of [...this.authState]) {
+      if (state.pubkey === undefined || allowed.has(state.pubkey)) continue;
+      this.disconnect(connId);
+      out.push({ to: connId, message: ["NOTICE", REJECT.removedFromWhitelist], close: { code: 4003, reason: "restricted" } });
+    }
+    return out;
   }
 
   /** 執行期換掉事件類型清單（SDK ADR 0132：NIP-86 `allowkind`／`disallowkind`）。 */

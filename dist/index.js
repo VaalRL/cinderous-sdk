@@ -32,5 +32,7 @@ export { chooseEngine, CRYPTO_ENGINES_TAG, engineCapabilityTag, engineConfigFor,
 export { blobSource, bytesSource, DEFAULT_FILE_CHUNK_BYTES, DEFAULT_MAX_FILE_BYTES, FileIntegrityError, FileRejectedError, FileTransfer, isFileTransferMessage, LargeFileOverRelayError, MemoryPartialStore, } from './transfer/file-transfer.js';
 export { P2PFileQueue } from './transfer/p2p-queue.js';
 export { CallManager } from './call/call-manager.js';
+export { GroupCallManager, } from './call/group-call.js';
+export { defaultCreateMediaStream, isCameraBusy } from './call/media.js';
 export { DEFAULT_STUN, TurnProvider } from './call/turn-provider.js';
 //# sourceMappingURL=index.js.map

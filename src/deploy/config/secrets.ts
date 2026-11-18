@@ -38,6 +38,19 @@ export function resolveIotGatewayKeys(
   env: Readonly<Record<string, string | undefined>>,
   defaultEnv: string,
 ): Record<string, string> | undefined {
+  return resolveJsonKeys(ref, env, defaultEnv, '{"<homeTag>": "<64 位 hex>"}（C′ 的閘道私鑰，SDK ADR 0121）');
+}
+
+/** Shelly 的設備金鑰（SDK ADR 0139）：JSON `{ "<homeTag>/<設備 id>": "<64 位 hex>" }`。只檢查形狀；🔴 訊息只有變數名稱。 */
+export function resolveIotPlaintextDeviceKeys(
+  ref: SecretRef | undefined,
+  env: Readonly<Record<string, string | undefined>>,
+  defaultEnv: string,
+): Record<string, string> | undefined {
+  return resolveJsonKeys(ref, env, defaultEnv, '{"<homeTag>/<設備 id>": "<64 位 hex>"}（Shelly 的設備金鑰，SDK ADR 0139）');
+}
+
+function resolveJsonKeys(ref: SecretRef | undefined, env: Readonly<Record<string, string | undefined>>, defaultEnv: string, shape: string): Record<string, string> | undefined {
   const raw = resolveSecret(ref, env, defaultEnv);
   if (raw === undefined) return undefined;
   let parsed: unknown;
@@ -47,7 +60,7 @@ export function resolveIotGatewayKeys(
     parsed = undefined;
   }
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed) || !Object.values(parsed).every((v) => typeof v === 'string')) {
-    throw new Error(`環境變數 ${ref?.$env ?? defaultEnv} 必須是 JSON 物件 {"<homeTag>": "<64 位 hex>"}（C′ 的閘道私鑰，SDK ADR 0121）`);
+    throw new Error(`環境變數 ${ref?.$env ?? defaultEnv} 必須是 JSON 物件 ${shape}`);
   }
   return parsed as Record<string, string>;
 }

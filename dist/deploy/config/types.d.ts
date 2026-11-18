@@ -55,6 +55,8 @@ export interface DeploySecrets {
     turnApiToken?: SecretRef;
     /** C′ 的閘道私鑰（`IOT_GATEWAY_KEYS`，JSON `{ homeTag: 64 位 hex }`；SDK ADR 0121） */
     iotGatewayKeys?: SecretRef;
+    /** Shelly 明文轉譯的設備金鑰（`IOT_PLAINTEXT_DEVICE_KEYS`，JSON `{ "homeTag/設備 id": 64 位 hex }`；SDK ADR 0139） */
+    iotPlaintextDeviceKeys?: SecretRef;
     /** 推播閘道私鑰（`push-gateway`；執行期秘密 `PUSH_GATEWAY_KEY`）。 */
     pushGatewayKey?: SecretRef;
     /** Firebase 服務帳號 JSON（`push-gateway`；執行期秘密 `FCM_SERVICE_ACCOUNT`）。 */

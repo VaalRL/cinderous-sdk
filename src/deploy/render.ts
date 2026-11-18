@@ -156,6 +156,9 @@ const yamlString = (value: string) => JSON.stringify(value); // JSON 字串就�
 /** C′ 閘道私鑰的環境變數（relay 讀的名字；SDK ADR 0121） */
 export const IOT_GATEWAY_KEYS_ENV = 'IOT_GATEWAY_KEYS';
 
+/** Shelly 設備金鑰的環境變數（relay 讀的名字；SDK ADR 0139） */
+export const IOT_PLAINTEXT_DEVICE_KEYS_ENV = 'IOT_PLAINTEXT_DEVICE_KEYS';
+
 /** compose 的必填代入：`${NAME:?…}`——沒設就拒絕啟動，而不是帶著空值跑起來 */
 export function composeRequiredEnv(name: string, why: string): string {
   return `\${${name}:?set ${name} in .env (${why})}`;

@@ -61,6 +61,8 @@ export declare function relayEnvironment(opts: RelaySiteOptions & {
 export declare function renderDockerignore(): string;
 /** C′ 閘道私鑰的環境變數（relay 讀的名字；SDK ADR 0121） */
 export declare const IOT_GATEWAY_KEYS_ENV = "IOT_GATEWAY_KEYS";
+/** Shelly 設備金鑰的環境變數（relay 讀的名字；SDK ADR 0139） */
+export declare const IOT_PLAINTEXT_DEVICE_KEYS_ENV = "IOT_PLAINTEXT_DEVICE_KEYS";
 /** compose 的必填代入：`${NAME:?…}`——沒設就拒絕啟動，而不是帶著空值跑起來 */
 export declare function composeRequiredEnv(name: string, why: string): string;
 /** 家中主機＋Cloudflare Tunnel（SDK ADR 0050 §5）：relay 不發布埠，`cloudflared` 從環境變數（`.env`）讀 Token。 */

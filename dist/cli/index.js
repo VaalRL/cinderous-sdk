@@ -12,6 +12,7 @@ import { deployFlyRelay } from '../deploy/fly.js';
 import { connectIotClient, startIotBridgeFromConfig } from '../iot/bridge/index.js';
 import { startNodeRelay } from '../relay/node-relay.js';
 import { runCli } from './commands.js';
+import { writeSecretFileToDisk } from './secret-file.js';
 // `init` 精靈的輸入（SDK ADR 0117）：用到才開 readline。讀到的行先排隊——管線一次送進好幾行時，還沒問到的題目也拿得到；
 // 輸入結束（Ctrl+D、管線讀完）時，等待中的題目以錯誤結束，不會卡住。
 let rl;
@@ -64,6 +65,7 @@ const code = await runCli(process.argv.slice(2), {
     deployDockerRelay,
     deployFlyRelay,
     writeFile: (path, content) => writeFileSync(path, content),
+    writeSecretFile: writeSecretFileToDisk,
     readFile: (path) => (existsSync(path) ? readFileSync(path, 'utf8') : undefined),
     buildRelayPackage,
     sdkVersion: sdkVersion(),

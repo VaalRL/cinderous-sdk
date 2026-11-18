@@ -17,11 +17,21 @@ import { parseIotDownMessage, type IotDeviceAckStatus, type IotUpAck, type IotUp
 import type { IotEncoding, IotTopicValue } from './content.js';
 import { isValidIotTopic } from './topic.js';
 import { IOT_QUOTA_CLOSE_CODE } from '../protocol/relay-reject.js';
+import { iotDeviceRetryDelayMs } from './device-backoff.js';
 
 export { parseIotDownMessage, parseIotUpMessage, IOT_DEVICE_ACK_STATUSES } from './device-message.js';
 export type { IotDeviceAckStatus, IotDownCommand, IotDownMessage, IotDownQuery, IotUpAck, IotUpMessage, IotUpState } from './device-message.js';
 export { generateIotDeviceToken, hashIotDeviceToken, IOT_DEVICE_HEARTBEAT, IOT_DEVICE_HEARTBEAT_ACK } from './device-frame.js';
 export { deriveIotDeviceKeyDown, iotKid } from './envelope.js';
+export {
+  classifyIotDeviceDisconnect,
+  iotDeviceRetryDelayMs,
+  IOT_DEVICE_MIN_RETRY_MS,
+  IOT_DEVICE_PROBE_INTERVAL_MS,
+  IOT_DEVICE_QUOTA_JITTER_MS,
+  IOT_DEVICE_REPLACED_RETRY_MS,
+} from './device-backoff.js';
+export type { IotDeviceDisconnect, IotDeviceDisconnectClass, IotDeviceObservation, IotDeviceRetryContext } from './device-backoff.js';
 
 export const IOT_DEVICE_DEFAULT_HEARTBEAT_SEC = 30;
 export const IOT_DEVICE_DEFAULT_HEARTBEAT_TIMEOUT_SEC = 10;
@@ -326,7 +336,11 @@ export function connectIotDevice(opts: IotDeviceOptions): IotDeviceConnection {
           urlIndex = (urlIndex + 1) % urls.length;
           return schedule(minMs, 'quota-exhausted', { code: ev.code, ...(reset !== undefined ? { reset } : {}) });
         }
-        const wait = reset !== undefined ? Math.max(minMs, reset * 1000 - now() + Math.round(Math.random() * 60_000)) : maxMs;
+        // §10.2：睡到重置時間再加 0–20 分鐘隨機（整批設備不要在午夜同一秒衝上來）；時鐘沒同步或不知道 reset ⇒ 每 60 分鐘探測一次
+        const wait = iotDeviceRetryDelayMs(
+          { class: 'quota-exhausted', ...(reset !== undefined ? { reset } : {}) },
+          { attempt: 0, nowSec: Math.floor(now() / 1000), clockSynced: opts.clockSynced?.() ?? true, random: Math.random() },
+        );
         return schedule(wait, 'quota-exhausted', { code: ev.code, ...(reset !== undefined ? { reset } : {}) });
       }
       if (ev.code === 4409) return schedule(maxMs, 'replaced', { code: ev.code });

@@ -38,7 +38,22 @@ export interface IotRealtimeDeviceConfig {
         readonly epoch: number;
         readonly until: number;
     };
+    /**
+     * 設備的連線方式（SDK ADR 0139）：沒給＝設備自己封信封（常駐 WebSocket 或長輪詢，ADR 0138）；
+     * `shelly`＝Shelly Gen2+ 的 Outbound WebSocket 明文 RPC，relay 持有這台的 deviceKey 替它封／解信封。
+     * 🔴 只限自架站＋白名單＋危險旗標 `IOT_PLAINTEXT_DEVICES=1`；門鎖類不行。
+     */
+    readonly transport?: 'shelly';
+    /** `transport: 'shelly'` 必填：Shelly 的開關（`switch:<id>`）對應到哪個 topic（1–16 個） */
+    readonly shelly?: {
+        readonly switches: readonly {
+            readonly id: number;
+            readonly topic: string;
+        }[];
+    };
 }
+/** Shelly 一台最多幾個開關（`switch:0`–`switch:15`） */
+export declare const IOT_SHELLY_MAX_SWITCHES = 16;
 export interface IotRealtimeHomeConfig {
     readonly homeTag: string;
     /** 全家的 NIP-44 收件者（公開值） */
@@ -59,7 +74,7 @@ export interface IotRealtimeHomeConfig {
 }
 export interface IotRealtimeIssue {
     readonly path: string;
-    readonly code: 'shape' | 'too-many-homes' | 'home-tag' | 'home-duplicate' | 'pubkey' | 'acl' | 'too-many-devices' | 'device-id' | 'blind-id' | 'device-duplicate' | 'epoch' | 'token-hash' | 'role' | 'lock-local-fallback' | 'range' | 'gateway-key-missing' | 'gateway-key-mismatch';
+    readonly code: 'shape' | 'too-many-homes' | 'home-tag' | 'home-duplicate' | 'pubkey' | 'acl' | 'too-many-devices' | 'device-id' | 'blind-id' | 'device-duplicate' | 'epoch' | 'token-hash' | 'role' | 'lock-local-fallback' | 'range' | 'gateway-key-missing' | 'gateway-key-mismatch' | 'shelly' | 'shelly-lock' | 'plaintext-disabled' | 'plaintext-key-missing';
     readonly message: string;
 }
 export declare const IOT_REALTIME_BLIND_PATTERN: RegExp;

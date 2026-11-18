@@ -95,6 +95,8 @@ R2 的範圍（ADR 0049 §9.7）還包括 `RelaySiteOptions`、部署設定與 C
 
 - 至少一個家庭有效時才宣告 `{ "ws": true, "longpoll": false, "heartbeat_sec": <各家庭最短的> }`。Workers 還要有 `IOT_HOME` 綁定，與 `routeIotRequest` 同一個條件。
 - `longpoll` 還沒實作（R4），如實寫 false。
+  - **已更新**：R4 已在 [SDK ADR 0138](0138-iot-realtime-longpoll.md) 實作（2026-11-18），兩個宿主都宣告 `longpoll: true`。
+  - R5（Shelly 明文轉譯，[SDK ADR 0139](0139-iot-realtime-shelly-plaintext.md)，2026-11-18）**不宣告**：那是自架站的私人設定；`dev-link` 的 `transport` 多了 `shelly`。
 - **不列家庭**：`homeTag` 是路由標籤，列出來等於公開這座站服務哪些家。
 - `iotRealtimeAnnouncement(env)` 與實際啟用的家庭用同一個解析函式，兩個宿主共用。
 

@@ -185,7 +185,7 @@ describe('NIP-11', () => {
     const port = await relay();
     const res = await fetch(`http://127.0.0.1:${port}/`, { headers: { Accept: 'application/nostr+json' } });
     const doc = (await res.json()) as Record<string, unknown>;
-    expect(doc.cinder_iot).toEqual({ realtime: { ws: true, longpoll: false, heartbeat_sec: 30 } });
+    expect(doc.cinder_iot).toEqual({ realtime: { ws: true, longpoll: true, heartbeat_sec: 30 } });
     expect(JSON.stringify(doc)).not.toContain(home.homeTag);
   });
 });
@@ -203,6 +203,16 @@ describe('deviceLink、狀態與 retained', () => {
       link = await client.deviceLink('lamp');
     }
     expect(link).toMatchObject({ transport: 'ws', status: 'ok', online: false });
+  });
+
+  it('deviceLink：長輪詢的設備回報 transport: longpoll（SDK ADR 0138）', async () => {
+    const port = await relay();
+    const client = await phone(port, viewer);
+    const abort = new AbortController();
+    cleanups.push(() => abort.abort());
+    fetch(`http://127.0.0.1:${port}/iot/v1/dev/${home.homeTag}/${blind('lamp')}/next?wait=30`, { headers: { Authorization: `Bearer ${tokens.lamp}` }, signal: abort.signal }).catch(() => undefined);
+    await sleep(100);
+    expect(await client.deviceLink('lamp')).toMatchObject({ transport: 'longpoll', status: 'ok', online: true });
   });
 
   it('設備回報狀態 → 手機的 subscribeState 收到（topic 在信封裡比對）；getRetained 讀得到', async () => {

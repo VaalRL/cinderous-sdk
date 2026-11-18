@@ -87,8 +87,8 @@ describe('parseWizardAnswer', () => {
 });
 
 describe('危險選項', () => {
-  it('描述表裡標了 dangerous 的就是這四個', () => {
-    expect(DEPLOY_OPTION_SPECS.filter((s) => s.dangerous).map((s) => s.path)).toEqual(['node.trustProxy', 'site.openFileRelay', 'site.appLanes', 'site.appLanePow']);
+  it('描述表裡標了 dangerous 的就是這五個', () => {
+    expect(DEPLOY_OPTION_SPECS.filter((s) => s.dangerous).map((s) => s.path)).toEqual(['node.trustProxy', 'site.openFileRelay', 'site.appLanes', 'site.appLanePow', 'site.iotPlaintextDevices']);
   });
 
   it('開了才算：布林 true、數字大於預設、清單不是空的；fly 與 home-tunnel 強制開 trustProxy 不算', () => {

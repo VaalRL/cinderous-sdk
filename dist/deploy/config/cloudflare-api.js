@@ -1,4 +1,4 @@
-import { resolveIotGatewayKeys, resolveSecret, resolveSiteSecrets, resolveStringOrSecret } from './secrets.js';
+import { resolveIotGatewayKeys, resolveIotPlaintextDeviceKeys, resolveSecret, resolveSiteSecrets, resolveStringOrSecret } from './secrets.js';
 import { secretEnvName } from './guide.js';
 import { serviceOfConfig } from './types.js';
 /**
@@ -38,6 +38,9 @@ export function cloudflareApiOptionsFromConfig(config, env) {
     const gatewayKeys = resolveIotGatewayKeys(config.secrets?.iotGatewayKeys, env, secretEnvName(config, 'iotGatewayKeys'));
     if (gatewayKeys !== undefined)
         options.iotGatewayKeys = gatewayKeys;
+    const plaintextKeys = resolveIotPlaintextDeviceKeys(config.secrets?.iotPlaintextDeviceKeys, env, secretEnvName(config, 'iotPlaintextDeviceKeys'));
+    if (plaintextKeys !== undefined)
+        options.iotPlaintextDeviceKeys = plaintextKeys;
     return options;
 }
 //# sourceMappingURL=cloudflare-api.js.map

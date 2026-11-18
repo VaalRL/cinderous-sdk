@@ -557,9 +557,9 @@ relay 端（兩宿主共用驗證）：`iot.realtime: { enabled, homes, transpor
 | **R0 PoC（先做）** | 測試用 Cloudflare 帳號（部署帶 `CLOUDFLARE_ACCOUNT_ID`）：72 小時量測閒置切斷秒數、協定 ping 與應用層自動回覆在 GraphQL Analytics 的請求計數、平台重連頻率、「Worker 掛住＋休眠 WS」長輪詢的穩定性與 DO duration；**刻意耗盡一次免費額度**，記錄 §10 各情境的實際回應與既有連線行為 | 2–3 天 |
 | R1 | 兩宿主路由 `iot:<homeTag>`、設備 WS 端點、權杖、單一連線、設備幀、轉送半接 §2.6、`offline`／`stale`、心跳、`IOT_HOMES`、拒收詞元、§10 結構化額度回應與預算計數；差異測試（沒開時逐則相同） | 4–6 天 |
 | R2 | `IotClient` 的 `urgency`／`ttlSec`／`unknown→query`／`quota`、`deviceLink`；`./iot/device`；`operatorSecret`；NIP-11、`RelaySiteOptions`、CLI | 2.5–3.5 天 |
-| R3 | 設備參考實作：ESP-IDF／ESPHome 外部元件（wss＋憑證包＋AES-GCM＋SNTP fail-closed＋計數器＋§10 退讓）、HA／Python；跨語言向量 | 3–5 天 |
-| R4 | 長輪詢（Worker 掛住、DO 不掛）給 Tasmota Berry／ESPHome | 2–3 天 |
-| R5 | Shelly Outbound WS 明文轉譯（自架＋白名單＋危險旗標） | 2–3 天 |
+| R3 | 設備參考實作：ESP-IDF／ESPHome 外部元件（wss＋憑證包＋AES-GCM＋SNTP fail-closed＋計數器＋§10 退讓）、HA／Python；跨語言向量。**部分完成（SDK ADR 0140，2026-11-18）**：Python／HA 參考設備＋跨語言測試向量；ESP-IDF／ESPHome 只有規格與骨架，未經實機驗證 | 3–5 天 |
+| R4 | 長輪詢（Worker 掛住、DO 不掛）給 Tasmota Berry／ESPHome——**已完成（[SDK ADR 0138](0138-iot-realtime-longpoll.md)，2026-11-18）** | 2–3 天 |
+| R5 | Shelly Outbound WS 明文轉譯（自架＋白名單＋危險旗標）——**已完成（[SDK ADR 0139](0139-iot-realtime-shelly-plaintext.md)，2026-11-18；relay 只拿每台 Shelly 的 deviceKey，不拿家庭秘密）** | 2–3 天 |
 | **合計** | | **約 15.5–23.5 天**；若 P2（C 與 §2.6 信封）已完成，R1／R3 可省 2–3 天。建議 R0 → R1 與 P2 合併進行（C′ 在 Workers 上比 C 便宜） |
 
 **R0 PoC 已備妥（尚未實測，2026-10-02）**：`poc/iot-realtime/`（獨立目錄，不進 `src/`／`dist`、不在套件 `exports`）。

@@ -62,6 +62,8 @@ export interface IotAckBody extends IotBodyBase {
     readonly online?: boolean;
     /** C′：設備最後一次心跳（毫秒） */
     readonly lastHeartbeat?: number;
+    /** C′ `dev-link` 的回覆：設備走常駐 WebSocket、長輪詢（SDK ADR 0138），還是 Shelly 明文轉譯（SDK ADR 0139） */
+    readonly transport?: 'ws' | 'longpoll' | 'shelly';
     /** `quota`：額度重置時間（unix 秒，ADR 0049 §10） */
     readonly reset?: number;
 }

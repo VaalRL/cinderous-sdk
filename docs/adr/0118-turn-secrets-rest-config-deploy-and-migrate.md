@@ -50,7 +50,7 @@ ADR 0050 P1 還剩三件事：
 
 ## 不做（這次）
 
-- 隱藏輸入與 `.secrets/`（ADR 0050 P1 的其他項目）：精靈只問環境變數的名稱、不收秘密值，CLI 讀 `.env`，目前不需要。
+- 隱藏輸入與 `.secrets/`（ADR 0050 P1 的其他項目）：精靈只問環境變數的名稱、不收秘密值，CLI 讀 `.env`，目前不需要。（`.secrets/` 後來由 [SDK ADR 0137](0137-one-time-secrets-dir.md) 做了，給 `iot` 那些印出一次性秘密的指令用；隱藏輸入仍不做。）
 - 其他 Worker secret（例如推播閘道的 APNs 金鑰）不經 `RelayWorkerSecrets`：推播閘道不支援 REST 目標，wrangler 路徑另有說明。
 - 部署後讀回 secret 確認：Cloudflare 不回傳 secret 的值；以 `/turn` 實際換發來驗。
 

@@ -50,7 +50,8 @@ describe('通話生命週期', () => {
 
     await b.accept();
     await until(() => a.state === 'active' && b.state === 'active');
-    expect(remoteAtA.at(-1)).toBeInstanceOf(FakeStream);
+    // SDK ADR 0141：遠端串流是 SDK 併好的新物件（含對方的軌），不是 ontrack 給的那個
+    expect((remoteAtA.at(-1) as FakeStream).getTracks().length).toBeGreaterThan(0);
     // 語音通話不開相機
     expect(network.media.every((m) => m.constraints.video === false)).toBe(true);
   });

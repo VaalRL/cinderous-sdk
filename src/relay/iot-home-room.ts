@@ -6,17 +6,32 @@
 // - 心跳：`setWebSocketAutoResponse({"t":"hb"} → {"t":"hb-ack"})`，平台自動回覆、不喚醒 DO、不計費；最後心跳時間以
 //   `getWebSocketAutoResponseTimestamp` 取得，還沒有心跳時用連線時間（attachment）。
 // - 同一台設備只留一條連線：新的通過權杖驗證後，舊的以 4409 關掉（避免外洩的權杖「搶走」命令）。
+// - 長輪詢（SDK ADR 0138，給 Tasmota Berry／ESPHome）：`GET …/<blindId>/next?wait=` 由 **Worker** 掛住——Worker 對 DO
+//   開一條休眠式 WebSocket（attachment `transport: 'longpoll'`）、自己 `setTimeout` 等；DO 照樣不掛、不用計時器。
+//   DO 送出一個幀就關掉那一條（一輪只回一個幀）。`POST …/ack`、`POST …/state` 的本體就是設備幀。
+// - Shelly 明文轉譯（SDK ADR 0139，只限自架＋白名單＋危險旗標）：`/iot/v1/shelly/<homeTag>/<blindId>?token=…`，
+//   attachment `transport: 'shelly'`；DO 以這台的 deviceKey 透過 {@link IotShellyTranslator} 替它封／解信封。
 //
 // 為什麼是獨立的 DO 類別而不是 RelayRoom 的一種政策：RelayRoom 的政策釘選、容量、分片都與 IoT 無關，混在一起
 // 每加一條規則都要回頭確認不會影響既有平面；獨立類別只在部署時有 `IOT_HOME` 綁定才存在（ADR 0049〈R1 實作〉）。
-import { IOT_DEVICE_HEARTBEAT, IOT_DEVICE_HEARTBEAT_ACK, verifyIotDeviceToken } from '../iot/device-frame.js';
+import { IOT_DEVICE_FRAME_MAX_BYTES, IOT_DEVICE_HEARTBEAT, IOT_DEVICE_HEARTBEAT_ACK, parseIotDeviceFrame, verifyIotDeviceToken } from '../iot/device-frame.js';
 import { IOT_KIND_ACK, IOT_KIND_COMMAND, IOT_KIND_HEARTBEAT, IOT_KIND_QUERY, IOT_KIND_RETAINED, IOT_KIND_STATE } from '../iot/kinds.js';
 import { parseIotAcl, type IotAcl } from '../iot/acl.js';
 import { IOT_QUOTA_CLOSE_CODE } from '../protocol/relay-reject.js';
 import { ConnPersistence } from './conn-persistence.js';
 import { storeOptions } from './host-config.js';
 import { IOT_REALTIME_ADDRESSABLE_PER_AUTHOR } from './iot-realtime-config.js';
-import { IotRealtimeHome, IOT_REALTIME_REJECT, parseIotRealtimeConfig, type IotRealtimeSockets, type ParsedIotRealtime } from './iot-realtime.js';
+import { IotShellyTranslator } from './iot-shelly.js';
+import {
+  iotLongPollWaitSec,
+  iotPlaintextFrom,
+  IotRealtimeHome,
+  IOT_REALTIME_REJECT,
+  parseIotRealtimeConfig,
+  type IotRealtimeSockets,
+  type IotRealtimeTransport,
+  type ParsedIotRealtime,
+} from './iot-realtime.js';
 import { IotHomeQuota, iotDefaultHomeDailyRequests, nextUtcMidnightSec, type IotQuotaSnapshot } from './iot-quota.js';
 import { closeSignalOf, RelayCore, type ConnSnapshot, type Outbound } from './relay-core.js';
 import { type SqlExec, SqlMessageStore } from './sql-message-store.js';
@@ -34,6 +49,11 @@ export interface IotHomeEnv {
   /** 每個家庭每日的 DO 請求預算（§10.3）；沒設＝帳號每日 100,000 ÷ 家庭數 × 0.5 */
   IOT_HOME_DAILY_REQUESTS?: string;
   MAX_TTL_DAYS?: string;
+  /** Shelly 明文轉譯的危險旗標（`1`＝開；SDK ADR 0139）：還要有 `ALLOWED_PUBKEYS` 白名單與 `IOT_PLAINTEXT_DEVICE_KEYS` */
+  IOT_PLAINTEXT_DEVICES?: string;
+  /** Shelly 設備的金鑰（JSON `{ "<homeTag>/<設備 id>": "<64 位 hex>" }`；Worker secret） */
+  IOT_PLAINTEXT_DEVICE_KEYS?: string;
+  ALLOWED_PUBKEYS?: string;
 }
 
 /** 設備連線被新連線取代時的關閉碼 */
@@ -48,21 +68,35 @@ const PRUNE_INTERVAL_MS = 60 * 60 * 1000;
 /** 手機連線的速率（每分鐘事件數）：指令與查詢都是人按的，60 已經很寬 */
 const PHONE_EVENTS_PER_MINUTE = 60;
 
-export type IotPath = { kind: 'home'; homeTag: string } | { kind: 'dev'; homeTag: string; blindId: string };
+/** 長輪詢設備的三個端點（SDK ADR 0138）：`next`＝等下一個幀，`ack`／`state`＝上行 */
+export type IotLongPollOp = 'next' | 'ack' | 'state';
 
-/** 解析 `/iot/v1/home/<homeTag>`、`/iot/v1/dev/<homeTag>/<blindId>`；其他回 undefined */
+export type IotPath =
+  | { kind: 'home'; homeTag: string }
+  | { kind: 'dev'; homeTag: string; blindId: string; op?: IotLongPollOp }
+  | { kind: 'shelly'; homeTag: string; blindId: string };
+
+/**
+ * 解析 `/iot/v1/home/<homeTag>`、`/iot/v1/dev/<homeTag>/<blindId>`（長輪詢再加 `/next`、`/ack`、`/state`）、
+ * `/iot/v1/shelly/<homeTag>/<blindId>`；其他回 undefined
+ */
 export function iotPathOf(pathname: string): IotPath | undefined {
-  const m = /^\/iot\/v1\/(home|dev)\/([A-Za-z0-9_-]{22})(?:\/([A-Za-z0-9_-]{22}))?\/?$/.exec(pathname);
+  const m = /^\/iot\/v1\/(home|dev|shelly)\/([A-Za-z0-9_-]{22})(?:\/([A-Za-z0-9_-]{22})(?:\/(next|ack|state))?)?\/?$/.exec(pathname);
   if (!m) return undefined;
   if (m[1] === 'home') return m[3] === undefined ? { kind: 'home', homeTag: m[2]! } : undefined;
-  return m[3] === undefined ? undefined : { kind: 'dev', homeTag: m[2]!, blindId: m[3] };
+  if (m[3] === undefined) return undefined;
+  if (m[1] === 'shelly') return m[4] === undefined ? { kind: 'shelly', homeTag: m[2]!, blindId: m[3] } : undefined;
+  return m[4] === undefined ? { kind: 'dev', homeTag: m[2]!, blindId: m[3] } : { kind: 'dev', homeTag: m[2]!, blindId: m[3], op: m[4] as IotLongPollOp };
 }
 
-let cache: { realtime: string | undefined; keys: string | undefined; parsed: ParsedIotRealtime } | undefined;
+let cache: { realtime: string | undefined; keys: string | undefined; plaintext: string; parsed: ParsedIotRealtime } | undefined;
+
+type IotConfigEnv = Pick<IotHomeEnv, 'IOT_REALTIME' | 'IOT_GATEWAY_KEYS' | 'IOT_PLAINTEXT_DEVICES' | 'IOT_PLAINTEXT_DEVICE_KEYS' | 'ALLOWED_PUBKEYS'>;
 
 /** 從 env 解析 C′ 設定（同一個 isolate 內快取；設定有錯的家庭不啟用，錯誤印一次） */
-export function iotRealtimeFrom(env: Pick<IotHomeEnv, 'IOT_REALTIME' | 'IOT_GATEWAY_KEYS'>): ParsedIotRealtime {
-  if (cache && cache.realtime === env.IOT_REALTIME && cache.keys === env.IOT_GATEWAY_KEYS) return cache.parsed;
+export function iotRealtimeFrom(env: IotConfigEnv): ParsedIotRealtime {
+  const plaintextKey = `${env.IOT_PLAINTEXT_DEVICES ?? ''}\u0000${env.ALLOWED_PUBKEYS ?? ''}\u0000${env.IOT_PLAINTEXT_DEVICE_KEYS ?? ''}`;
+  if (cache && cache.realtime === env.IOT_REALTIME && cache.keys === env.IOT_GATEWAY_KEYS && cache.plaintext === plaintextKey) return cache.parsed;
   let raw: unknown;
   let keys: Record<string, string> = {};
   try {
@@ -75,10 +109,10 @@ export function iotRealtimeFrom(env: Pick<IotHomeEnv, 'IOT_REALTIME' | 'IOT_GATE
   } catch {
     keys = {};
   }
-  const parsed = parseIotRealtimeConfig(raw, keys);
-  // 🔴 只印路徑與代碼，不印值（權杖雜湊、公鑰都不該進日誌；SDK ADR 0064）
+  const parsed = parseIotRealtimeConfig(raw, keys, iotPlaintextFrom(env));
+  // 🔴 只印路徑與代碼，不印值（權杖雜湊、公鑰、設備金鑰都不該進日誌；SDK ADR 0064）
   if (parsed.issues.length > 0) console.warn(`IOT_REALTIME 有 ${parsed.issues.length} 個問題，相關家庭不啟用：${parsed.issues.map((i) => `${i.path}(${i.code})`).join(', ')}`);
-  cache = { realtime: env.IOT_REALTIME, keys: env.IOT_GATEWAY_KEYS, parsed };
+  cache = { realtime: env.IOT_REALTIME, keys: env.IOT_GATEWAY_KEYS, plaintext: plaintextKey, parsed };
   return parsed;
 }
 
@@ -87,6 +121,23 @@ export function iotErrorResponse(status: number, error: string, headers: Record<
   return new Response(JSON.stringify({ error }), {
     status,
     headers: { 'content-type': 'application/json; charset=utf-8', 'Cinder-Relay': '1', ...headers },
+  });
+}
+
+/** 本家預算的結構化 503（§10.2）：`home-budget`＝今日用完，`home-shed`＝95% 分流（遙測先丟） */
+export function iotQuotaResponse(reset: number, quota: 'home-budget' | 'home-shed' = 'home-budget'): Response {
+  const error =
+    quota === 'home-budget'
+      ? 'rate-limited: iot-quota: this home has used its relay budget for today'
+      : 'rate-limited: iot-quota: this home is shedding telemetry for today (95% of its relay budget used); acks still go through';
+  return new Response(JSON.stringify({ error, reset }), {
+    status: 503,
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'Cinder-Relay': '1',
+      'Cinder-Quota': quota,
+      'Retry-After': String(Math.max(1, reset - Math.floor(Date.now() / 1000))),
+    },
   });
 }
 
@@ -103,21 +154,37 @@ export async function routeIotRequest(request: Request, env: IotHomeEnv): Promis
   if (!path) return iotErrorResponse(404, 'invalid: iot-path: not an IoT endpoint (phones use the home endpoint, devices the device endpoint; see SDK ADR 0049)');
   const entry = parsed.homes.get(path.homeTag);
   if (!entry) return iotErrorResponse(403, IOT_REALTIME_REJECT.home);
-  if (path.kind === 'dev') {
+  if (path.kind === 'dev' || path.kind === 'shelly') {
     const device = entry.config.devices.find((d) => d.blindId === path.blindId);
-    if (!device) return iotErrorResponse(404, IOT_REALTIME_REJECT.device);
+    // Shelly 設備只走 /shelly/、其他設備不能走 /shelly/（relay 手上只有 Shelly 設備的金鑰）
+    if (!device || (device.transport === 'shelly') !== (path.kind === 'shelly')) return iotErrorResponse(404, IOT_REALTIME_REJECT.device);
     // 只驗權杖（不需要閘道金鑰）：與 IotRealtimeHome.authenticateDevice 同一個函式
-    const auth = authenticate(device.tokenHash, request.headers.get('Authorization'));
+    const auth = authenticate(device.tokenHash, iotDeviceAuthorization(request, path.kind));
     if (!auth) return iotErrorResponse(401, IOT_REALTIME_REJECT.token);
   }
-  if (request.headers.get('Upgrade') !== 'websocket') return iotErrorResponse(426, 'invalid: iot-upgrade: WebSocket upgrade required', { Upgrade: 'websocket' });
+  const op = path.kind === 'dev' ? path.op : undefined;
+  let upstream: Request = request;
+  if (op === 'ack' || op === 'state') {
+    if (request.method !== 'POST') return iotErrorResponse(405, `invalid: iot-method: POST the device frame to /${op}`, { Allow: 'POST' });
+    // 在 Worker 就擋掉壞幀（不花 DO 請求）；解不解得開信封由 DO 判斷，那一關不回任何訊號（沒有 oracle）
+    const text = await request.text();
+    const frame = new TextEncoder().encode(text).length <= IOT_DEVICE_FRAME_MAX_BYTES ? parseIotDeviceFrame(text, 'device') : undefined;
+    if (!frame || frame.t !== op) return iotErrorResponse(400, `invalid: iot-frame: the body must be one device frame with t="${op}"`);
+    upstream = new Request(request.url, { method: 'POST', headers: { Authorization: request.headers.get('Authorization') ?? '' }, body: text });
+  } else if (op === 'next') {
+    if (request.method !== 'GET') return iotErrorResponse(405, 'invalid: iot-method: GET /next to wait for the next frame', { Allow: 'GET' });
+  } else if (request.headers.get('Upgrade') !== 'websocket') {
+    return iotErrorResponse(426, 'invalid: iot-upgrade: WebSocket upgrade required', { Upgrade: 'websocket' });
+  }
   const ip = request.headers.get('CF-Connecting-IP');
-  if (env.IOT_UPGRADE_LIMIT && ip) {
+  if (env.IOT_UPGRADE_LIMIT && ip && op !== 'ack' && op !== 'state') {
     const { success } = await env.IOT_UPGRADE_LIMIT.limit({ key: ip });
     if (!success) return iotErrorResponse(429, 'rate-limited: iot-upgrade: too many connection attempts from this address', { 'Retry-After': '60' });
   }
   try {
-    return await env.IOT_HOME.get(env.IOT_HOME.idFromName(`iot:${path.homeTag}`)).fetch(request);
+    const stub = env.IOT_HOME.get(env.IOT_HOME.idFromName(`iot:${path.homeTag}`));
+    if (op === 'next') return await longPoll(stub, request, iotLongPollWaitSec(url.searchParams.get('wait')));
+    return await stub.fetch(upstream);
   } catch (error) {
     // DO 超量（§10.3 第 2 點）：在 Worker 端拋出、沒接住會變成 500。改回結構化 503，設備依 Retry-After 退讓。
     // 文字比對很脆弱：比不到的 DO 失敗照樣回 503，但不帶 Cinder-Quota（設備當成 relay-error 指數退避）
@@ -134,14 +201,66 @@ export async function routeIotRequest(request: Request, env: IotHomeEnv): Promis
   }
 }
 
+/**
+ * 長輪詢的一輪（SDK ADR 0138）：Worker 對 DO 開一條休眠式 WebSocket，自己計時——**DO 不掛住任何東西**。
+ * DO 回 200（空檔內保留的幀）或任何非 101 的回應（預算用完的 503…）就原樣轉出。
+ */
+async function longPoll(stub: { fetch(req: Request): Promise<Response> }, request: Request, waitSec: number): Promise<Response> {
+  const res = await stub.fetch(new Request(request.url, { headers: { Upgrade: 'websocket', Authorization: request.headers.get('Authorization') ?? '' } }));
+  const ws = (res as Response & { webSocket?: WebSocket | null }).webSocket;
+  if (res.status !== 101 || !ws) return res;
+  ws.accept();
+  return new Promise<Response>((resolve) => {
+    let done = false;
+    const finish = (r: Response): void => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      try {
+        ws.close(1000, 'done');
+      } catch {
+        /* 已關閉 */
+      }
+      resolve(r);
+    };
+    const timer = setTimeout(() => finish(new Response(null, { status: 204, headers: { 'Cinder-Relay': '1' } })), waitSec * 1000);
+    ws.addEventListener('message', (ev) => {
+      const data = (ev as MessageEvent).data;
+      const text = typeof data === 'string' ? data : new TextDecoder().decode(data as ArrayBuffer);
+      finish(new Response(text, { status: 200, headers: { 'content-type': 'application/json; charset=utf-8', 'Cinder-Relay': '1' } }));
+    });
+    ws.addEventListener('close', (ev) => {
+      const { code, reason } = ev as CloseEvent;
+      if (code === IOT_QUOTA_CLOSE) {
+        const reset = Number(/^iot-quota:(\d{1,12})$/.exec(reason ?? '')?.[1] ?? nextUtcMidnightSec(Date.now()));
+        return finish(iotQuotaResponse(reset));
+      }
+      if (code === IOT_DEVICE_REPLACED_CLOSE) return finish(iotErrorResponse(409, 'restricted: iot-replaced: another connection for this device took over (token leaked?)'));
+      finish(iotErrorResponse(503, 'error: iot-relay: the home instance closed the poll; retry with backoff'));
+    });
+  });
+}
+
+/**
+ * 設備的權杖：`Authorization: Bearer …`；Shelly 設不了標頭，另外接受網址的 `?token=`（會進存取記錄——SDK ADR 0139 的已知風險）
+ */
+export function iotDeviceAuthorization(request: Request, kind: 'dev' | 'shelly'): string | null {
+  const header = request.headers.get('Authorization');
+  if (header || kind !== 'shelly') return header;
+  const token = new URL(request.url).searchParams.get('token');
+  return token ? `Bearer ${token}` : null;
+}
+
 function authenticate(tokenHash: string, header: string | null): boolean {
   return verifyIotDeviceToken(/^Bearer\s+(\S+)$/.exec(header ?? '')?.[1], tokenHash);
 }
 
 interface DeviceAttachment {
   readonly iotDevice: string;
-  /** 連線時間（毫秒）：還沒有心跳時當作最後心跳 */
+  /** 連線時間（毫秒）：還沒有心跳時當作最後心跳；同一台有兩條時取最新的 */
   readonly at: number;
+  /** 長輪詢的一輪（SDK ADR 0138）；沒有＝常駐 WebSocket */
+  readonly transport?: IotRealtimeTransport;
 }
 
 const isDevice = (att: unknown): att is DeviceAttachment => typeof (att as DeviceAttachment | null)?.iotDevice === 'string';
@@ -155,6 +274,9 @@ export class IotHomeRoom {
   private readonly conns: ConnPersistence;
   private readonly core: RelayCore;
   private rt: IotRealtimeHome | undefined;
+  /** Shelly 設備的金鑰（綁定家庭時取得）與轉譯器（記憶體；休眠後重建，計數器以時間為底不會倒退） */
+  private plaintextKeys: ReadonlyMap<string, Uint8Array> = new Map();
+  private readonly shelly = new Map<string, IotShellyTranslator>();
   private hydrated = false;
   private quota: IotHomeQuota;
 
@@ -197,7 +319,37 @@ export class IotHomeRoom {
     const entry = iotRealtimeFrom(this.env).homes.get(homeTag);
     if (!entry) return false;
     this.rt = new IotRealtimeHome(entry.config, entry.gatewaySecret, { sockets: this.deviceSockets(), aclStore: this.aclStore() });
+    this.plaintextKeys = entry.plaintextKeys;
     return true;
+  }
+
+  /** 這台 Shelly 的轉譯器（沒有金鑰或不是 Shelly＝undefined） */
+  private translator(blindId: string): IotShellyTranslator | undefined {
+    const existing = this.shelly.get(blindId);
+    if (existing) return existing;
+    const device = this.rt?.device(blindId);
+    const key = device?.transport === 'shelly' ? this.plaintextKeys.get(device.id) : undefined;
+    if (!device || !key) return undefined;
+    const t = new IotShellyTranslator({ device, deviceKey: key });
+    this.shelly.set(blindId, t);
+    return t;
+  }
+
+  /** Shelly 轉譯的輸出：RPC 送給 Shelly；up 幀交給家庭核心（與 E2EE 設備的幀走同一條路：kid、計數器、分流都一樣） */
+  private shellyOut(ws: WebSocket, blindId: string, out: { toDevice: string[]; up: string[] }): void {
+    for (const rpc of out.toDevice) {
+      try {
+        ws.send(rpc);
+      } catch {
+        /* 已關閉 */
+      }
+    }
+    if (out.up.length === 0 || !this.rt) return;
+    const shed = this.quota.state() === 'shed';
+    const publish = out.up.flatMap((frame) => this.rt!.onDeviceFrame(blindId, frame, { shed }).publish);
+    if (publish.length === 0) return;
+    const restored = this.ensureHydrated();
+    this.dispatch([...restored, ...publish.flatMap((e) => this.core.publishLocal(e))]);
   }
 
   private aclStore(): { load(): IotAcl | undefined; save(acl: IotAcl): void } {
@@ -216,9 +368,23 @@ export class IotHomeRoom {
   }
 
   private deviceSockets(): IotRealtimeSockets {
-    const first = (blindId: string): WebSocket | undefined => this.ctx.getWebSockets(`dev:${blindId}`)[0];
+    // 同一台設備可能短暫有兩條（新的剛接受、舊的還在關）：取 attachment 時間最新的，不靠 getWebSockets 的順序
+    const first = (blindId: string): WebSocket | undefined => {
+      let best: WebSocket | undefined;
+      let bestAt = -Infinity;
+      for (const ws of this.ctx.getWebSockets(`dev:${blindId}`)) {
+        const at = (ws.deserializeAttachment() as DeviceAttachment | null)?.at ?? 0;
+        if (at >= bestAt) [best, bestAt] = [ws, at];
+      }
+      return best;
+    };
+    const transportOf = (ws: WebSocket): IotRealtimeTransport => (ws.deserializeAttachment() as DeviceAttachment | null)?.transport ?? 'ws';
     return {
       isConnected: (blindId) => first(blindId) !== undefined,
+      transportOf: (blindId) => {
+        const ws = first(blindId);
+        return ws ? transportOf(ws) : undefined;
+      },
       lastHeartbeatMs: (blindId) => {
         const ws = first(blindId);
         if (!ws) return undefined;
@@ -230,12 +396,30 @@ export class IotHomeRoom {
       send: (blindId, text) => {
         const ws = first(blindId);
         if (!ws) return false;
+        if (transportOf(ws) === 'shelly') {
+          const t = this.translator(blindId);
+          if (!t) return false;
+          const out = t.fromRelay(text);
+          this.shellyOut(ws, blindId, { toDevice: out.toDevice, up: [] });
+          // 馬上能回答的 up（不認得的 topic、過期）晚一拍再交給核心：現在還在核心處理手機訊息的途中
+          if (out.up.length > 0) queueMicrotask(() => this.shellyOut(ws, blindId, { toDevice: [], up: out.up }));
+          return true;
+        }
         try {
           ws.send(text);
-          return true;
         } catch {
           return false;
         }
+        // 長輪詢：一輪只回一個幀。立刻關掉，下一個指令就不會送進一條 Worker 正在收尾的連線（會遺失）
+        if (transportOf(ws) === 'longpoll') {
+          try {
+            ws.close(1000, 'delivered');
+          } catch {
+            /* 已關閉 */
+          }
+          this.rt?.longPollEnded(blindId);
+        }
+        return true;
       },
     };
   }
@@ -275,29 +459,29 @@ export class IotHomeRoom {
   async fetch(request: Request): Promise<Response> {
     const path = iotPathOf(new URL(request.url).pathname);
     if (!path) return iotErrorResponse(404, 'invalid: iot-path: unknown path');
-    if (this.quota.state() === 'exhausted' || this.count()) {
-      const reset = this.quota.resetAt();
-      return new Response(JSON.stringify({ error: 'rate-limited: iot-quota: this home has used its relay budget for today', reset }), {
-        status: 503,
-        headers: {
-          'content-type': 'application/json; charset=utf-8',
-          'Cinder-Relay': '1',
-          'Cinder-Quota': 'home-budget',
-          'Retry-After': String(Math.max(1, reset - Math.floor(Date.now() / 1000))),
-        },
-      });
-    }
+    if (this.quota.state() === 'exhausted' || this.count()) return iotQuotaResponse(this.quota.resetAt());
     if (!this.rt) {
       if (!this.bind(path.homeTag)) return iotErrorResponse(403, IOT_REALTIME_REJECT.home);
       await this.ctx.storage.put(HOME_KEY, path.homeTag);
     }
     // 一顆 DO 只服務一個家（名字就是 `iot:<homeTag>`）；收到別家的請求代表路由壞了——拒絕，不切換
     if (this.rt!.homeTag !== path.homeTag) return iotErrorResponse(409, 'invalid: iot-home: this instance serves another home');
+    if (path.kind === 'dev' || path.kind === 'shelly') {
+      const auth = this.rt!.authenticateDevice(path.blindId, iotDeviceAuthorization(request, path.kind));
+      if (!auth.ok) return iotErrorResponse(auth.status, auth.error);
+      if ((auth.device.transport === 'shelly') !== (path.kind === 'shelly')) return iotErrorResponse(404, IOT_REALTIME_REJECT.device);
+      if (path.kind === 'shelly' && !this.translator(path.blindId)) return iotErrorResponse(404, IOT_REALTIME_REJECT.device);
+      const op = path.kind === 'dev' ? path.op : undefined;
+      if (op === 'ack' || op === 'state') return this.devicePost(path.blindId, op, await request.text());
+      if (op === 'next') {
+        // 空檔內保留的幀：直接回 200，不開連線（SDK ADR 0138）
+        const held = this.rt!.longPollStart(path.blindId);
+        if (held !== undefined) return new Response(held, { status: 200, headers: { 'content-type': 'application/json; charset=utf-8', 'Cinder-Relay': '1' } });
+      }
+    }
     const pair = new WebSocketPair();
     const [client, server] = [pair[0], pair[1]];
-    if (path.kind === 'dev') {
-      const auth = this.rt!.authenticateDevice(path.blindId, request.headers.get('Authorization'));
-      if (!auth.ok) return iotErrorResponse(auth.status, auth.error);
+    if (path.kind === 'dev' || path.kind === 'shelly') {
       for (const old of this.ctx.getWebSockets(`dev:${path.blindId}`)) {
         try {
           old.close(IOT_DEVICE_REPLACED_CLOSE, 'replaced');
@@ -306,7 +490,8 @@ export class IotHomeRoom {
         }
       }
       this.ctx.acceptWebSocket(server, [`dev:${path.blindId}`]);
-      server.serializeAttachment({ iotDevice: path.blindId, at: Date.now() } satisfies DeviceAttachment);
+      const transport: IotRealtimeTransport | undefined = path.kind === 'shelly' ? 'shelly' : path.op === 'next' ? 'longpoll' : undefined;
+      server.serializeAttachment({ iotDevice: path.blindId, at: Date.now(), ...(transport ? { transport } : {}) } satisfies DeviceAttachment);
       return new Response(null, { status: 101, webSocket: client });
     }
     const connId = crypto.randomUUID();
@@ -320,11 +505,27 @@ export class IotHomeRoom {
     return new Response(null, { status: 101, webSocket: client });
   }
 
+  /** 長輪詢設備的上行（SDK ADR 0138）：Worker 已經擋掉壞幀；解不開的信封照樣回 204（不給 oracle） */
+  private devicePost(blindId: string, op: 'ack' | 'state', text: string): Response {
+    if (op === 'state' && this.quota.state() === 'shed') return iotQuotaResponse(this.quota.resetAt(), 'home-shed');
+    const frame = parseIotDeviceFrame(text, 'device');
+    if (!frame || frame.t !== op) return iotErrorResponse(400, `invalid: iot-frame: the body must be one device frame with t="${op}"`);
+    const restored = this.ensureHydrated();
+    const r = this.rt!.onDeviceFrame(blindId, text);
+    this.dispatch([...restored, ...r.publish.flatMap((e) => this.core.publishLocal(e))]);
+    return new Response(null, { status: 204, headers: { 'Cinder-Relay': '1' } });
+  }
+
   webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): void {
     if (this.count()) return; // 用完了：連線已經全部關掉
     const att = ws.deserializeAttachment() as unknown;
     if (isDevice(att)) {
       if (!this.rt) return;
+      if (att.transport === 'shelly') {
+        const t = this.translator(att.iotDevice);
+        if (t) this.shellyOut(ws, att.iotDevice, t.fromDevice(typeof message === 'string' ? message : new TextDecoder().decode(message)));
+        return;
+      }
       const shed = this.quota.state() === 'shed';
       const r = this.rt.onDeviceFrame(att.iotDevice, typeof message === 'string' ? message : new Uint8Array(message), { shed });
       if (r.reply !== undefined) {
@@ -334,7 +535,9 @@ export class IotHomeRoom {
           /* 已關閉 */
         }
       }
-      this.dispatch(r.publish.flatMap((e) => this.core.publishLocal(e)));
+      // 🔴 先還原手機的訂閱再扇出：休眠喚醒後若設備比手機先開口，訂閱還沒回到 RelayCore，ack 會沒人收（SDK ADR 0138 順手修）
+      const restored = r.publish.length > 0 ? this.ensureHydrated() : [];
+      this.dispatch([...restored, ...r.publish.flatMap((e) => this.core.publishLocal(e))]);
       return;
     }
     const restored = this.ensureHydrated();
@@ -360,7 +563,13 @@ export class IotHomeRoom {
 
   private closed(ws: WebSocket): void {
     const att = ws.deserializeAttachment() as unknown;
-    if (isDevice(att)) return;
+    if (isDevice(att)) {
+      if (att.transport !== 'longpoll') return;
+      // 長輪詢的一輪結束（Worker 逾時或設備斷了）：這個事件本身也是一次 DO 請求，計入本家預算；開始算空檔
+      if (this.count()) return;
+      if (this.ctx.getWebSockets(`dev:${att.iotDevice}`).every((other) => other === ws)) this.rt?.longPollEnded(att.iotDevice);
+      return;
+    }
     const restored = this.ensureHydrated();
     const connId = (att as ConnSnapshot | null)?.connId;
     if (connId) {

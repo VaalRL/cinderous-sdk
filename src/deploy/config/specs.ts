@@ -104,6 +104,14 @@ const IOT_REALTIME_SCHEMA = {
                 minRole: IOT_ROLE,
                 localFallback: { type: 'array', items: { enum: [...IOT_LOCAL_FALLBACKS] } },
                 previousEpoch: { type: 'object', required: ['epoch', 'until'], properties: { epoch: { type: 'integer' }, until: { type: 'integer' } } },
+                transport: { enum: ['shelly'] },
+                shelly: {
+                  type: 'object',
+                  required: ['switches'],
+                  properties: {
+                    switches: { type: 'array', items: { type: 'object', required: ['id', 'topic'], properties: { id: { type: 'integer' }, topic: { type: 'string' } } } },
+                  },
+                },
               },
             },
           },
@@ -481,6 +489,17 @@ const SITE_OPTION_SPECS: { readonly [K in keyof Required<RelaySiteOptions>]: Omi
       en: 'Maximum requests per C′ home per day. Defaults to the account\'s 100,000 daily requests ÷ homes × 0.5. Beyond it devices get 4429 and phones get quota until UTC midnight. Needs iotRealtime.',
     },
   },
+  iotPlaintextDevices: {
+    type: 'boolean',
+    env: 'IOT_PLAINTEXT_DEVICES',
+    group: 'iot',
+    dangerous: true,
+    description: {
+      'zh-TW':
+        'Shelly 明文轉譯（SDK ADR 0139）：transport: "shelly" 的設備由 relay 拿那幾台的設備金鑰替它封／解信封——relay 看得到它們的指令與狀態。只限有 allowedPubkeys 白名單的自架站；設備金鑰放 secrets.iotPlaintextDeviceKeys。門鎖類不行。',
+      en: 'Shelly plaintext translation (SDK ADR 0139): the relay seals and opens envelopes for transport: "shelly" devices with their device keys, so the relay sees their commands and state. Only for self-hosted relays with an allowedPubkeys allowlist; the device keys go in secrets.iotPlaintextDeviceKeys. Not for locks.',
+    },
+  },
 };
 
 const TOP_LEVEL_SPECS: readonly DeployOptionSpec[] = [
@@ -711,6 +730,19 @@ const TOP_LEVEL_SPECS: readonly DeployOptionSpec[] = [
       'zh-TW':
         'C′ 閘道私鑰的環境變數名稱（沒給讀 IOT_GATEWAY_KEYS）。值是 JSON {"<homeTag>": "<64 位 hex>"}，要涵蓋 site.iotRealtime 的每個家庭。Cloudflare 以 Worker secret 上傳（REST 是 secret_text，wrangler 是 wrangler secret put）；Node 主機放 .env。',
       en: 'Environment variable holding the C′ gateway private keys (defaults to IOT_GATEWAY_KEYS). The value is JSON {"<homeTag>": "<64 hex>"} covering every home in site.iotRealtime. On Cloudflare it is uploaded as a Worker secret (secret_text over REST, wrangler secret put with wrangler); Node hosts read it from .env.',
+    },
+  },
+  {
+    path: 'secrets.iotPlaintextDeviceKeys',
+    type: 'secret-ref',
+    secret: true,
+    defaultEnv: 'IOT_PLAINTEXT_DEVICE_KEYS',
+    services: ['relay'],
+    group: 'iot',
+    description: {
+      'zh-TW':
+        'Shelly 設備金鑰的環境變數名稱（沒給讀 IOT_PLAINTEXT_DEVICE_KEYS；SDK ADR 0139）。值是 JSON {"<homeTag>/<設備 id>": "<64 位 hex>"}，只放 transport: "shelly" 的設備、要涵蓋每一台（cinderous iot realtime device --shelly-switch 印出那一筆）。上傳方式與 iotGatewayKeys 相同。',
+      en: 'Environment variable holding the Shelly device keys (defaults to IOT_PLAINTEXT_DEVICE_KEYS; SDK ADR 0139). The value is JSON {"<homeTag>/<device id>": "<64 hex>"} with exactly the transport: "shelly" devices (cinderous iot realtime device --shelly-switch prints the entry). Uploaded like iotGatewayKeys.',
     },
   },
 ];

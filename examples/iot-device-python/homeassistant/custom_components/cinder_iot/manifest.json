@@ -1,0 +1,10 @@
+{
+  "domain": "cinder_iot",
+  "name": "Cinderous IoT（C′ 即時通道，骨架）",
+  "version": "0.1.0",
+  "documentation": "https://github.com/VaalRL/cinderous-sdk/tree/main/examples/iot-device-python",
+  "codeowners": [],
+  "requirements": ["cryptography>=42", "websockets>=13"],
+  "iot_class": "cloud_push",
+  "config_flow": false
+}

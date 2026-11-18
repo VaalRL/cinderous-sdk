@@ -42,6 +42,7 @@ npx cinderous relay deploy --config deploy/cinderous.config.json
 | `secrets.tunnelToken` | — | — |
 | `secrets.turnApiToken` | — | — |
 | `secrets.iotGatewayKeys` | — | — |
+| `secrets.iotPlaintextDeviceKeys` | — | — |
 | `pushGateway.android` | — | `PUSH_ANDROID` |
 | `pushGateway.ios` | — | `PUSH_IOS` |
 | `pushGateway.iosLocKey` | — | `PUSH_IOS_LOC_KEY` |
@@ -91,6 +92,7 @@ npx cinderous relay deploy --config deploy/cinderous.config.json
 | `site.turnTtlSeconds` | — | `TURN_TTL_SECONDS` |
 | `site.iotRealtime` | — | `IOT_REALTIME` |
 | `site.iotHomeDailyRequests` | — | `IOT_HOME_DAILY_REQUESTS` |
+| `site.iotPlaintextDevices` | — | `IOT_PLAINTEXT_DEVICES` |
 
 ## 基本
 
@@ -722,6 +724,14 @@ C′ 閘道私鑰的環境變數名稱（沒給讀 IOT_GATEWAY_KEYS）。值是 
 - 秘密：設定檔只能寫 `{ "$env": "NAME" }`; 沒給時讀 `IOT_GATEWAY_KEYS`
 - 服務：`relay`
 
+### `secrets.iotPlaintextDeviceKeys`
+
+Shelly 設備金鑰的環境變數名稱（沒給讀 IOT_PLAINTEXT_DEVICE_KEYS；SDK ADR 0139）。值是 JSON {"&lt;homeTag&gt;/&lt;設備 id&gt;": "&lt;64 位 hex&gt;"}，只放 transport: "shelly" 的設備、要涵蓋每一台（cinderous iot realtime device --shelly-switch 印出那一筆）。上傳方式與 iotGatewayKeys 相同。
+
+- 型別：秘密參照 `{ "$env": "NAME" }`
+- 秘密：設定檔只能寫 `{ "$env": "NAME" }`; 沒給時讀 `IOT_PLAINTEXT_DEVICE_KEYS`
+- 服務：`relay`
+
 ### `site.iotRealtime`
 
 IoT 即時通道 C′（SDK ADR 0049 §9、0120、0121）：這座站服務的家庭與設備，用 cinderous iot realtime home／device 產生。只有公開值與雜湊（設備權杖存 SHA-256）；閘道私鑰另外放 secrets.iotGatewayKeys。門鎖類設備必須列 localFallback。
@@ -738,3 +748,13 @@ C′ 每個家庭每天最多幾次請求。沒給＝帳號每日 10 萬 ÷ 家�
 - 環境變數：`IOT_HOME_DAILY_REQUESTS`
 - 中繼宿主：Cloudflare（Worker）
 - 服務：`relay`
+
+### `site.iotPlaintextDevices`
+
+Shelly 明文轉譯（SDK ADR 0139）：transport: "shelly" 的設備由 relay 拿那幾台的設備金鑰替它封／解信封——relay 看得到它們的指令與狀態。只限有 allowedPubkeys 白名單的自架站；設備金鑰放 secrets.iotPlaintextDeviceKeys。門鎖類不行。
+
+- 型別：布林值
+- 環境變數：`IOT_PLAINTEXT_DEVICES`
+- 服務：`relay`
+
+⚠️ **危險選項**：`cinderous init` 要打出選項名稱才會開，部署說明也會把它列進安全檢查清單。開之前先讀完上面的說明。

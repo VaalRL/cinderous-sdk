@@ -42,6 +42,7 @@ npx cinderous relay deploy --config deploy/cinderous.config.json
 | `secrets.tunnelToken` | — | — |
 | `secrets.turnApiToken` | — | — |
 | `secrets.iotGatewayKeys` | — | — |
+| `secrets.iotPlaintextDeviceKeys` | — | — |
 | `pushGateway.android` | — | `PUSH_ANDROID` |
 | `pushGateway.ios` | — | `PUSH_IOS` |
 | `pushGateway.iosLocKey` | — | `PUSH_IOS_LOC_KEY` |
@@ -91,6 +92,7 @@ npx cinderous relay deploy --config deploy/cinderous.config.json
 | `site.turnTtlSeconds` | — | `TURN_TTL_SECONDS` |
 | `site.iotRealtime` | — | `IOT_REALTIME` |
 | `site.iotHomeDailyRequests` | — | `IOT_HOME_DAILY_REQUESTS` |
+| `site.iotPlaintextDevices` | — | `IOT_PLAINTEXT_DEVICES` |
 
 ## Basics
 
@@ -722,6 +724,14 @@ Environment variable holding the C′ gateway private keys (defaults to IOT_GATE
 - Secret: only `{ "$env": "NAME" }` in the config file; read from `IOT_GATEWAY_KEYS`
 - Service: `relay`
 
+### `secrets.iotPlaintextDeviceKeys`
+
+Environment variable holding the Shelly device keys (defaults to IOT_PLAINTEXT_DEVICE_KEYS; SDK ADR 0139). The value is JSON {"&lt;homeTag&gt;/&lt;device id&gt;": "&lt;64 hex&gt;"} with exactly the transport: "shelly" devices (cinderous iot realtime device --shelly-switch prints the entry). Uploaded like iotGatewayKeys.
+
+- Type: secret reference `{ "$env": "NAME" }`
+- Secret: only `{ "$env": "NAME" }` in the config file; read from `IOT_PLAINTEXT_DEVICE_KEYS`
+- Service: `relay`
+
 ### `site.iotRealtime`
 
 IoT realtime channel C′ (SDK ADR 0049 §9, 0120, 0121): the homes and devices this relay serves, generated with cinderous iot realtime home / device. Only public values and hashes (device tokens are stored as SHA-256); the gateway private keys go in secrets.iotGatewayKeys. Lock-class devices must list localFallback.
@@ -738,3 +748,13 @@ Maximum requests per C′ home per day. Defaults to the account's 100,000 daily 
 - Environment variable: `IOT_HOME_DAILY_REQUESTS`
 - Relay host: Cloudflare (Worker)
 - Service: `relay`
+
+### `site.iotPlaintextDevices`
+
+Shelly plaintext translation (SDK ADR 0139): the relay seals and opens envelopes for transport: "shelly" devices with their device keys, so the relay sees their commands and state. Only for self-hosted relays with an allowedPubkeys allowlist; the device keys go in secrets.iotPlaintextDeviceKeys. Not for locks.
+
+- Type: boolean
+- Environment variable: `IOT_PLAINTEXT_DEVICES`
+- Service: `relay`
+
+⚠️ **Dangerous**: `cinderous init` turns it on only after you type the option name, and the deploy guide lists it in the security checklist. Read the description above first.

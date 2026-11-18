@@ -42,7 +42,18 @@ export interface IotRealtimeDeviceConfig {
   readonly localFallback?: readonly IotLocalFallback[];
   /** 輪換寬限：舊 epoch 在 `until`（unix 秒）之前照收（§2.6 `keyGraceSec`） */
   readonly previousEpoch?: { readonly epoch: number; readonly until: number };
+  /**
+   * 設備的連線方式（SDK ADR 0139）：沒給＝設備自己封信封（常駐 WebSocket 或長輪詢，ADR 0138）；
+   * `shelly`＝Shelly Gen2+ 的 Outbound WebSocket 明文 RPC，relay 持有這台的 deviceKey 替它封／解信封。
+   * 🔴 只限自架站＋白名單＋危險旗標 `IOT_PLAINTEXT_DEVICES=1`；門鎖類不行。
+   */
+  readonly transport?: 'shelly';
+  /** `transport: 'shelly'` 必填：Shelly 的開關（`switch:<id>`）對應到哪個 topic（1–16 個） */
+  readonly shelly?: { readonly switches: readonly { readonly id: number; readonly topic: string }[] };
 }
+
+/** Shelly 一台最多幾個開關（`switch:0`–`switch:15`） */
+export const IOT_SHELLY_MAX_SWITCHES = 16;
 
 export interface IotRealtimeHomeConfig {
   readonly homeTag: string;
@@ -82,7 +93,11 @@ export interface IotRealtimeIssue {
     | 'lock-local-fallback'
     | 'range'
     | 'gateway-key-missing'
-    | 'gateway-key-mismatch';
+    | 'gateway-key-mismatch'
+    | 'shelly'
+    | 'shelly-lock'
+    | 'plaintext-disabled'
+    | 'plaintext-key-missing';
   readonly message: string;
 }
 
@@ -154,6 +169,7 @@ export function checkIotRealtimeConfig(
           add(`${p}.localFallback`, 'lock-local-fallback', `門鎖類設備必須列出不依賴 relay 的開啟方式（${IOT_LOCAL_FALLBACKS.join('／')}），ADR 0049 §10.5`);
         }
       }
+      shellyIn(dev, p, add);
       const prev = dev.previousEpoch as { epoch?: unknown; until?: unknown } | undefined;
       if (prev !== undefined && (!Number.isSafeInteger(prev.epoch) || !Number.isSafeInteger(prev.until))) add(`${p}.previousEpoch`, 'epoch', 'previousEpoch 需要整數 epoch 與 until（unix 秒）');
       else if (prev !== undefined && Number.isSafeInteger(dev.epoch) && ((prev.epoch as number) < 0 || (prev.epoch as number) >= (dev.epoch as number))) add(`${p}.previousEpoch`, 'epoch', 'previousEpoch.epoch 要比 epoch 小（舊的版本）');
@@ -161,6 +177,35 @@ export function checkIotRealtimeConfig(
     homes.push({ index: i, home, ok: issues.length === before });
   });
   return { issues, homes };
+}
+
+/** Shelly 開關對應的 topic：與 `./iot` 的 `isValidIotTopic` 同一套規則（這裡不能帶進 `./iot` 的程式） */
+function isPlainTopic(v: unknown): v is string {
+  if (typeof v !== 'string' || v.length === 0 || v.length > 256 || v.includes('\u0000') || v.startsWith('$')) return false;
+  const levels = v.split('/');
+  return levels.length <= 16 && !levels.some((l) => l.includes('+') || l.includes('#'));
+}
+
+/** `transport: 'shelly'` 的形狀（SDK ADR 0139）；危險旗標與金鑰由 relay 另外檢查（部署設定器手上沒有金鑰） */
+function shellyIn(dev: Record<string, unknown>, p: string, add: (path: string, code: IotRealtimeIssue['code'], message: string) => void): void {
+  if (dev.transport !== undefined && dev.transport !== 'shelly') return add(`${p}.transport`, 'shape', 'transport 只能是 shelly（沒給＝設備自己封信封）');
+  if (dev.transport === undefined) {
+    if (dev.shelly !== undefined) add(`${p}.shelly`, 'shelly', 'shelly 只能搭配 transport: "shelly"');
+    return;
+  }
+  if (dev.class === 'lock') add(`${p}.class`, 'shelly-lock', '門鎖類不能走 Shelly 明文轉譯：relay 要拿到 operatorSecret 才能替它解指令，等於放棄 §9.5（SDK ADR 0139）');
+  const switches = (dev.shelly as { switches?: unknown } | undefined)?.switches;
+  if (!Array.isArray(switches) || switches.length === 0 || switches.length > IOT_SHELLY_MAX_SWITCHES) {
+    return add(`${p}.shelly.switches`, 'shelly', `shelly.switches 必須是 1–${IOT_SHELLY_MAX_SWITCHES} 個 { id, topic }`);
+  }
+  const seen = new Set<number>();
+  switches.forEach((sw: unknown, k: number) => {
+    const { id, topic } = (sw ?? {}) as { id?: unknown; topic?: unknown };
+    if (!Number.isInteger(id) || (id as number) < 0 || (id as number) >= IOT_SHELLY_MAX_SWITCHES || seen.has(id as number)) {
+      add(`${p}.shelly.switches[${k}].id`, 'shelly', `開關 id 必須是 0–${IOT_SHELLY_MAX_SWITCHES - 1} 的整數、不重複`);
+    } else seen.add(id as number);
+    if (!isPlainTopic(topic)) add(`${p}.shelly.switches[${k}].topic`, 'shelly', 'topic 必須是具體的 topic（不能有 + 或 #、不能以 $ 開頭）');
+  });
 }
 
 /**

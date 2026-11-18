@@ -2,7 +2,7 @@ import type { Identity } from '../identity.js';
 import { type CallEndReason, type CallFailureReason, type CallMedia, type CallState } from '../protocol/call.js';
 import { type VideoQuality } from '../protocol/video-quality.js';
 import type { RelayTransport } from '../relay-pool.js';
-import { type CallRtcFactory, type GetUserMedia, type MediaStreamLike } from './media.js';
+import { type CallRtcFactory, type CreateMediaStream, type GetUserMedia, type MediaStreamLike } from './media.js';
 export interface CallManagerOptions {
     identity: Identity;
     transport: RelayTransport;
@@ -13,6 +13,10 @@ export interface CallManagerOptions {
     /** 封鎖的人打來：不響鈴、不回應 */
     isBlocked?: (pubkey: string) => boolean;
     videoQuality?: VideoQuality;
+    /** 建新的串流物件（預設 `new MediaStream(tracks)`）；串流內容變了一律送新物件，UI 才會重綁 */
+    createStream?: CreateMediaStream;
+    /** 另一個通話（例如 `GroupCallManager`）進行中：來電一律回忙線（SDK ADR 0141） */
+    isBusy?: () => boolean;
 }
 export declare class CallManager {
     #private;

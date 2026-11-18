@@ -57,7 +57,7 @@ describe('./iot 子路徑', () => {
   it('Worker 與 Node 中繼的入口只帶 ./iot 的協定層（C′ 即時通道需要），不帶手機端、閘道、推播、橋接器與 MQTT 套件', async () => {
     // SDK ADR 0049 C′（R1）：relay 就是即時通道的閘道，需要協定層——kind、盲化、內容格式、角色名單、設備信封與設備幀。
     // 手機端 IotClient、A/B 的 IotGateway（用計時器，不能進 DO）、推播與 MQTT 仍然不准進中繼。
-    const allowed = ['kinds.ts', 'keys.ts', 'topic.ts', 'content.ts', 'acl.ts', 'envelope.ts', 'device-frame.ts'].map((f) => `src/iot/${f}`);
+    const allowed = ['kinds.ts', 'keys.ts', 'topic.ts', 'content.ts', 'acl.ts', 'envelope.ts', 'device-frame.ts', 'device-message.ts'].map((f) => `src/iot/${f}`);
     for (const entry of ['src/relay/worker.ts', 'src/relay/node.ts']) {
       const metafile = await bundle(entry, 'node', [...nodeBuiltins, 'ws']);
       const iot = Object.keys(metafile.inputs).filter((f) => f.includes('src/iot/'));
@@ -83,7 +83,7 @@ describe('./iot/device 子路徑（SDK ADR 0120）', () => {
     const external: string[] = [];
     for (const [file, input] of Object.entries(metafile.inputs)) for (const i of input.imports) if (i.external) external.push(`${file} → ${i.path}`);
     expect(external).toEqual([]);
-    const allowed = ['device.ts', 'device-message.ts', 'device-frame.ts', 'envelope.ts', 'keys.ts', 'topic.ts', 'content.ts', 'kinds.ts'].map((f) => `src/iot/${f}`);
+    const allowed = ['device.ts', 'device-backoff.ts', 'device-message.ts', 'device-frame.ts', 'envelope.ts', 'keys.ts', 'topic.ts', 'content.ts', 'kinds.ts'].map((f) => `src/iot/${f}`);
     const inputs = Object.keys(metafile.inputs).filter((f) => f.startsWith('src/'));
     expect(inputs.filter((f) => f.startsWith('src/iot/') && !allowed.some((a) => f.endsWith(a)))).toEqual([]);
     expect(inputs.filter((f) => f.endsWith('src/relay-pool.ts') || f.includes('src/relay/') || f.includes('src/deploy/'))).toEqual([]);

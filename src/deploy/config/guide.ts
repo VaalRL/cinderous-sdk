@@ -97,6 +97,8 @@ export function renderDeployGuide(config: DeployConfig, locale: DeployGuideLocal
   const turnEnv = worker && site.turnKeyId !== undefined ? secretEnvName(config, 'turnApiToken') : undefined;
   // C′（SDK ADR 0121）：家庭與設備在設定裡（公開值與雜湊），閘道私鑰是秘密、值在 .env
   const iotEnv = site.iotRealtime !== undefined ? secretEnvName(config, 'iotGatewayKeys') : undefined;
+  // Shelly 明文轉譯（SDK ADR 0139）：設備金鑰同樣是秘密
+  const plaintextEnv = site.iotPlaintextDevices === true ? secretEnvName(config, 'iotPlaintextDeviceKeys') : undefined;
   // docker 的發布位址（SDK ADR 0119）：trustProxy 時沒指定就只發布在 127.0.0.1
   const dockerBind = target === 'docker' ? composeBindAddress(config.node?.bindAddress, config.node?.trustProxy === true) : undefined;
   const out: string[] = [];
@@ -311,6 +313,10 @@ export function renderDeployGuide(config: DeployConfig, locale: DeployGuideLocal
       );
       code('bash', 'npx wrangler@4 secret put IOT_GATEWAY_KEYS');
     }
+    if (plaintextEnv !== undefined) {
+      out.push('', t(`**Shelly 明文轉譯**（SDK ADR 0139）：設備金鑰同樣設成 Worker secret（貼上 \`.env\` 裡 \`${plaintextEnv}\` 的 JSON）。`, `**Shelly plaintext translation** (SDK ADR 0139): set the device keys as a Worker secret too (paste the JSON of \`${plaintextEnv}\` from \`.env\`).`), '');
+      code('bash', 'npx wrangler@4 secret put IOT_PLAINTEXT_DEVICE_KEYS');
+    }
   }
   if (target === 'docker' || target === 'home-tunnel') {
     if (privateEnv !== undefined) {
@@ -321,6 +327,9 @@ export function renderDeployGuide(config: DeployConfig, locale: DeployGuideLocal
     }
     if (iotEnv !== undefined) {
       out.push(t(`C′ 的閘道私鑰從 \`.env\` 的 \`${iotEnv}\` 代入 \`IOT_GATEWAY_KEYS\`；沒設就不會啟動（SDK ADR 0121）。`, `The C′ gateway private keys come from \`${iotEnv}\` in \`.env\` into \`IOT_GATEWAY_KEYS\`; compose refuses to start without them (SDK ADR 0121).`), '');
+    }
+    if (plaintextEnv !== undefined) {
+      out.push(t(`Shelly 的設備金鑰從 \`.env\` 的 \`${plaintextEnv}\` 代入 \`IOT_PLAINTEXT_DEVICE_KEYS\`；沒設就不會啟動（SDK ADR 0139）。`, `The Shelly device keys come from \`${plaintextEnv}\` in \`.env\` into \`IOT_PLAINTEXT_DEVICE_KEYS\`; compose refuses to start without them (SDK ADR 0139).`), '');
     }
     code('bash', 'docker compose up -d --build', target === 'home-tunnel' ? t('docker compose logs -f cloudflared   # 看到 "Registered tunnel connection" 就通了', 'docker compose logs -f cloudflared   # "Registered tunnel connection" means it is up') : 'docker compose ps');
     if (target === 'docker') {
@@ -367,6 +376,9 @@ export function renderDeployGuide(config: DeployConfig, locale: DeployGuideLocal
         : []),
       ...(iotEnv !== undefined
         ? [`fly secrets set IOT_GATEWAY_KEYS="$${iotEnv}" --app ${name} --stage   # ${t('C′ 的閘道私鑰（不寫進 fly.toml；SDK ADR 0121）', 'C′ gateway private keys (kept out of fly.toml; SDK ADR 0121)')}`]
+        : []),
+      ...(plaintextEnv !== undefined
+        ? [`fly secrets set IOT_PLAINTEXT_DEVICE_KEYS="$${plaintextEnv}" --app ${name} --stage   # ${t('Shelly 的設備金鑰（SDK ADR 0139）', 'Shelly device keys (SDK ADR 0139)')}`]
         : []),
       `fly deploy --app ${name} --remote-only --ha=false`,
     );

@@ -2,3 +2,8 @@ node_modules/
 *.log
 site/.vitepress/dist/
 site/.vitepress/cache/
+
+# Python 參考設備（SDK ADR 0140）
+examples/iot-device-python/.venv/
+__pycache__/
+.pytest_cache/

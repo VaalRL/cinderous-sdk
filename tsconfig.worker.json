@@ -14,6 +14,9 @@
     "src/relay/worker.ts",
     "src/relay/iot-home-room.ts",
     "tests/relay/iot-worker.test.ts",
+    "tests/relay/iot-longpoll-worker.test.ts",
+    "tests/relay/iot-shelly-worker.test.ts",
+    "tests/relay/iot-worker-fakes.ts",
     "tests/relay/worker.test.ts",
     "tests/relay/turn-contract.test.ts",
     "tests/relay/lanes-only.test.ts"

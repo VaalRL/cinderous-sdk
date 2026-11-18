@@ -1,0 +1,2246 @@
+{
+  "$comment": "Cinderous SDK ADR 0140：IoT 設備端跨語言測試向量（由 TypeScript 實作產生；tests/iot/device-vectors.test.ts）。位元組欄位一律小寫 hex，信封內的 nonce／ct 是標準 base64（有補齊）。協定：SDK ADR 0049 §2.1、§2.6、§9、§10.2；ADR 0120。",
+  "version": 1,
+  "keys": {
+    "homeSecret": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "homeTag": "Yuhtu2E8duEFd2fBwJVO0X",
+    "topicKey": "f4110b3d34c9b29bdf61b64a7d157d0bab5c5b05d945fe924c17469ffc4d0847",
+    "blind": [
+      {
+        "value": "home",
+        "blinded": "Yuhtu2E8duEFd2fBwJVO0X"
+      },
+      {
+        "value": "dev:lamp",
+        "blinded": "a0xtyEOlamQsIW_bRtn5_O"
+      },
+      {
+        "value": "dev:door",
+        "blinded": "yXifuJmFpLIo8cVswnZ7C_"
+      },
+      {
+        "value": "dev:lamp|1",
+        "blinded": "YT63OVkJ8CKjghMyCitOgw"
+      },
+      {
+        "value": "gw",
+        "blinded": "nUmQrzKyPvpUpI2gpQ52BT"
+      },
+      {
+        "value": "sys:acl",
+        "blinded": "nd2mXvgsCBs1VLAFS_zfHY"
+      },
+      {
+        "value": "home/lamp/power",
+        "blinded": "2zAAO0a_SHdl6Y0wbHeyKX"
+      },
+      {
+        "value": "客廳/燈",
+        "blinded": "OE1I-ji-jJDlh78J7pyfli"
+      }
+    ],
+    "deviceKey": [
+      {
+        "id": "lamp",
+        "epoch": 0,
+        "key": "39ca2622b89fa60da9bbcfb5059e31e8c27a17f3f19eb40c9922c84467f09eb7"
+      },
+      {
+        "id": "lamp",
+        "epoch": 1,
+        "key": "edf2d93492804b1e44b23948c362dc50304d0b2ce7e53c4ae1583cc1fc190b6d"
+      },
+      {
+        "id": "door",
+        "epoch": 0,
+        "key": "fa24757c9bdd3b82c7febda8e2f09c27aa03fb2853138a7e5979136407bf6813"
+      },
+      {
+        "id": "燈.一號",
+        "epoch": 7,
+        "key": "324fb1d285b9faff9b2420c0a007652fd8a03c2e181269f2033efd6970808edc"
+      }
+    ],
+    "operatorSecret": "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f",
+    "deviceKeyDown": [
+      {
+        "id": "door",
+        "epoch": 0,
+        "key": "551c66c657929dc78f411fa69bae9ee7a30abebd14c30a07db4cec70e86b660f"
+      },
+      {
+        "id": "door",
+        "epoch": 3,
+        "key": "6a76cca2b21fa26edb31171d8031ad61bbc65640472d584d59ee3a9a85aa388c"
+      }
+    ]
+  },
+  "token": {
+    "hash": [
+      {
+        "token": "cit1_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "sha256": "be9604dbe63c8a9df48d884656334c7aad4e6a65b08957fd29b497790263db5a"
+      },
+      {
+        "token": "cit1_abcdefghijklmnopqrstuvwxyz0123456789-_ABCDEFG",
+        "sha256": "0c0a8f465292fb80dd1fb338bd860bad672774cfd821e6f1c6d01d2dc55b23c0"
+      }
+    ],
+    "pattern": [
+      {
+        "token": "cit1_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "valid": true
+      },
+      {
+        "token": "cit1_abcdefghijklmnopqrstuvwxyz0123456789-_ABCDEFG",
+        "valid": false
+      },
+      {
+        "token": "cit1_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "valid": false
+      },
+      {
+        "token": "cit1_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "valid": false
+      },
+      {
+        "token": "cit2_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "valid": false
+      },
+      {
+        "token": "cit1_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        "valid": false
+      },
+      {
+        "token": "cit1_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA+",
+        "valid": false
+      },
+      {
+        "token": "",
+        "valid": false
+      }
+    ],
+    "verify": [
+      {
+        "token": "cit1_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "hash": "be9604dbe63c8a9df48d884656334c7aad4e6a65b08957fd29b497790263db5a",
+        "ok": true
+      },
+      {
+        "token": "cit1_abcdefghijklmnopqrstuvwxyz0123456789-_ABCDEFG",
+        "hash": "be9604dbe63c8a9df48d884656334c7aad4e6a65b08957fd29b497790263db5a",
+        "ok": false
+      },
+      {
+        "token": "cit1_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "hash": "BE9604DBE63C8A9DF48D884656334C7AAD4E6A65B08957FD29B497790263DB5A",
+        "ok": false
+      },
+      {
+        "token": "cit1_short",
+        "hash": "b45e187a59093eec61112a2838ed95d7adb3c62ce181e723aaafb7bb85cfde0e",
+        "ok": false
+      }
+    ]
+  },
+  "envelope": {
+    "seal": [
+      {
+        "name": "down 指令（燈）",
+        "key": "39ca2622b89fa60da9bbcfb5059e31e8c27a17f3f19eb40c9922c84467f09eb7",
+        "kid": "lamp.0",
+        "dir": "down",
+        "ctr": 1,
+        "ts": 1800000000,
+        "nonce": "001111111111111111111111",
+        "plaintext": "{\"type\":\"query\",\"msgId\":\"AAAAAAAAAAAAAAAA\",\"exp\":1800000015}",
+        "aad": "cinder-iot/v1|down|lamp.0|1|1800000000",
+        "envelope": {
+          "v": 1,
+          "alg": "A256GCM",
+          "kid": "lamp.0",
+          "dir": "down",
+          "ctr": 1,
+          "ts": 1800000000,
+          "nonce": "ABERERERERERERER",
+          "ct": "RBHh8kc5YzxU58HLvbPp4LQLHuizN5Go5XjlNtfiejJDe6BSZ9N+V8wxDTeqKm+dwfnQ6PLPmPq8gkkwcD8HwLTenOBSGrMLeJoepg=="
+        }
+      },
+      {
+        "name": "down 空明文",
+        "key": "39ca2622b89fa60da9bbcfb5059e31e8c27a17f3f19eb40c9922c84467f09eb7",
+        "kid": "lamp.0",
+        "dir": "down",
+        "ctr": 0,
+        "ts": 0,
+        "nonce": "002222222222222222222222",
+        "plaintext": "",
+        "aad": "cinder-iot/v1|down|lamp.0|0|0",
+        "envelope": {
+          "v": 1,
+          "alg": "A256GCM",
+          "kid": "lamp.0",
+          "dir": "down",
+          "ctr": 0,
+          "ts": 0,
+          "nonce": "ACIiIiIiIiIiIiIi",
+          "ct": "ermg2AVijSsF7ytI/vJQBw=="
+        }
+      },
+      {
+        "name": "up 狀態（ctr 決定 nonce）",
+        "key": "39ca2622b89fa60da9bbcfb5059e31e8c27a17f3f19eb40c9922c84467f09eb7",
+        "kid": "lamp.0",
+        "dir": "up",
+        "ctr": 42,
+        "ts": 1800000000,
+        "plaintext": "{\"type\":\"state\",\"topics\":{\"home/lamp/state\":{\"payload\":\"ON\",\"ts\":1800000000123}}}",
+        "aad": "cinder-iot/v1|up|lamp.0|42|1800000000",
+        "envelope": {
+          "v": 1,
+          "alg": "A256GCM",
+          "kid": "lamp.0",
+          "dir": "up",
+          "ctr": 42,
+          "ts": 1800000000,
+          "nonce": "AQAAAAAAAAAAAAAq",
+          "ct": "5iwjZl8EOY/H0lrOga6cE/vr9HWHM/1vYePiBdRE6ZmSw2bspnbs7QXOQrnd2wY3avE7S0Znz2eBpTDVDfJM1KU5cpN4iNaJMYqaY1jzWgf44DBVlh1tNL/SJz6u5UjlDw=="
+        }
+      },
+      {
+        "name": "up 大計數器（超過 32 位元）",
+        "key": "39ca2622b89fa60da9bbcfb5059e31e8c27a17f3f19eb40c9922c84467f09eb7",
+        "kid": "lamp.0",
+        "dir": "up",
+        "ctr": 1099511627781,
+        "ts": 1800000000,
+        "plaintext": "{\"type\":\"state\",\"topics\":{}}",
+        "aad": "cinder-iot/v1|up|lamp.0|1099511627781|1800000000",
+        "envelope": {
+          "v": 1,
+          "alg": "A256GCM",
+          "kid": "lamp.0",
+          "dir": "up",
+          "ctr": 1099511627781,
+          "ts": 1800000000,
+          "nonce": "AQAAAAAAAQAAAAAF",
+          "ct": "KmMpNCqWY5MjV8etomFEQM3nvM2SU4lZPef5ijea0N5LBQvXrMVi4C/iTjM="
+        }
+      },
+      {
+        "name": "down 門鎖（deviceKeyDown，kid 可含點）",
+        "key": "551c66c657929dc78f411fa69bae9ee7a30abebd14c30a07db4cec70e86b660f",
+        "kid": "front.door.3",
+        "dir": "down",
+        "ctr": 7,
+        "ts": 1800000000,
+        "nonce": "003333333333333333333333",
+        "plaintext": "UTF-8：開門 🔓",
+        "aad": "cinder-iot/v1|down|front.door.3|7|1800000000",
+        "envelope": {
+          "v": 1,
+          "alg": "A256GCM",
+          "kid": "front.door.3",
+          "dir": "down",
+          "ctr": 7,
+          "ts": 1800000000,
+          "nonce": "ADMzMzMzMzMzMzMz",
+          "ct": "xXnS8nxfgMVjQ0tYrp53MbHsv6hgOksc8Q1feAktilYnjeU="
+        }
+      }
+    ],
+    "open": [
+      {
+        "name": "正確",
+        "key": "39ca2622b89fa60da9bbcfb5059e31e8c27a17f3f19eb40c9922c84467f09eb7",
+        "envelope": {
+          "v": 1,
+          "alg": "A256GCM",
+          "kid": "lamp.0",
+          "dir": "down",
+          "ctr": 1,
+          "ts": 1800000000,
+          "nonce": "ABERERERERERERER",
+          "ct": "RBHh8kc5YzxU58HLvbPp4LQLHuizN5Go5XjlNtfiejJDe6BSZ9N+V8wxDTeqKm+dwfnQ6PLPmPq8gkkwcD8HwLTenOBSGrMLeJoepg=="
+        },
+        "plaintext": "{\"type\":\"query\",\"msgId\":\"AAAAAAAAAAAAAAAA\",\"exp\":1800000015}"
+      },
+      {
+        "name": "up 正確",
+        "key": "39ca2622b89fa60da9bbcfb5059e31e8c27a17f3f19eb40c9922c84467f09eb7",
+        "envelope": {
+          "v": 1,
+          "alg": "A256GCM",
+          "kid": "lamp.0",
+          "dir": "up",
+          "ctr": 42,
+          "ts": 1800000000,
+          "nonce": "AQAAAAAAAAAAAAAq",
+          "ct": "5iwjZl8EOY/H0lrOga6cE/vr9HWHM/1vYePiBdRE6ZmSw2bspnbs7QXOQrnd2wY3avE7S0Znz2eBpTDVDfJM1KU5cpN4iNaJMYqaY1jzWgf44DBVlh1tNL/SJz6u5UjlDw=="
+        },
+        "plaintext": "{\"type\":\"state\",\"topics\":{\"home/lamp/state\":{\"payload\":\"ON\",\"ts\":1800000000123}}}"
+      },
+      {
+        "name": "金鑰不對",
+        "key": "fa24757c9bdd3b82c7febda8e2f09c27aa03fb2853138a7e5979136407bf6813",
+        "envelope": {
+          "v": 1,
+          "alg": "A256GCM",
+          "kid": "lamp.0",
+          "dir": "down",
+          "ctr": 1,
+          "ts": 1800000000,
+          "nonce": "ABERERERERERERER",
+          "ct": "RBHh8kc5YzxU58HLvbPp4LQLHuizN5Go5XjlNtfiejJDe6BSZ9N+V8wxDTeqKm+dwfnQ6PLPmPq8gkkwcD8HwLTenOBSGrMLeJoepg=="
+        },
+        "error": "auth"
+      },
+      {
+        "name": "密文被改一位",
+        "key": "39ca2622b89fa60da9bbcfb5059e31e8c27a17f3f19eb40c9922c84467f09eb7",
+        "envelope": {
+          "v": 1,
+          "alg": "A256GCM",
+          "kid": "lamp.0",
+          "dir": "down",
+          "ctr": 1,
+          "ts": 1800000000,
+          "nonce": "ABERERERERERERER",
+          "ct": "RRHh8kc5YzxU58HLvbPp4LQLHuizN5Go5XjlNtfiejJDe6BSZ9N+V8wxDTeqKm+dwfnQ6PLPmPq8gkkwcD8HwLTenOBSGrMLeJoepg=="
+        },
+        "error": "auth"
+      },
+      {
+        "name": "ts 被改（AAD）",
+        "key": "39ca2622b89fa60da9bbcfb5059e31e8c27a17f3f19eb40c9922c84467f09eb7",
+        "envelope": {
+          "v": 1,
+          "alg": "A256GCM",
+          "kid": "lamp.0",
+          "dir": "down",
+          "ctr": 1,
+          "ts": 1800000001,
+          "nonce": "ABERERERERERERER",
+          "ct": "RBHh8kc5YzxU58HLvbPp4LQLHuizN5Go5XjlNtfiejJDe6BSZ9N+V8wxDTeqKm+dwfnQ6PLPmPq8gkkwcD8HwLTenOBSGrMLeJoepg=="
+        },
+        "error": "auth"
+      },
+      {
+        "name": "ctr 被改（down 只在 AAD）",
+        "key": "39ca2622b89fa60da9bbcfb5059e31e8c27a17f3f19eb40c9922c84467f09eb7",
+        "envelope": {
+          "v": 1,
+          "alg": "A256GCM",
+          "kid": "lamp.0",
+          "dir": "down",
+          "ctr": 2,
+          "ts": 1800000000,
+          "nonce": "ABERERERERERERER",
+          "ct": "RBHh8kc5YzxU58HLvbPp4LQLHuizN5Go5XjlNtfiejJDe6BSZ9N+V8wxDTeqKm+dwfnQ6PLPmPq8gkkwcD8HwLTenOBSGrMLeJoepg=="
+        },
+        "error": "auth"
+      },
+      {
+        "name": "up 的 ctr 被改（nonce 對不上）",
+        "key": "39ca2622b89fa60da9bbcfb5059e31e8c27a17f3f19eb40c9922c84467f09eb7",
+        "envelope": {
+          "v": 1,
+          "alg": "A256GCM",
+          "kid": "lamp.0",
+          "dir": "up",
+          "ctr": 43,
+          "ts": 1800000000,
+          "nonce": "AQAAAAAAAAAAAAAq",
+          "ct": "5iwjZl8EOY/H0lrOga6cE/vr9HWHM/1vYePiBdRE6ZmSw2bspnbs7QXOQrnd2wY3avE7S0Znz2eBpTDVDfJM1KU5cpN4iNaJMYqaY1jzWgf44DBVlh1tNL/SJz6u5UjlDw=="
+        },
+        "error": "nonce"
+      },
+      {
+        "name": "dir 改成 up（nonce 分區不對）",
+        "key": "39ca2622b89fa60da9bbcfb5059e31e8c27a17f3f19eb40c9922c84467f09eb7",
+        "envelope": {
+          "v": 1,
+          "alg": "A256GCM",
+          "kid": "lamp.0",
+          "dir": "up",
+          "ctr": 1,
+          "ts": 1800000000,
+          "nonce": "ABERERERERERERER",
+          "ct": "RBHh8kc5YzxU58HLvbPp4LQLHuizN5Go5XjlNtfiejJDe6BSZ9N+V8wxDTeqKm+dwfnQ6PLPmPq8gkkwcD8HwLTenOBSGrMLeJoepg=="
+        },
+        "error": "nonce"
+      },
+      {
+        "name": "down 借用 up 的 nonce 分區",
+        "key": "39ca2622b89fa60da9bbcfb5059e31e8c27a17f3f19eb40c9922c84467f09eb7",
+        "envelope": {
+          "v": 1,
+          "alg": "A256GCM",
+          "kid": "lamp.0",
+          "dir": "down",
+          "ctr": 42,
+          "ts": 1800000000,
+          "nonce": "AQAAAAAAAAAAAAAq",
+          "ct": "5iwjZl8EOY/H0lrOga6cE/vr9HWHM/1vYePiBdRE6ZmSw2bspnbs7QXOQrnd2wY3avE7S0Znz2eBpTDVDfJM1KU5cpN4iNaJMYqaY1jzWgf44DBVlh1tNL/SJz6u5UjlDw=="
+        },
+        "error": "nonce"
+      },
+      {
+        "name": "版本不對",
+        "key": "39ca2622b89fa60da9bbcfb5059e31e8c27a17f3f19eb40c9922c84467f09eb7",
+        "envelope": {
+          "v": 2,
+          "alg": "A256GCM",
+          "kid": "lamp.0",
+          "dir": "down",
+          "ctr": 1,
+          "ts": 1800000000,
+          "nonce": "ABERERERERERERER",
+          "ct": "RBHh8kc5YzxU58HLvbPp4LQLHuizN5Go5XjlNtfiejJDe6BSZ9N+V8wxDTeqKm+dwfnQ6PLPmPq8gkkwcD8HwLTenOBSGrMLeJoepg=="
+        },
+        "error": "format"
+      },
+      {
+        "name": "演算法不對",
+        "key": "39ca2622b89fa60da9bbcfb5059e31e8c27a17f3f19eb40c9922c84467f09eb7",
+        "envelope": {
+          "v": 1,
+          "alg": "A128GCM",
+          "kid": "lamp.0",
+          "dir": "down",
+          "ctr": 1,
+          "ts": 1800000000,
+          "nonce": "ABERERERERERERER",
+          "ct": "RBHh8kc5YzxU58HLvbPp4LQLHuizN5Go5XjlNtfiejJDe6BSZ9N+V8wxDTeqKm+dwfnQ6PLPmPq8gkkwcD8HwLTenOBSGrMLeJoepg=="
+        },
+        "error": "format"
+      },
+      {
+        "name": "kid 沒有 epoch",
+        "key": "39ca2622b89fa60da9bbcfb5059e31e8c27a17f3f19eb40c9922c84467f09eb7",
+        "envelope": {
+          "v": 1,
+          "alg": "A256GCM",
+          "kid": "lamp",
+          "dir": "down",
+          "ctr": 1,
+          "ts": 1800000000,
+          "nonce": "ABERERERERERERER",
+          "ct": "RBHh8kc5YzxU58HLvbPp4LQLHuizN5Go5XjlNtfiejJDe6BSZ9N+V8wxDTeqKm+dwfnQ6PLPmPq8gkkwcD8HwLTenOBSGrMLeJoepg=="
+        },
+        "error": "format"
+      },
+      {
+        "name": "nonce 長度不對",
+        "key": "39ca2622b89fa60da9bbcfb5059e31e8c27a17f3f19eb40c9922c84467f09eb7",
+        "envelope": {
+          "v": 1,
+          "alg": "A256GCM",
+          "kid": "lamp.0",
+          "dir": "down",
+          "ctr": 1,
+          "ts": 1800000000,
+          "nonce": "AAAAAAAAAAAAAAA=",
+          "ct": "RBHh8kc5YzxU58HLvbPp4LQLHuizN5Go5XjlNtfiejJDe6BSZ9N+V8wxDTeqKm+dwfnQ6PLPmPq8gkkwcD8HwLTenOBSGrMLeJoepg=="
+        },
+        "error": "format"
+      },
+      {
+        "name": "密文比 tag 還短",
+        "key": "39ca2622b89fa60da9bbcfb5059e31e8c27a17f3f19eb40c9922c84467f09eb7",
+        "envelope": {
+          "v": 1,
+          "alg": "A256GCM",
+          "kid": "lamp.0",
+          "dir": "down",
+          "ctr": 1,
+          "ts": 1800000000,
+          "nonce": "ABERERERERERERER",
+          "ct": "eHh4eHh4eHh4eHh4eHh4"
+        },
+        "error": "format"
+      },
+      {
+        "name": "ctr 是負數",
+        "key": "39ca2622b89fa60da9bbcfb5059e31e8c27a17f3f19eb40c9922c84467f09eb7",
+        "envelope": {
+          "v": 1,
+          "alg": "A256GCM",
+          "kid": "lamp.0",
+          "dir": "down",
+          "ctr": -1,
+          "ts": 1800000000,
+          "nonce": "ABERERERERERERER",
+          "ct": "RBHh8kc5YzxU58HLvbPp4LQLHuizN5Go5XjlNtfiejJDe6BSZ9N+V8wxDTeqKm+dwfnQ6PLPmPq8gkkwcD8HwLTenOBSGrMLeJoepg=="
+        },
+        "error": "format"
+      },
+      {
+        "name": "ts 不是整數",
+        "key": "39ca2622b89fa60da9bbcfb5059e31e8c27a17f3f19eb40c9922c84467f09eb7",
+        "envelope": {
+          "v": 1,
+          "alg": "A256GCM",
+          "kid": "lamp.0",
+          "dir": "down",
+          "ctr": 1,
+          "ts": 1.5,
+          "nonce": "ABERERERERERERER",
+          "ct": "RBHh8kc5YzxU58HLvbPp4LQLHuizN5Go5XjlNtfiejJDe6BSZ9N+V8wxDTeqKm+dwfnQ6PLPmPq8gkkwcD8HwLTenOBSGrMLeJoepg=="
+        },
+        "error": "format"
+      },
+      {
+        "name": "base64 不合法",
+        "key": "39ca2622b89fa60da9bbcfb5059e31e8c27a17f3f19eb40c9922c84467f09eb7",
+        "envelope": {
+          "v": 1,
+          "alg": "A256GCM",
+          "kid": "lamp.0",
+          "dir": "down",
+          "ctr": 1,
+          "ts": 1800000000,
+          "nonce": "ABERERERERERERER",
+          "ct": "!!!"
+        },
+        "error": "format"
+      }
+    ]
+  },
+  "frames": {
+    "heartbeat": "{\"t\":\"hb\"}",
+    "heartbeatAck": "{\"t\":\"hb-ack\"}",
+    "maxBytes": 32768,
+    "cases": [
+      {
+        "name": "relay → 設備 cmd",
+        "source": "relay",
+        "text": "{\"t\":\"cmd\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"down\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AERERERERERERERE\",\"ct\":\"YCIEzNZzxlEKvTEPKkKh6+c=\"}}",
+        "expect": {
+          "t": "cmd",
+          "kid": "lamp.0",
+          "dir": "down"
+        }
+      },
+      {
+        "name": "relay → 設備 query",
+        "source": "relay",
+        "text": "{\"t\":\"query\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"down\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AERERERERERERERE\",\"ct\":\"YCIEzNZzxlEKvTEPKkKh6+c=\"}}",
+        "expect": {
+          "t": "query",
+          "kid": "lamp.0",
+          "dir": "down"
+        }
+      },
+      {
+        "name": "設備 → relay ack",
+        "source": "device",
+        "text": "{\"t\":\"ack\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"up\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AQAAAAAAAAAAAAAB\",\"ct\":\"tFpM/OU7bOUHi/OYMopfVVd8Rikcb4q2prJq1f+D1IsLq/khg7XxzXIDdVA=\"}}",
+        "expect": {
+          "t": "ack",
+          "kid": "lamp.0",
+          "dir": "up"
+        }
+      },
+      {
+        "name": "設備 → relay state",
+        "source": "device",
+        "text": "{\"t\":\"state\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"up\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AQAAAAAAAAAAAAAB\",\"ct\":\"tFpM/OU7bOUHi/OYMopfVVd8Rikcb4q2prJq1f+D1IsLq/khg7XxzXIDdVA=\"}}",
+        "expect": {
+          "t": "state",
+          "kid": "lamp.0",
+          "dir": "up"
+        }
+      },
+      {
+        "name": "心跳（逐位元組固定）",
+        "source": "device",
+        "text": "{\"t\":\"hb\"}",
+        "expect": {
+          "t": "hb"
+        }
+      },
+      {
+        "name": "relay 不送 hb",
+        "source": "relay",
+        "text": "{\"t\":\"hb\"}",
+        "expect": null
+      },
+      {
+        "name": "方向不對：relay 送 ack",
+        "source": "relay",
+        "text": "{\"t\":\"ack\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"up\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AQAAAAAAAAAAAAAB\",\"ct\":\"tFpM/OU7bOUHi/OYMopfVVd8Rikcb4q2prJq1f+D1IsLq/khg7XxzXIDdVA=\"}}",
+        "expect": null
+      },
+      {
+        "name": "信封方向不對：cmd 帶 up 信封",
+        "source": "relay",
+        "text": "{\"t\":\"cmd\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"up\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AQAAAAAAAAAAAAAB\",\"ct\":\"tFpM/OU7bOUHi/OYMopfVVd8Rikcb4q2prJq1f+D1IsLq/khg7XxzXIDdVA=\"}}",
+        "expect": null
+      },
+      {
+        "name": "不認得的 t",
+        "source": "relay",
+        "text": "{\"t\":\"reboot\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"down\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AERERERERERERERE\",\"ct\":\"YCIEzNZzxlEKvTEPKkKh6+c=\"}}",
+        "expect": null
+      },
+      {
+        "name": "不是 JSON",
+        "source": "relay",
+        "text": "hello",
+        "expect": null
+      },
+      {
+        "name": "JSON 陣列",
+        "source": "relay",
+        "text": "[1,2]",
+        "expect": null
+      },
+      {
+        "name": "信封缺欄位",
+        "source": "relay",
+        "text": "{\"t\":\"cmd\",\"env\":{\"v\":1}}",
+        "expect": null
+      },
+      {
+        "name": "超過 32 KiB",
+        "source": "relay",
+        "text": "{\"t\":\"cmd\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"down\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AERERERERERERERE\",\"ct\":\"YCIEzNZzxlEKvTEPKkKh6+c=\"},\"pad\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}",
+        "expect": null
+      }
+    ]
+  },
+  "messages": {
+    "down": [
+      {
+        "name": "指令",
+        "text": "{\"type\":\"cmd\",\"msgId\":\"AbCdEfGhIjKlMnOp\",\"topic\":\"home/lamp/power\",\"payload\":\"ON\",\"enc\":\"utf8\",\"exp\":1800000015}",
+        "expect": {
+          "type": "cmd",
+          "msgId": "AbCdEfGhIjKlMnOp",
+          "topic": "home/lamp/power",
+          "payload": "ON",
+          "enc": "utf8",
+          "exp": 1800000015
+        }
+      },
+      {
+        "name": "指令 base64＋confirmed",
+        "text": "{\"type\":\"cmd\",\"msgId\":\"AbCdEfGhIjKlMnOp\",\"topic\":\"home/lamp/raw\",\"payload\":\"AQI=\",\"enc\":\"base64\",\"confirmed\":true,\"exp\":1800000015}",
+        "expect": {
+          "type": "cmd",
+          "msgId": "AbCdEfGhIjKlMnOp",
+          "topic": "home/lamp/raw",
+          "payload": "AQI=",
+          "enc": "base64",
+          "confirmed": true,
+          "exp": 1800000015
+        }
+      },
+      {
+        "name": "查詢",
+        "text": "{\"type\":\"query\",\"msgId\":\"AbCdEfGhIjKlMnOp\",\"exp\":1800000015}",
+        "expect": {
+          "type": "query",
+          "msgId": "AbCdEfGhIjKlMnOp",
+          "exp": 1800000015
+        }
+      },
+      {
+        "name": "多出來的欄位忽略",
+        "text": "{\"type\":\"query\",\"msgId\":\"AbCdEfGhIjKlMnOp\",\"exp\":1800000015,\"x\":1}",
+        "expect": {
+          "type": "query",
+          "msgId": "AbCdEfGhIjKlMnOp",
+          "exp": 1800000015
+        }
+      },
+      {
+        "name": "msgId 太短",
+        "text": "{\"type\":\"query\",\"msgId\":\"short\",\"exp\":1800000000}",
+        "expect": null
+      },
+      {
+        "name": "msgId 有不允許的字元",
+        "text": "{\"type\":\"query\",\"msgId\":\"AbCdEfGhIjKlMn.p\",\"exp\":1800000000}",
+        "expect": null
+      },
+      {
+        "name": "exp 不是正整數",
+        "text": "{\"type\":\"query\",\"msgId\":\"AbCdEfGhIjKlMnOp\",\"exp\":0}",
+        "expect": null
+      },
+      {
+        "name": "topic 有萬用字元",
+        "text": "{\"type\":\"cmd\",\"msgId\":\"AbCdEfGhIjKlMnOp\",\"topic\":\"home/+/power\",\"payload\":\"ON\",\"enc\":\"utf8\",\"exp\":1800000000}",
+        "expect": null
+      },
+      {
+        "name": "topic 空的一層可以",
+        "text": "{\"type\":\"cmd\",\"msgId\":\"AbCdEfGhIjKlMnOp\",\"topic\":\"home//power\",\"payload\":\"ON\",\"enc\":\"utf8\",\"exp\":1800000000}",
+        "expect": {
+          "type": "cmd",
+          "msgId": "AbCdEfGhIjKlMnOp",
+          "topic": "home//power",
+          "payload": "ON",
+          "enc": "utf8",
+          "exp": 1800000000
+        }
+      },
+      {
+        "name": "enc 不認得",
+        "text": "{\"type\":\"cmd\",\"msgId\":\"AbCdEfGhIjKlMnOp\",\"topic\":\"a\",\"payload\":\"ON\",\"enc\":\"hex\",\"exp\":1800000000}",
+        "expect": null
+      },
+      {
+        "name": "confirmed 不是布林",
+        "text": "{\"type\":\"cmd\",\"msgId\":\"AbCdEfGhIjKlMnOp\",\"topic\":\"a\",\"payload\":\"ON\",\"enc\":\"utf8\",\"confirmed\":1,\"exp\":1800000000}",
+        "expect": null
+      },
+      {
+        "name": "酬載超過 8 KiB",
+        "text": "{\"type\":\"cmd\",\"msgId\":\"AbCdEfGhIjKlMnOp\",\"topic\":\"a\",\"payload\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"enc\":\"utf8\",\"exp\":1800000000}",
+        "expect": null
+      },
+      {
+        "name": "不認得的 type",
+        "text": "{\"type\":\"reboot\",\"msgId\":\"AbCdEfGhIjKlMnOp\",\"exp\":1800000000}",
+        "expect": null
+      },
+      {
+        "name": "不是 JSON",
+        "text": "nope",
+        "expect": null
+      }
+    ],
+    "up": [
+      {
+        "name": "ack ok 帶狀態",
+        "text": "{\"type\":\"ack\",\"inReplyTo\":\"AbCdEfGhIjKlMnOp\",\"status\":\"ok\",\"topics\":{\"home/lamp/state\":{\"payload\":\"ON\",\"ts\":1800000000123}}}",
+        "expect": {
+          "type": "ack",
+          "inReplyTo": "AbCdEfGhIjKlMnOp",
+          "status": "ok",
+          "topics": {
+            "home/lamp/state": {
+              "payload": "ON",
+              "ts": 1800000000123
+            }
+          }
+        }
+      },
+      {
+        "name": "ack rejected 帶原因",
+        "text": "{\"type\":\"ack\",\"inReplyTo\":\"AbCdEfGhIjKlMnOp\",\"status\":\"rejected\",\"reason\":\"expired\"}",
+        "expect": {
+          "type": "ack",
+          "inReplyTo": "AbCdEfGhIjKlMnOp",
+          "status": "rejected",
+          "reason": "expired"
+        }
+      },
+      {
+        "name": "state＋will",
+        "text": "{\"type\":\"state\",\"topics\":{\"a/b\":{\"payload\":\"AQI=\",\"enc\":\"base64\",\"ts\":1}},\"will\":true}",
+        "expect": {
+          "type": "state",
+          "topics": {
+            "a/b": {
+              "payload": "AQI=",
+              "enc": "base64",
+              "ts": 1
+            }
+          },
+          "will": true
+        }
+      },
+      {
+        "name": "status 不認得",
+        "text": "{\"type\":\"ack\",\"inReplyTo\":\"AbCdEfGhIjKlMnOp\",\"status\":\"offline\"}",
+        "expect": null
+      },
+      {
+        "name": "reason 超過 200 字",
+        "text": "{\"type\":\"ack\",\"inReplyTo\":\"AbCdEfGhIjKlMnOp\",\"status\":\"rejected\",\"reason\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}",
+        "expect": null
+      },
+      {
+        "name": "topics 的 ts 不是正整數",
+        "text": "{\"type\":\"state\",\"topics\":{\"a\":{\"payload\":\"x\",\"ts\":0}}}",
+        "expect": null
+      }
+    ]
+  },
+  "backoff": {
+    "classify": [
+      {
+        "name": "家庭預算用完（503＋Cinder-Quota＋reset）",
+        "observation": {
+          "kind": "http",
+          "status": 503,
+          "headers": {
+            "Cinder-Relay": "1",
+            "Cinder-Quota": "home-budget",
+            "Retry-After": "7200"
+          },
+          "body": "{\"error\":\"rate-limited: iot-quota: this home has used its relay budget for today\",\"reset\":1800007200}"
+        },
+        "nowSec": 1800000000,
+        "expect": {
+          "class": "quota-exhausted",
+          "reset": 1800007200,
+          "retryAfterSec": 7200
+        }
+      },
+      {
+        "name": "DO 額度（503＋Cinder-Quota，沒有 reset，標頭小寫）",
+        "observation": {
+          "kind": "http",
+          "status": 503,
+          "headers": {
+            "cinder-relay": "1",
+            "cinder-quota": "do-requests",
+            "retry-after": "600"
+          },
+          "body": "{\"error\":\"rate-limited: iot-quota: x\"}"
+        },
+        "nowSec": 1800000000,
+        "expect": {
+          "class": "quota-exhausted",
+          "reset": 1800000600,
+          "retryAfterSec": 600
+        }
+      },
+      {
+        "name": "Workers 帳號額度（平台 429＋1027）",
+        "observation": {
+          "kind": "http",
+          "status": 429,
+          "headers": {},
+          "body": "error code: 1027"
+        },
+        "nowSec": 1800000000,
+        "expect": {
+          "class": "quota-exhausted",
+          "reset": 1800057600
+        }
+      },
+      {
+        "name": "權杖錯",
+        "observation": {
+          "kind": "http",
+          "status": 401,
+          "headers": {
+            "Cinder-Relay": "1"
+          },
+          "body": "{\"error\":\"restricted: iot-token: device token missing or wrong\"}"
+        },
+        "nowSec": 1800000000,
+        "expect": {
+          "class": "config-error"
+        }
+      },
+      {
+        "name": "不認得的家",
+        "observation": {
+          "kind": "http",
+          "status": 403,
+          "headers": {
+            "Cinder-Relay": "1"
+          },
+          "body": "{\"error\":\"restricted: iot-home: this relay does not serve that home\"}"
+        },
+        "nowSec": 1800000000,
+        "expect": {
+          "class": "config-error"
+        }
+      },
+      {
+        "name": "不認得的設備",
+        "observation": {
+          "kind": "http",
+          "status": 404,
+          "headers": {
+            "Cinder-Relay": "1"
+          },
+          "body": "{\"error\":\"restricted: iot-device: unknown device\"}"
+        },
+        "nowSec": 1800000000,
+        "expect": {
+          "class": "config-error"
+        }
+      },
+      {
+        "name": "站沒開 C′",
+        "observation": {
+          "kind": "http",
+          "status": 404,
+          "headers": {
+            "Cinder-Relay": "1"
+          },
+          "body": "{\"error\":\"blocked: iot-disabled: this relay does not run the IoT realtime channel\"}"
+        },
+        "nowSec": 1800000000,
+        "expect": {
+          "class": "config-error"
+        }
+      },
+      {
+        "name": "不是升級",
+        "observation": {
+          "kind": "http",
+          "status": 426,
+          "headers": {
+            "Cinder-Relay": "1"
+          },
+          "body": "{\"error\":\"invalid: iot-upgrade: WebSocket upgrade required\"}"
+        },
+        "nowSec": 1800000000,
+        "expect": {
+          "class": "config-error"
+        }
+      },
+      {
+        "name": "relay 的 503 沒有 Cinder-Quota",
+        "observation": {
+          "kind": "http",
+          "status": 503,
+          "headers": {
+            "Cinder-Relay": "1"
+          },
+          "body": "{\"error\":\"error: iot-relay: the home instance failed; retry with backoff\"}"
+        },
+        "nowSec": 1800000000,
+        "expect": {
+          "class": "relay-error"
+        }
+      },
+      {
+        "name": "每 IP 升級限速（429＋Retry-After）",
+        "observation": {
+          "kind": "http",
+          "status": 429,
+          "headers": {
+            "Cinder-Relay": "1",
+            "Retry-After": "60"
+          },
+          "body": "{\"error\":\"rate-limited: iot-upgrade: too many connection attempts from this address\"}"
+        },
+        "nowSec": 1800000000,
+        "expect": {
+          "class": "relay-error",
+          "retryAfterSec": 60
+        }
+      },
+      {
+        "name": "平台 522",
+        "observation": {
+          "kind": "http",
+          "status": 522,
+          "headers": {},
+          "body": ""
+        },
+        "nowSec": 1800000000,
+        "expect": {
+          "class": "relay-error"
+        }
+      },
+      {
+        "name": "平台 1101",
+        "observation": {
+          "kind": "http",
+          "status": 500,
+          "headers": {},
+          "body": "error code: 1101"
+        },
+        "nowSec": 1800000000,
+        "expect": {
+          "class": "relay-error"
+        }
+      },
+      {
+        "name": "沒有 Cinder-Relay 的 401（不是 relay 說的）",
+        "observation": {
+          "kind": "http",
+          "status": 401,
+          "headers": {},
+          "body": ""
+        },
+        "nowSec": 1800000000,
+        "expect": {
+          "class": "relay-error"
+        }
+      },
+      {
+        "name": "close 4429 帶 reset",
+        "observation": {
+          "kind": "close",
+          "code": 4429,
+          "reason": "iot-quota:1800000300"
+        },
+        "nowSec": 1800000000,
+        "expect": {
+          "class": "quota-exhausted",
+          "reset": 1800000300
+        }
+      },
+      {
+        "name": "close 4429 沒有 reset",
+        "observation": {
+          "kind": "close",
+          "code": 4429,
+          "reason": "iot-quota"
+        },
+        "nowSec": 1800000000,
+        "expect": {
+          "class": "quota-exhausted"
+        }
+      },
+      {
+        "name": "close 4409 被擠掉",
+        "observation": {
+          "kind": "close",
+          "code": 4409,
+          "reason": "replaced"
+        },
+        "nowSec": 1800000000,
+        "expect": {
+          "class": "replaced"
+        }
+      },
+      {
+        "name": "close 1006",
+        "observation": {
+          "kind": "close",
+          "code": 1006
+        },
+        "nowSec": 1800000000,
+        "expect": {
+          "class": "network-down"
+        }
+      },
+      {
+        "name": "close 4000 心跳逾時（自己關的）",
+        "observation": {
+          "kind": "close",
+          "code": 4000,
+          "reason": "heartbeat timeout"
+        },
+        "nowSec": 1800000000,
+        "expect": {
+          "class": "network-down"
+        }
+      },
+      {
+        "name": "DNS／TCP／TLS 失敗",
+        "observation": {
+          "kind": "network"
+        },
+        "nowSec": 1800000000,
+        "expect": {
+          "class": "network-down"
+        }
+      },
+      {
+        "name": "心跳逾時",
+        "observation": {
+          "kind": "heartbeat-timeout"
+        },
+        "nowSec": 1800000000,
+        "expect": {
+          "class": "network-down"
+        }
+      }
+    ],
+    "delay": [
+      {
+        "name": "額度 reset＋0",
+        "disconnect": {
+          "class": "quota-exhausted",
+          "reset": 1800003600
+        },
+        "ctx": {
+          "attempt": 0,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0
+        },
+        "expectMs": 3600000
+      },
+      {
+        "name": "relay-error 第 0 次 r=0",
+        "disconnect": {
+          "class": "relay-error"
+        },
+        "ctx": {
+          "attempt": 0,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0
+        },
+        "expectMs": 3500
+      },
+      {
+        "name": "network-down 第 0 次 r=0",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 0,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0
+        },
+        "expectMs": 1000
+      },
+      {
+        "name": "relay-error 第 1 次 r=0",
+        "disconnect": {
+          "class": "relay-error"
+        },
+        "ctx": {
+          "attempt": 1,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0
+        },
+        "expectMs": 7000
+      },
+      {
+        "name": "network-down 第 1 次 r=0",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 1,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0
+        },
+        "expectMs": 1400
+      },
+      {
+        "name": "relay-error 第 4 次 r=0",
+        "disconnect": {
+          "class": "relay-error"
+        },
+        "ctx": {
+          "attempt": 4,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0
+        },
+        "expectMs": 56000
+      },
+      {
+        "name": "network-down 第 4 次 r=0",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 4,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0
+        },
+        "expectMs": 11200
+      },
+      {
+        "name": "relay-error 第 7 次 r=0",
+        "disconnect": {
+          "class": "relay-error"
+        },
+        "ctx": {
+          "attempt": 7,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0
+        },
+        "expectMs": 420000
+      },
+      {
+        "name": "network-down 第 7 次 r=0",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 7,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0
+        },
+        "expectMs": 42000
+      },
+      {
+        "name": "relay-error 第 8 次 r=0",
+        "disconnect": {
+          "class": "relay-error"
+        },
+        "ctx": {
+          "attempt": 8,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0
+        },
+        "expectMs": 420000
+      },
+      {
+        "name": "network-down 第 8 次 r=0",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 8,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0
+        },
+        "expectMs": 42000
+      },
+      {
+        "name": "relay-error 第 30 次 r=0",
+        "disconnect": {
+          "class": "relay-error"
+        },
+        "ctx": {
+          "attempt": 30,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0
+        },
+        "expectMs": 420000
+      },
+      {
+        "name": "network-down 第 30 次 r=0",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 30,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0
+        },
+        "expectMs": 42000
+      },
+      {
+        "name": "額度 reset＋0.25",
+        "disconnect": {
+          "class": "quota-exhausted",
+          "reset": 1800003600
+        },
+        "ctx": {
+          "attempt": 0,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.25
+        },
+        "expectMs": 3900000
+      },
+      {
+        "name": "relay-error 第 0 次 r=0.25",
+        "disconnect": {
+          "class": "relay-error"
+        },
+        "ctx": {
+          "attempt": 0,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.25
+        },
+        "expectMs": 4250
+      },
+      {
+        "name": "network-down 第 0 次 r=0.25",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 0,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.25
+        },
+        "expectMs": 1000
+      },
+      {
+        "name": "relay-error 第 1 次 r=0.25",
+        "disconnect": {
+          "class": "relay-error"
+        },
+        "ctx": {
+          "attempt": 1,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.25
+        },
+        "expectMs": 8500
+      },
+      {
+        "name": "network-down 第 1 次 r=0.25",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 1,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.25
+        },
+        "expectMs": 1700
+      },
+      {
+        "name": "relay-error 第 4 次 r=0.25",
+        "disconnect": {
+          "class": "relay-error"
+        },
+        "ctx": {
+          "attempt": 4,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.25
+        },
+        "expectMs": 68000
+      },
+      {
+        "name": "network-down 第 4 次 r=0.25",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 4,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.25
+        },
+        "expectMs": 13600
+      },
+      {
+        "name": "relay-error 第 7 次 r=0.25",
+        "disconnect": {
+          "class": "relay-error"
+        },
+        "ctx": {
+          "attempt": 7,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.25
+        },
+        "expectMs": 510000
+      },
+      {
+        "name": "network-down 第 7 次 r=0.25",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 7,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.25
+        },
+        "expectMs": 51000
+      },
+      {
+        "name": "relay-error 第 8 次 r=0.25",
+        "disconnect": {
+          "class": "relay-error"
+        },
+        "ctx": {
+          "attempt": 8,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.25
+        },
+        "expectMs": 510000
+      },
+      {
+        "name": "network-down 第 8 次 r=0.25",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 8,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.25
+        },
+        "expectMs": 51000
+      },
+      {
+        "name": "relay-error 第 30 次 r=0.25",
+        "disconnect": {
+          "class": "relay-error"
+        },
+        "ctx": {
+          "attempt": 30,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.25
+        },
+        "expectMs": 510000
+      },
+      {
+        "name": "network-down 第 30 次 r=0.25",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 30,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.25
+        },
+        "expectMs": 51000
+      },
+      {
+        "name": "額度 reset＋0.5",
+        "disconnect": {
+          "class": "quota-exhausted",
+          "reset": 1800003600
+        },
+        "ctx": {
+          "attempt": 0,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.5
+        },
+        "expectMs": 4200000
+      },
+      {
+        "name": "relay-error 第 0 次 r=0.5",
+        "disconnect": {
+          "class": "relay-error"
+        },
+        "ctx": {
+          "attempt": 0,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.5
+        },
+        "expectMs": 5000
+      },
+      {
+        "name": "network-down 第 0 次 r=0.5",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 0,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.5
+        },
+        "expectMs": 1000
+      },
+      {
+        "name": "relay-error 第 1 次 r=0.5",
+        "disconnect": {
+          "class": "relay-error"
+        },
+        "ctx": {
+          "attempt": 1,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.5
+        },
+        "expectMs": 10000
+      },
+      {
+        "name": "network-down 第 1 次 r=0.5",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 1,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.5
+        },
+        "expectMs": 2000
+      },
+      {
+        "name": "relay-error 第 4 次 r=0.5",
+        "disconnect": {
+          "class": "relay-error"
+        },
+        "ctx": {
+          "attempt": 4,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.5
+        },
+        "expectMs": 80000
+      },
+      {
+        "name": "network-down 第 4 次 r=0.5",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 4,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.5
+        },
+        "expectMs": 16000
+      },
+      {
+        "name": "relay-error 第 7 次 r=0.5",
+        "disconnect": {
+          "class": "relay-error"
+        },
+        "ctx": {
+          "attempt": 7,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.5
+        },
+        "expectMs": 600000
+      },
+      {
+        "name": "network-down 第 7 次 r=0.5",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 7,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.5
+        },
+        "expectMs": 60000
+      },
+      {
+        "name": "relay-error 第 8 次 r=0.5",
+        "disconnect": {
+          "class": "relay-error"
+        },
+        "ctx": {
+          "attempt": 8,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.5
+        },
+        "expectMs": 600000
+      },
+      {
+        "name": "network-down 第 8 次 r=0.5",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 8,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.5
+        },
+        "expectMs": 60000
+      },
+      {
+        "name": "relay-error 第 30 次 r=0.5",
+        "disconnect": {
+          "class": "relay-error"
+        },
+        "ctx": {
+          "attempt": 30,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.5
+        },
+        "expectMs": 600000
+      },
+      {
+        "name": "network-down 第 30 次 r=0.5",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 30,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.5
+        },
+        "expectMs": 60000
+      },
+      {
+        "name": "額度 reset＋0.999999",
+        "disconnect": {
+          "class": "quota-exhausted",
+          "reset": 1800003600
+        },
+        "ctx": {
+          "attempt": 0,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.999999
+        },
+        "expectMs": 4799998
+      },
+      {
+        "name": "relay-error 第 0 次 r=0.999999",
+        "disconnect": {
+          "class": "relay-error"
+        },
+        "ctx": {
+          "attempt": 0,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.999999
+        },
+        "expectMs": 6499
+      },
+      {
+        "name": "network-down 第 0 次 r=0.999999",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 0,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.999999
+        },
+        "expectMs": 1299
+      },
+      {
+        "name": "relay-error 第 1 次 r=0.999999",
+        "disconnect": {
+          "class": "relay-error"
+        },
+        "ctx": {
+          "attempt": 1,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.999999
+        },
+        "expectMs": 12999
+      },
+      {
+        "name": "network-down 第 1 次 r=0.999999",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 1,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.999999
+        },
+        "expectMs": 2599
+      },
+      {
+        "name": "relay-error 第 4 次 r=0.999999",
+        "disconnect": {
+          "class": "relay-error"
+        },
+        "ctx": {
+          "attempt": 4,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.999999
+        },
+        "expectMs": 103999
+      },
+      {
+        "name": "network-down 第 4 次 r=0.999999",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 4,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.999999
+        },
+        "expectMs": 20799
+      },
+      {
+        "name": "relay-error 第 7 次 r=0.999999",
+        "disconnect": {
+          "class": "relay-error"
+        },
+        "ctx": {
+          "attempt": 7,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.999999
+        },
+        "expectMs": 779999
+      },
+      {
+        "name": "network-down 第 7 次 r=0.999999",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 7,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.999999
+        },
+        "expectMs": 77999
+      },
+      {
+        "name": "relay-error 第 8 次 r=0.999999",
+        "disconnect": {
+          "class": "relay-error"
+        },
+        "ctx": {
+          "attempt": 8,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.999999
+        },
+        "expectMs": 779999
+      },
+      {
+        "name": "network-down 第 8 次 r=0.999999",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 8,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.999999
+        },
+        "expectMs": 77999
+      },
+      {
+        "name": "relay-error 第 30 次 r=0.999999",
+        "disconnect": {
+          "class": "relay-error"
+        },
+        "ctx": {
+          "attempt": 30,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.999999
+        },
+        "expectMs": 779999
+      },
+      {
+        "name": "network-down 第 30 次 r=0.999999",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 30,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.999999
+        },
+        "expectMs": 77999
+      },
+      {
+        "name": "額度 reset 已過",
+        "disconnect": {
+          "class": "quota-exhausted",
+          "reset": 1799999990
+        },
+        "ctx": {
+          "attempt": 0,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0
+        },
+        "expectMs": 1000
+      },
+      {
+        "name": "額度但時鐘沒同步",
+        "disconnect": {
+          "class": "quota-exhausted",
+          "reset": 1800003600
+        },
+        "ctx": {
+          "attempt": 0,
+          "nowSec": 1800000000,
+          "clockSynced": false,
+          "random": 0.5
+        },
+        "expectMs": 3600000
+      },
+      {
+        "name": "額度不知道 reset",
+        "disconnect": {
+          "class": "quota-exhausted"
+        },
+        "ctx": {
+          "attempt": 0,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.5
+        },
+        "expectMs": 3600000
+      },
+      {
+        "name": "設定錯誤",
+        "disconnect": {
+          "class": "config-error"
+        },
+        "ctx": {
+          "attempt": 5,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.5
+        },
+        "expectMs": 3600000
+      },
+      {
+        "name": "被擠掉",
+        "disconnect": {
+          "class": "replaced"
+        },
+        "ctx": {
+          "attempt": 5,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.5
+        },
+        "expectMs": 60000
+      },
+      {
+        "name": "relay-error 的 Retry-After 是下限",
+        "disconnect": {
+          "class": "relay-error",
+          "retryAfterSec": 60
+        },
+        "ctx": {
+          "attempt": 0,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.5
+        },
+        "expectMs": 60000
+      },
+      {
+        "name": "relay-error 的 Retry-After 比退避短",
+        "disconnect": {
+          "class": "relay-error",
+          "retryAfterSec": 1
+        },
+        "ctx": {
+          "attempt": 6,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.5
+        },
+        "expectMs": 320000
+      },
+      {
+        "name": "random 夾到 [0, 1)",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 3,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 1.5
+        },
+        "expectMs": 10399
+      },
+      {
+        "name": "random 負數夾到 0",
+        "disconnect": {
+          "class": "network-down"
+        },
+        "ctx": {
+          "attempt": 3,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": -1
+        },
+        "expectMs": 5600
+      }
+    ]
+  },
+  "device": {
+    "reference": {
+      "nowMs": 1800000000123,
+      "homeSecret": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "operatorSecret": "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f",
+      "devices": {
+        "lamp": {
+          "kid": "lamp.0",
+          "deviceKey": "39ca2622b89fa60da9bbcfb5059e31e8c27a17f3f19eb40c9922c84467f09eb7"
+        },
+        "door": {
+          "kid": "door.0",
+          "deviceKey": "fa24757c9bdd3b82c7febda8e2f09c27aa03fb2853138a7e5979136407bf6813",
+          "deviceKeyDown": "551c66c657929dc78f411fa69bae9ee7a30abebd14c30a07db4cec70e86b660f"
+        }
+      },
+      "defaults": {
+        "maxSkewSec": 60,
+        "counterStart": 0,
+        "clockSynced": true
+      },
+      "handler": "cmd → { status: \"ok\", state: { [topic]: payload } }；query → { \"home/lamp/state\": \"QUERIED\" }；狀態的 ts＝nowMs"
+    },
+    "scenarios": [
+      {
+        "name": "指令：執行並回 ok，ack 帶執行後的狀態",
+        "device": "lamp",
+        "steps": [
+          {
+            "frame": "{\"t\":\"cmd\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"down\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AERERERERERERERE\",\"ct\":\"YwXM/9zM65ZSZp6rmPYkoXNURlbOWaqItX9aPlpjL+a5EWhxgM0xBGE+KZoOSC4TthjxNlrlu8tdOa/Oq4Njwnp7d7E+ISL4kgheQhODFGIpRZeeqrDakZmh09Gx+jtlJI1W5q7nnwTa7y068ZzpSh9t4UZF6fGkYrvX8vCBNHhD\"}}"
+          }
+        ],
+        "expect": {
+          "commands": [
+            {
+              "msgId": "msg-0000000000001",
+              "topic": "home/lamp/power",
+              "payload": "ON",
+              "enc": "utf8"
+            }
+          ],
+          "out": [
+            {
+              "afterStep": 0,
+              "frame": "{\"t\":\"ack\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"up\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AQAAAAAAAAAAAAAB\",\"ct\":\"tFpM/OU7bOUHmeSSZMNfEBtaTCkZda37vvM1xTCB+VZdIV9nCj4HQr7tSLe1GSrhIK7l1YtHHfKDp6aKALKM+wV7danJkD3y65S2D3WYmBZO7hVPX4CShd/whAMnBtHLcDJs2HnyaIDi8kHwu2M8fKORnZeOt1/4E7auJ7KvJR768qCp8zboiw4GQwe3\"}}"
+            }
+          ],
+          "counterEnd": 1
+        }
+      },
+      {
+        "name": "查詢：回 ok 與目前狀態",
+        "device": "lamp",
+        "steps": [
+          {
+            "frame": "{\"t\":\"query\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"down\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AERERERERERERERE\",\"ct\":\"YwXM/9zM65ZSdIaqyKMk4CJefFWlB6rf5HUEaUdjL+a5EWhxgM0xBXMgKcJDXT8AthjiZgW47tQBaPOL+RTUW80fbni+odoF9eKlYVg=\"}}"
+          }
+        ],
+        "expect": {
+          "commands": [],
+          "out": [
+            {
+              "afterStep": 0,
+              "frame": "{\"t\":\"ack\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"up\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AQAAAAAAAAAAAAAB\",\"ct\":\"tFpM/OU7bOUHmeSSZMNfEBtaTCkZda37vvM1xTCB+VZdIV9nCj4HQr7tSLS1GSrhIK7l1YtHHfKDp6aKALKM+wV7danJkD3y65S2D3WYmBZO7Q5ZTpeShd/whAMnBtHLcDJs2GfpD/6Jw3bwrXBwP7GbnJ+Ot1/5EbXjav4RRF/6as+C2RPqXi80qrowQ3AgsgI=\"}}"
+            }
+          ],
+          "counterEnd": 1
+        }
+      },
+      {
+        "name": "計數器從存好的值往上加（先存再送）",
+        "device": "lamp",
+        "counterStart": 41,
+        "steps": [
+          {
+            "frame": "{\"t\":\"query\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"down\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AERERERERERERERE\",\"ct\":\"YwXM/9zM65ZSdIaqyKMk4CJefFWlB6rf5HUEaUdjL+a5EWhxgM0xBXMhKcJDXT8AthjiZgW47tQBaPOL+fr7Xf2CYxUXbofbLXInmc4=\"}}"
+          },
+          {
+            "frame": "{\"t\":\"query\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"down\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AEVFRUVFRUVFRUVF\",\"ct\":\"xNB+ThdzqSQUmZBA2V61rxn8LHgSg0TI9HANYBSJKHkULMNbrRYdRZuRuTktOp/m5Dap9GmAR4opRX+jPaMH4S6JdLmVfiTNdG8Qa5M=\"}}"
+          }
+        ],
+        "expect": {
+          "commands": [],
+          "out": [
+            {
+              "afterStep": 0,
+              "frame": "{\"t\":\"ack\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"up\",\"ctr\":42,\"ts\":1800000000,\"nonce\":\"AQAAAAAAAAAAAAAq\",\"ct\":\"5iwjZl8EOY/HwE3E1+ecVrfN/nWCKdoieaLiAMhOoYbOkjusuTWovEGbULCE1VQlZ/wgX1Fnz2ehgDDVDfJQhvZrOYFyw8TRbtfPfQahSgqqULxJsUBUfuW7vu4OhZXiwk4iOUVEpk3EgLevnk/+Dx5LlvB5qexDKaH00FX7qbHOF32QiSB7Zn72KSPGyYSL8Ls=\"}}"
+            },
+            {
+              "afterStep": 1,
+              "frame": "{\"t\":\"ack\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"up\",\"ctr\":43,\"ts\":1800000000,\"nonce\":\"AQAAAAAAAAAAAAAr\",\"ct\":\"RvapwxNjaDKBZay9ecP3Crn81LXf41owNyB3nSmXGSf4iLLz2ZQepR0RsPBPT/TTyd53g67sJpfxyu7RTAK6pLcFy2tEZ00mPEI8HWNKTP8jqZ/AtjfdBXAuE/Z2ZUHfUb21xPG2apvYRxXCDQCh411LsMYybk3DTGkBrkXn4B6aJ8S1lBZ5T/cD/pDzMBFE+R8=\"}}"
+            }
+          ],
+          "counterEnd": 43
+        }
+      },
+      {
+        "name": "重送同一個 msgId：不再執行，回同一個 ack（新的 ctr）",
+        "device": "lamp",
+        "steps": [
+          {
+            "frame": "{\"t\":\"cmd\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"down\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AERERERERERERERE\",\"ct\":\"YwXM/9zM65ZSZp6rmPYkoXNURlbOWaqItX9aPlpjL+a5EWhxgM0xAGE+KZoOSC4TthjxNlrlu8tdOa/Oq4Njwnp7d7E+ISL4kgheQhODFGIpRZeeqrDakZmh09Gx+jtlJI1W5q7nnwTa7y068ZzpSh8D0whskG7vzzRIG5zBzgQG\"}}"
+          },
+          {
+            "frame": "{\"t\":\"cmd\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"down\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AEZGRkZGRkZGRkZG\",\"ct\":\"un3dB1tfDsF2aRqdlfpx0zjZxzrKMuOwux5AwBw7Rn9bEcoCh48i+87xc79/VESm+XmNj4fH9SAPEvWYCM9Nm+mXQZywrzVFNDOhxMq4HIhI09NBOAfvGVjEGm5L57cTZJLXwmNh+045Yi4fhYJTsG2oDv/l/KbZv+l5vRbkIxPd\"}}",
+            "nowMs": 1800000002123
+          }
+        ],
+        "expect": {
+          "commands": [
+            {
+              "msgId": "msg-0000000000005",
+              "topic": "home/lamp/power",
+              "payload": "ON",
+              "enc": "utf8"
+            }
+          ],
+          "out": [
+            {
+              "afterStep": 0,
+              "frame": "{\"t\":\"ack\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"up\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AQAAAAAAAAAAAAAB\",\"ct\":\"tFpM/OU7bOUHmeSSZMNfEBtaTCkZda37vvM1xTCB+VZdIV9nCj4HQr7tSLO1GSrhIK7l1YtHHfKDp6aKALKM+wV7danJkD3y65S2D3WYmBZO7hVPX4CShd/whAMnBtHLcDJs2HnyaIDi8kHwu2M8fKORnZeOt1/4E7auJ7LfHTd01pLn2k93wKOJ3O7b\"}}"
+            },
+            {
+              "afterStep": 1,
+              "frame": "{\"t\":\"ack\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"up\",\"ctr\":2,\"ts\":1800000002,\"nonce\":\"AQAAAAAAAAAAAAAC\",\"ct\":\"OvA+kLloNWFGdZl0X2Ee2ATHtAYepIrwrGHGbdR6snW/aJid+jj2BxKyue1M7fVsGsGGUOVGbIZQE7R+DZKe3HjeiKCG5FSKpzVlL2aRHzSevqQMHjize8Oxk7wCk+3j9Th+AKRQVbCf09n7Ur62/qGCF+9Zv7OysE0M170pdoLkxKR5KDGgydbOyJtw\"}}"
+            }
+          ],
+          "counterEnd": 2
+        }
+      },
+      {
+        "name": "時鐘沒同步：拒絕（fail-closed）",
+        "device": "lamp",
+        "clockSynced": false,
+        "steps": [
+          {
+            "frame": "{\"t\":\"cmd\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"down\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AERERERERERERERE\",\"ct\":\"YwXM/9zM65ZSZp6rmPYkoXNURlbOWaqItX9aPlpjL+a5EWhxgM0xA2E+KZoOSC4TthjxNlrlu8tdOa/Oq4Njwnp7d7E+ISL4kgheQhODFGIpRZeeqrDakZmh09Gx+jtlJI1W5q7nnwTa7y068ZzpSh++xrzycsaY8pBgFXHxjaU1\"}}"
+          }
+        ],
+        "expect": {
+          "commands": [],
+          "out": [
+            {
+              "afterStep": 0,
+              "frame": "{\"t\":\"ack\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"up\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AQAAAAAAAAAAAAAB\",\"ct\":\"tFpM/OU7bOUHmeSSZMNfEBtaTCkZda37vvM1xTCB+VZdIV9nCj4HQr7tSLC1GSrhIK7l1YtHHfKeqe7DQbKG7040JPmWimz16tvpAnqVmgUKsw9WSYve3MG21h9Qf8r7OFjICO6B5Hdw3ZSP\"}}"
+            }
+          ],
+          "counterEnd": 1
+        }
+      },
+      {
+        "name": "信封時間超出時間窗（預設 60 秒）：拒絕 expired",
+        "device": "lamp",
+        "steps": [
+          {
+            "frame": "{\"t\":\"cmd\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"down\",\"ctr\":1,\"ts\":1799999939,\"nonce\":\"AERERERERERERERE\",\"ct\":\"YwXM/9zM65ZSZp6rmPYkoXNURlbOWaqItX9aPlpjL+a5EWhxgM0xAmE+KZoOSC4TthjxNlrlu8tdOa/Oq4Njwnp7d7E+ISL4kgheQhODFGIpRZeeqrDakZmh09Gx+jtlJI1W5q7nnwTa7y068ZroTx9FpQjKLe9VIMrhvocWv9bm\"}}"
+          }
+        ],
+        "expect": {
+          "commands": [],
+          "out": [
+            {
+              "afterStep": 0,
+              "frame": "{\"t\":\"ack\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"up\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AQAAAAAAAAAAAAAB\",\"ct\":\"tFpM/OU7bOUHmeSSZMNfEBtaTCkZda37vvM1xTCB+VZdIV9nCj4HQr7tSLG1GSrhIK7l1YtHHfKeqe7DQbKG7040JPmWimz16tvpAnyBhQ8T+x4aR7HDBl7n7/tlMro6QXWQyCs=\"}}"
+            }
+          ],
+          "counterEnd": 1
+        }
+      },
+      {
+        "name": "時間窗邊界（剛好 60 秒）：照常執行",
+        "device": "lamp",
+        "steps": [
+          {
+            "frame": "{\"t\":\"cmd\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"down\",\"ctr\":1,\"ts\":1799999940,\"nonce\":\"AERERERERERERERE\",\"ct\":\"YwXM/9zM65ZSZp6rmPYkoXNURlbOWaqItX9aPlpjL+a5EWhxgM0xDWE+KZoOSC4TthjxNlrlu8tdOa/Oq4Njwnp7d7E+ISL4kgheQhODFGIpRZeeqrDakZmh09Gx+jtlJI1W5q7nnwTa7y068ZzpSh94RBSozbEM7ocQH85K/ldN\"}}"
+          }
+        ],
+        "expect": {
+          "commands": [
+            {
+              "msgId": "msg-0000000000008",
+              "topic": "home/lamp/power",
+              "payload": "ON",
+              "enc": "utf8"
+            }
+          ],
+          "out": [
+            {
+              "afterStep": 0,
+              "frame": "{\"t\":\"ack\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"up\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AQAAAAAAAAAAAAAB\",\"ct\":\"tFpM/OU7bOUHmeSSZMNfEBtaTCkZda37vvM1xTCB+VZdIV9nCj4HQr7tSL61GSrhIK7l1YtHHfKDp6aKALKM+wV7danJkD3y65S2D3WYmBZO7hVPX4CShd/whAMnBtHLcDJs2HnyaIDi8kHwu2M8fKORnZeOt1/4E7auJ7JTW0eFM8imK5uxzr56my80\"}}"
+            }
+          ],
+          "counterEnd": 1
+        }
+      },
+      {
+        "name": "來自未來的信封：拒絕 expired",
+        "device": "lamp",
+        "steps": [
+          {
+            "frame": "{\"t\":\"cmd\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"down\",\"ctr\":1,\"ts\":1800000061,\"nonce\":\"AERERERERERERERE\",\"ct\":\"YwXM/9zM65ZSZp6rmPYkoXNURlbOWaqItX9aPlpjL+a5EWhxgM0xDGE+KZoOSC4TthjxNlrlu8tdOa/Oq4Njwnp7d7E+ISL4kgheQhODFGIpRZeeqrDakZmh09Gx+jtlJI1W5q7nnwTa7y068ZzpSh8poFStQkzxxt/nTaCnjNuw\"}}"
+          }
+        ],
+        "expect": {
+          "commands": [],
+          "out": [
+            {
+              "afterStep": 0,
+              "frame": "{\"t\":\"ack\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"up\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AQAAAAAAAAAAAAAB\",\"ct\":\"tFpM/OU7bOUHmeSSZMNfEBtaTCkZda37vvM1xTCB+VZdIV9nCj4HQr7tSL+1GSrhIK7l1YtHHfKeqe7DQbKG7040JPmWimz16tvpAnyBhQ8T+x4aR7fdx6N8a/IMM+tqzYInsEk=\"}}"
+            }
+          ],
+          "counterEnd": 1
+        }
+      },
+      {
+        "name": "內容已過期（exp 早於現在）：拒絕 expired",
+        "device": "lamp",
+        "steps": [
+          {
+            "frame": "{\"t\":\"cmd\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"down\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AERERERERERERERE\",\"ct\":\"YwXM/9zM65ZSZp6rmPYkoXNURlbOWaqItX9aPlpjL+a5EWhxgM0xVGE+KZoOSC4TthjxNlrlu8tdOa/Oq4Njwnp7d7E+ISL4kgheQhODFGIpRZeeqrDakZmh09Gx+jtlJI1W5q7nnwvT5iQz+JXhRh88FuxuIdIwc82YlOyEhr9b\"}}"
+          }
+        ],
+        "expect": {
+          "commands": [],
+          "out": [
+            {
+              "afterStep": 0,
+              "frame": "{\"t\":\"ack\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"up\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AQAAAAAAAAAAAAAB\",\"ct\":\"tFpM/OU7bOUHmeSSZMNfEBtaTCkZda37vvM1xTCB+VZdIV9nCj4HQr7tSOe1GSrhIK7l1YtHHfKeqe7DQbKG7040JPmWimz16tvpAnyBhQ8T+x4aRxWsFps8jV8jUhH2VWikv9c=\"}}"
+            }
+          ],
+          "counterEnd": 1
+        }
+      },
+      {
+        "name": "門類時間窗 15 秒",
+        "device": "door",
+        "maxSkewSec": 15,
+        "steps": [
+          {
+            "frame": "{\"t\":\"cmd\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"door.0\",\"dir\":\"down\",\"ctr\":1,\"ts\":1799999984,\"nonce\":\"AERERERERERERERE\",\"ct\":\"j23rWD9qWEqL19f7A5sw8EeYcP7KzgoMXZKga7tzbCcBpZ6LPATzMM5xx0RwHNKL/5pFCzy2tiGOk+nKIz6Zk9sTto0P2KuwgfrFbn5EjtqnXQGcufwLrUmn+mCJwO4/LPHYO0jqb8Yqz+Vpj6e8DYIE/PDir9JRqgcr+tBMvvv+4WNX\"}}"
+          }
+        ],
+        "expect": {
+          "commands": [],
+          "out": [
+            {
+              "afterStep": 0,
+              "frame": "{\"t\":\"ack\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"door.0\",\"dir\":\"up\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AQAAAAAAAAAAAAAB\",\"ct\":\"aoBphdBEY5+WavjeMNuvXmHhLF1yN0FAkricuByeGxVka9ZOKZVM3ImZwDy/f5nZCAp9/JN93IfOLfD9qfWSJFsKk5bNN4EiL9V7v7cv3YIjjjZzoaJGycZjpWyUrlgwHLfhwb4=\"}}"
+            }
+          ],
+          "counterEnd": 1
+        }
+      },
+      {
+        "name": "金鑰不對：解不開，什麼都不回",
+        "device": "lamp",
+        "steps": [
+          {
+            "frame": "{\"t\":\"cmd\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"down\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AERERERERERERERE\",\"ct\":\"v/64tPVWnUeNhZEdLDEKSDWxgzdEV9pYe0rGFH6v/8OftWpRa6YeexomvVwnCzOwPM+8qHSs5e3MDI8TwNVMRGUVWN7PbktsDczm/5jayCuu4JbX5Az8cHLIJpyw5ONyalox8UzkYcQ1hKVTGpIiFu7l85FNyGU1J6HqOwCT1vDI\"}}"
+          }
+        ],
+        "expect": {
+          "commands": [],
+          "out": [],
+          "counterEnd": 0
+        }
+      },
+      {
+        "name": "kid 不是這台：不理",
+        "device": "lamp",
+        "steps": [
+          {
+            "frame": "{\"t\":\"cmd\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.1\",\"dir\":\"down\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AERERERERERERERE\",\"ct\":\"YwXM/9zM65ZSZp6rmPYkoXNURlbOWaqItX9aPlpjL+a5EWhxgM0xUWE+KZoOSC4TthjxNlrlu8tdOa/Oq4Njwnp7d7E+ISL4kgheQhODFGIpRZeeqrDakZmh09Gx+jtlJI1W5q7nnwTa7y068ZzpSh+Qg+zDV4GjH0abz2KniME/\"}}"
+          }
+        ],
+        "expect": {
+          "commands": [],
+          "out": [],
+          "counterEnd": 0
+        }
+      },
+      {
+        "name": "幀是 cmd、內容是 query：不理",
+        "device": "lamp",
+        "steps": [
+          {
+            "frame": "{\"t\":\"cmd\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"lamp.0\",\"dir\":\"down\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AERERERERERERERE\",\"ct\":\"YwXM/9zM65ZSdIaqyKMk4CJefFWlB6rf5HUEaUdjL+a5EWhxgM0xBXN3KcJDXT8AthjiZgW47tQBaPOL+WUopnBfwcgM7+FGUzm4JnM=\"}}"
+          }
+        ],
+        "expect": {
+          "commands": [],
+          "out": [],
+          "counterEnd": 0
+        }
+      },
+      {
+        "name": "門鎖：以 deviceKey 做的指令（viewer 也算得出）解不開、不執行",
+        "device": "door",
+        "steps": [
+          {
+            "frame": "{\"t\":\"cmd\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"door.0\",\"dir\":\"down\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AERERERERERERERE\",\"ct\":\"v/64tPVWnUeNhZEdLDEKSDWxgzdEV9pYe0rGFH6v/8OftWpRa6YefhomvVwnCzOwPM+8qHSs5e3EAo0RwMlMUGtFVtCdf1N5DsLjuYDCvyqsjfm+o069NyaJcdL0qbU4cB1lowumIN4/ha1TGpIjE6OCN3xEdDc4hMrkZuAp8HIdoHI8\"}}"
+          }
+        ],
+        "expect": {
+          "commands": [],
+          "out": [],
+          "counterEnd": 0
+        }
+      },
+      {
+        "name": "門鎖：以 deviceKeyDown 做的指令照常執行",
+        "device": "door",
+        "steps": [
+          {
+            "frame": "{\"t\":\"cmd\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"door.0\",\"dir\":\"down\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AERERERERERERERE\",\"ct\":\"j23rWD9qWEqL19f7A5sw8EeYcP7KzgoMXZKga7tzbCcBpZ6LPATyYs5xx0RwHNKL/5pFCzy2tiGOk+nKIz6Zk9sTto0P2KuwgfrFbn5EjtqnXQGcufwLrUmn+mCJwO4/LPHYO0jqb8Yqz+Vpj6e8DYIE/PBtChWowNqbLoHtea9mqQfM\"}}"
+          }
+        ],
+        "expect": {
+          "commands": [
+            {
+              "msgId": "msg-0000000000010",
+              "topic": "home/door/lock",
+              "payload": "UNLOCK",
+              "enc": "utf8"
+            }
+          ],
+          "out": [
+            {
+              "afterStep": 0,
+              "frame": "{\"t\":\"ack\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"door.0\",\"dir\":\"up\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AQAAAAAAAAAAAAAB\",\"ct\":\"aoBphdBEY5+WavjeMNuvXmHhLF1yN0FAkricuByeGxVka9ZOKZVM3ImZwW6/f5nZCAp9/JN93IfTI7i06PWYMBBFwsaSLdAlLpoksrY4wpl+hz0yt6wH4Enl5SMJGZ07yfMWeMwgHabhp5rwp1I2qtuzKlLvOOqm3EfqYRoVvdu7SOon78yEzydcuQbtf2i7\"}}"
+            }
+          ],
+          "counterEnd": 1
+        }
+      },
+      {
+        "name": "門鎖：查詢一律用 deviceKey",
+        "device": "door",
+        "steps": [
+          {
+            "frame": "{\"t\":\"query\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"door.0\",\"dir\":\"down\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AERERERERERERERE\",\"ct\":\"v/64tPVWnUeNl4kcfGQKCWS7uTQvCdoPKkCYQ2Ov/8OftWpRa6YeKAk7vQRqHiKjPM+v+CvxsPKQXdNWkjSpWIA6DsiAHYwpawMdWoY=\"}}"
+          }
+        ],
+        "expect": {
+          "commands": [],
+          "out": [
+            {
+              "afterStep": 0,
+              "frame": "{\"t\":\"ack\",\"env\":{\"v\":1,\"alg\":\"A256GCM\",\"kid\":\"door.0\",\"dir\":\"up\",\"ctr\":1,\"ts\":1800000000,\"nonce\":\"AQAAAAAAAAAAAAAB\",\"ct\":\"aoBphdBEY5+WavjeMNuvXmHhLF1yN0FAkricuByeGxVka9ZOKZVM3ImZwW+/f5nZCAp9/JN93IfTI7i06PWYMBBFwsaSLdAlLpoksr42wJt+mCYwqOsfoRC39DscGpM+j+sOD9M5F7fjwPLw/wNg48ixK1rvOOqm3EfrYxha89sJFfqBnQUbSxeRHIjp8ICC05M=\"}}"
+            }
+          ],
+          "counterEnd": 1
+        }
+      },
+      {
+        "name": "hb-ack 不產生任何輸出",
+        "device": "lamp",
+        "steps": [
+          {
+            "frame": "{\"t\":\"hb-ack\"}"
+          }
+        ],
+        "expect": {
+          "commands": [],
+          "out": [],
+          "counterEnd": 0
+        }
+      },
+      {
+        "name": "壞掉的幀：不理",
+        "device": "lamp",
+        "steps": [
+          {
+            "frame": "{\"t\":\"cmd\",\"env\":{\"v\":1}}"
+          },
+          {
+            "frame": "garbage"
+          }
+        ],
+        "expect": {
+          "commands": [],
+          "out": [],
+          "counterEnd": 0
+        }
+      }
+    ]
+  }
+}
