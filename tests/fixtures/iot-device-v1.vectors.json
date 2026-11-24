@@ -1853,6 +1853,62 @@
           "random": -1
         },
         "expectMs": 5600
+      },
+      {
+        "name": "額度 reset 在 30 天後：夾到 25 小時",
+        "disconnect": {
+          "class": "quota-exhausted",
+          "reset": 1802592000
+        },
+        "ctx": {
+          "attempt": 0,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.5
+        },
+        "expectMs": 90000000
+      },
+      {
+        "name": "額度 reset 是 2^53−1：夾到 25 小時",
+        "disconnect": {
+          "class": "quota-exhausted",
+          "reset": 9007199254740991
+        },
+        "ctx": {
+          "attempt": 0,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.999999
+        },
+        "expectMs": 90000000
+      },
+      {
+        "name": "額度 reset 在 24 小時後＋最大抖動：不受上限影響",
+        "disconnect": {
+          "class": "quota-exhausted",
+          "reset": 1800086400
+        },
+        "ctx": {
+          "attempt": 0,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.999999
+        },
+        "expectMs": 87599998
+      },
+      {
+        "name": "relay-error 的 Retry-After 很大：夾到 60 分鐘",
+        "disconnect": {
+          "class": "relay-error",
+          "retryAfterSec": 9999999999
+        },
+        "ctx": {
+          "attempt": 0,
+          "nowSec": 1800000000,
+          "clockSynced": true,
+          "random": 0.5
+        },
+        "expectMs": 3600000
       }
     ]
   },

@@ -24,10 +24,17 @@ export interface InitWizardResult {
 }
 /** 同一題最多問幾次（不互動模式每題都回空字串，必填題不能無限重問） */
 export declare const WIZARD_MAX_TRIES = 3;
+/**
+ * 只跟這一題的值有關的錯誤：當場要求重答。其他錯誤（例如「開了檔案塊卻沒有白名單」）可能由後面的題目解決，
+ * 先提醒、問完再回頭重問（{@link runInitWizard}）。
+ */
+export declare const FIELD_ERROR_CODES: ReadonlySet<string>;
 type Text = {
     readonly 'zh-TW': string;
     readonly en: string;
 };
+/** 回傳設好（`value` 是 undefined 就拿掉）之後的新設定；空掉的區段一併拿掉（網頁設定器共用，SDK ADR 0142） */
+export declare function withValue(config: Record<string, unknown>, path: string, value: unknown): Record<string, unknown>;
 /** 這個目標要問哪些題（依描述表的順序） */
 export declare function wizardQuestions(target: DeployTarget, advanced?: boolean): DeployOptionSpec[];
 export type WizardAnswer = {

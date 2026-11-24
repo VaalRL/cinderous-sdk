@@ -16,6 +16,7 @@ import {
   validateDeployConfig,
 } from './config/index.js';
 import type { DeployIssue } from './shared.js';
+import { isSafeRelativePath } from './zip.js';
 
 export interface BuildRelayPackageOptions {
   /** 剛 `JSON.parse` 出來的設定（會先驗證） */
@@ -25,8 +26,13 @@ export interface BuildRelayPackageOptions {
   outDir: string;
   /** Workers：附預打包的中繼（`src/relay.mjs`），不需要安裝 SDK */
   selfContained?: boolean;
-  /** SDK 改以套件相依安裝（例如 `github:VaalRL/cinderous-sdk#v0.91.0`），不內嵌 `sdk/` */
+  /** SDK 改以套件相依安裝（例如 `github:VaalRL/cinderous-sdk#v0.92.0`），不內嵌 `sdk/` */
   sdkSpec?: string;
+  /**
+   * Node 目標直接用預建映像（SDK ADR 0143），不建置：`true`＝`ghcr.io/vaalrl/cinderous-relay-lite:v<SDK 版號>`，
+   * 字串＝指定的映像（例如自己的鏡像站）。不能與 `sdkSpec`、`selfContained` 一起用。
+   */
+  image?: true | string;
   /** 覆寫被手改過、或不是 relay build 產生的檔案 */
   force?: boolean;
   /** 以下供測試替換 */
@@ -67,6 +73,9 @@ export async function buildRelayPackage(opts: BuildRelayPackageOptions): Promise
     throw new Error(`設定檔有 ${lines.length} 個錯誤，沒有產生任何檔案：\n${lines.join('\n')}`);
   }
   const config = opts.config as DeployConfig;
+  if (opts.image !== undefined && (opts.sdkSpec !== undefined || opts.selfContained)) {
+    throw new Error('預建映像（image）不能與 sdkSpec、selfContained 一起用：映像裡已經有 SDK');
+  }
   const licensePath = join(sdkRoot, 'LICENSE');
   const licenseText = existsSync(licensePath) ? readFileSync(licensePath, 'utf8') : '';
   if (licenseText === '') throw new Error(`找不到 SDK 的 LICENSE（${licensePath}）：部署包必須附 AGPL 授權全文`);
@@ -74,6 +83,7 @@ export async function buildRelayPackage(opts: BuildRelayPackageOptions): Promise
     sdkVersion: version,
     licenseText,
     ...(opts.sdkSpec !== undefined ? { sdkSource: { kind: 'spec' as const, spec: opts.sdkSpec } } : {}),
+    ...(opts.image !== undefined ? { sdkSource: { kind: 'image' as const, ...(opts.image === true ? {} : { image: opts.image }) } } : {}),
     ...(opts.selfContained ? { selfContained: true, relayWorkerSource: opts.relayWorkerSource ?? (await loadRelayWorkerSource(sdkRoot)) } : {}),
   });
 
@@ -93,6 +103,14 @@ export async function buildRelayPackage(opts: BuildRelayPackageOptions): Promise
       previous = JSON.parse(previousText) as GeneratedManifest;
     } catch {
       previous = undefined;
+    }
+    // 🔴 清單來自輸出目錄（可能是別人給的部署包）：路徑必須留在輸出目錄裡，否則下面的比對與刪檔會碰到目錄外的檔案
+    const escaping = Object.keys(previous?.files ?? {}).filter((path) => !isSafeRelativePath(path));
+    if (escaping.length > 0) {
+      throw new Error(
+        `${join(outDir, GENERATED_MANIFEST)} 列了指到輸出目錄外的路徑：${escaping.map((p) => JSON.stringify(p)).join('、')}。` +
+          '這不是 relay build 會寫出的清單；檢查這個部署包的來源，或刪掉這個清單檔再重新產生',
+      );
     }
     conflicts.push(...modifiedGeneratedFiles(previousText, read).filter((path) => !isInputConfig(path)));
   }

@@ -6,10 +6,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import socket
 import struct
 import time
-from typing import Callable, Optional, Sequence
+from typing import Awaitable, Callable, Optional, Sequence
 
 NTP_EPOCH_OFFSET = 2_208_988_800  # 1900-01-01 → 1970-01-01
 
@@ -80,6 +81,28 @@ class ClockGuard:
             self._synced_at = self._monotonic()
             return True
         return False
+
+    def due(self, refresh_sec: float) -> bool:
+        """該重新同步了嗎（從沒同步過、或上次同步已超過 `refresh_sec`）。信任主機時鐘時永遠不用。"""
+        if self._trust:
+            return False
+        return self._synced_at is None or self._monotonic() - self._synced_at >= refresh_sec
+
+    async def keep_synced(
+        self,
+        refresh_sec: float = 6 * 3600,
+        check_sec: float = 300.0,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    ) -> None:
+        """背景工作：每 `check_sec` 檢查一次，該同步就同步（失敗下一輪再試）。永遠不會自己結束，取消它即可。
+
+        🔴 程式碼審查 2026-11-18：原本只在開機同步一次，`max_age_sec`（24 小時）後變成「不同步」、
+        之後所有指令都回 clock-unsynced——設備等於壞掉。`refresh_sec` 要比 `max_age_sec` 短，留時間重試。
+        """
+        while True:
+            if self.due(refresh_sec):
+                await asyncio.to_thread(self.sync)  # SNTP 是阻塞的 UDP：不要卡住事件迴圈（心跳、指令）
+            await sleep(check_sec)
 
     def synced(self) -> bool:
         if self._trust:

@@ -1,6 +1,6 @@
 # 0050. 部署設定器：以設定檔 `cinderous.config.json` 為核心，CLI 精靈、網頁設定器只是產生它的介面；產出可攜的部署包與依選擇組合的部署說明
 
-- 狀態：**已接受（Accepted，2026-10-02）**——使用者裁示見〈使用者裁示〉；**P0 已實作（v0.38.0）**，見〈P0 實作（v0.38.0）〉；P1 的 `cinderous init` 精靈與危險選項確認已做（SDK ADR 0117），`config migrate`、`cloudflareApiOptionsFromConfig`＋REST `secret_text`（TURN 的 Token）與 `relay deploy --config` 的 `cloudflare-api` 目標已做（SDK ADR 0118）；一次性秘密寫進 `.secrets/` 已做、隱藏輸入判定不需要（SDK ADR 0137）
+- 狀態：**已接受（Accepted，2026-10-02）**——使用者裁示見〈使用者裁示〉；**P0 已實作（v0.38.0）**，見〈P0 實作（v0.38.0）〉；P1 的 `cinderous init` 精靈與危險選項確認已做（SDK ADR 0117），`config migrate`、`cloudflareApiOptionsFromConfig`＋REST `secret_text`（TURN 的 Token）與 `relay deploy --config` 的 `cloudflare-api` 目標已做（SDK ADR 0118）；一次性秘密寫進 `.secrets/` 已做、隱藏輸入判定不需要（SDK ADR 0137）；P3 的 (b) 網頁設定器已做（SDK ADR 0142，放在 SDK 說明網站、附成本試算）
 - 日期：2026-10-02
 - 對應：使用者的問題「SDK 是否適合做一個介面，讓開發者快速選擇需要的功能與部署方式，然後產出一包可以直接部署的東西與部署說明」（研究報告見〈參考〉）。
   相關：本 repo ADR 0008（CLI、`.cinderous/`）、0013（存取控制）、0018（docker／fly 共用建置內容）、0019（中立預設）、0021（REST 部署、CORS、否決自架代理）、
@@ -38,8 +38,8 @@ SDK 已經有一鍵部署的大半零件：
 |---|---|---|
 | (c) `cinderous.config.json`＋JSON Schema | **單一真實來源**：所有選擇（目標、站台參數、宿主選項、秘密引用、IoT），可提交、可 diff，每次部署帶同一份 | P0 |
 | (a) `cinderous init` 精靈 | 逐題產生設定檔；不互動模式（`--yes`、旗標、`--from`）給 CI | P1 |
-| (b) 網頁設定器（靜態頁） | 瀏覽器內產生設定檔、zip 或一行指令；**不部署、不收秘密、不發任何請求**（CSP `connect-src 'none'`） | SDK 公開後（P3） |
-| (d) GHCR 映像、Deploy to Cloudflare 按鈕範本 repo、`create-cinderous` | 補充入口；範本 repo 本身由 `relay build` 產生 | SDK 公開後（P3） |
+| (b) 網頁設定器（靜態頁） | 瀏覽器內產生設定檔、zip 或一行指令；**不部署、不收秘密、不發任何請求**（CSP `connect-src 'none'`） | **已做（SDK ADR 0142）** |
+| (d) GHCR 映像、Deploy to Cloudflare 按鈕範本 repo、`create-cinderous` | 補充入口；範本 repo 本身由 `relay build` 產生 | SDK 公開後（P3）；GHCR 映像見 **ADR 0143** |
 
 參考同類工具：
 
@@ -202,7 +202,7 @@ SDK 已經有一鍵部署的大半零件：
 | 9. `home-tunnel` | 列為正式目標；`node-bare` 不做 |
 | 10. NIP-11 `software` | 開放設定 |
 
-未逐項裁示、先採推薦值的：7（公開後以相依引用 SDK；公開前內嵌）、8（zh-TW＋en 兩份說明）、12（沿用 `cinderous init`）。11（網頁設定器放哪裡）延到 P3 再決定。
+未逐項裁示、先採推薦值的：7（公開後以相依引用 SDK；公開前內嵌）、8（zh-TW＋en 兩份說明）、12（沿用 `cinderous init`）。11（網頁設定器放哪裡）延到 P3 再決定——2026-11-18 裁示：放在 SDK 說明網站（SDK ADR 0142）。
 
 ## P0 實作（v0.38.0）
 

@@ -111,6 +111,28 @@ export {
   WIZARD_MAX_TRIES,
   wizardQuestions,
 } from './wizard.js';
+// 網頁部署設定器的模型（SDK ADR 0142）：說明網站的頁面用它；外掛或其他前端也能重用
+export {
+  setWebField,
+  WEB_GROUP_LABELS,
+  webBuildCommand,
+  webEstimate,
+  type WebEstimateInput,
+  type WebField,
+  type WebFieldGroup,
+  type WebFieldKind,
+  webFieldKind,
+  webFieldText,
+  type WebFieldUpdate,
+  webFormGroups,
+  webInitialConfig,
+  type WebOutputContext,
+  type WebOutputs,
+  webOutputs,
+  webSdkSpec,
+  webSwitchTarget,
+  webUnsupportedFields,
+} from './web.js';
 export {
   collectRelaySiteIssues,
   type DeployIssue,

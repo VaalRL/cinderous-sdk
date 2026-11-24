@@ -262,6 +262,21 @@ describe('relay build', () => {
     expect(h.out.join('\n')).toContain('README-DEPLOY.md');
   });
 
+  it('--image 用預建映像（SDK ADR 0143）；--image-ref 指定別的映像（也代表 --image）', async () => {
+    const h = harness(configFile({ configVersion: 1, target: 'docker' }));
+    expect(await runCli(['relay', 'build', '--image'], h.deps)).toBe(0);
+    expect(h.builds[0]).toMatchObject({ image: true });
+    expect(await runCli(['relay', 'build', '--image-ref', 'registry.example.com/me/relay:v1'], h.deps)).toBe(0);
+    expect(h.builds[1]).toMatchObject({ image: 'registry.example.com/me/relay:v1' });
+  });
+
+  it('--image 與 --sdk-spec／--self-contained 互斥（用法錯誤）', async () => {
+    const h = harness(configFile({ configVersion: 1, target: 'docker' }));
+    expect(await runCli(['relay', 'build', '--image', '--sdk-spec', 'github:x/y#v1'], h.deps)).toBe(2);
+    expect(await runCli(['relay', 'build', '--image-ref', 'a/b:c', '--self-contained'], h.deps)).toBe(2);
+    expect(h.builds).toHaveLength(0);
+  });
+
   it('--out 與 --self-contained', async () => {
     const h = harness(configFile({ configVersion: 1, target: 'cloudflare' }));
     expect(await runCli(['relay', 'build', '--out', 'pkg', '--self-contained'], h.deps)).toBe(0);

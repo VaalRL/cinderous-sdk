@@ -12,7 +12,8 @@ import { applyIotAclOp, authorizeIot, iotRoleAtLeast, iotRoleOf, parseIotAcl, pa
 import { IOT_ACL_TOPIC, IOT_QUOTA_TOPIC } from '../iot/topic.js';
 import { newIotMsgId, parseIotBody } from '../iot/content.js';
 import { encodeIotDeviceFrame, IOT_DEVICE_HEARTBEAT_ACK, parseIotDeviceFrame, verifyIotDeviceToken } from '../iot/device-frame.js';
-import { IotUpCounterGuard, parseIotKid } from '../iot/envelope.js';
+import { parseIotKid } from '../iot/envelope.js';
+import { IOT_MAX_MAX_SKEW_SEC, IotReplayGuard } from '../iot/replay.js';
 import { IOT_KIND_ACK, IOT_KIND_COMMAND, IOT_KIND_QUERY, IOT_KIND_RETAINED, IOT_KIND_STATE, IOT_STATE_KINDS } from '../iot/kinds.js';
 import { getPublicKey } from '../protocol/keys.js';
 import { decryptDM, encryptDM } from '../protocol/nip44.js';
@@ -69,7 +70,12 @@ export class IotRealtimeHome {
     #longPollEnded = new Map();
     /** 長輪詢：空檔內保留的幀（到期就丟，不重送、不落庫） */
     #held = new Map();
-    #upCounters = new IotUpCounterGuard({ maxEntries: IOT_REALTIME_MAX_DEVICES * 2 });
+    /**
+     * 每台設備最近看過的 up `kid#ctr`（只擋同一則重送，省一次扇出）。
+     * 🔴 程式碼審查 2026-11-18：不能用「嚴格遞增」——relay 沒有設備金鑰、驗不了信封，拿到權杖的人送一個超大 ctr
+     * 就會讓真的設備之後每一則都被 relay 丟掉。嚴格遞增只能在驗過信封之後做（設備的計數器、手機的看過沒）。
+     */
+    #upSeen = new Map();
     #lastRetained = new Map();
     #heartbeatMs;
     #windowMs;
@@ -243,6 +249,17 @@ export class IotRealtimeHome {
         this.#pending.set(device.blindId, list.slice(-PENDING_MAX_PER_DEVICE));
         return { outbound: [ok], publish: [] };
     }
+    /** 這則 up 沒看過、信封時間在時間窗內（最寬的 120 秒＋未來 5 秒）；每台設備各自一份，一台塞爆不影響別台 */
+    #upFresh(blindId, env) {
+        let guard = this.#upSeen.get(blindId);
+        if (!guard) {
+            guard = new IotReplayGuard({ maxSkewSec: IOT_MAX_MAX_SKEW_SEC, size: 256, now: this.#now });
+            this.#upSeen.set(blindId, guard);
+            while (this.#upSeen.size > IOT_REALTIME_MAX_DEVICES * 2)
+                this.#upSeen.delete(this.#upSeen.keys().next().value);
+        }
+        return guard.check(`${env.kid}#${env.ctr}`, env.ts * 1000).verdict === 'fresh';
+    }
     /**
      * 設備送來的幀：心跳回 `reply`（Workers 的自動回覆不會走到這裡；Node 宿主照回）；ack／state 包成給全家的事件。
      * 壞幀、kid 不是這台設備或已作廢的 epoch、ctr 沒有遞增 → 丟掉（不關連線，免得一個壞幀讓設備重連風暴）。
@@ -263,7 +280,7 @@ export class IotRealtimeHome {
         const env = frame.env;
         if (!this.#kidOk(device, env.kid, Math.floor(now / 1000)))
             return { publish: [] };
-        if (!this.#upCounters.accept(env.kid, env.ctr))
+        if (!this.#upFresh(blindId, env))
             return { publish: [] };
         const body = { v: 1, type: frame.t === 'ack' ? 'dev-ack' : 'dev-state', msgId: newIotMsgId(), ts: now, device: device.id, env };
         if (frame.t === 'ack') {

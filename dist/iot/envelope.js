@@ -166,7 +166,8 @@ export function openIotEnvelope(value, key) {
     }
 }
 /**
- * up 方向的計數器檢查（ADR 0049 §2.6）：每個 kid 只接受嚴格遞增的 ctr。手機與 relay（看得到明文的 ctr，先擋省一次扇出）都用。
+ * up 方向的計數器檢查（ADR 0049 §2.6）：每個 kid 只接受嚴格遞增的 ctr。
+ * 🔴 relay 不能用（驗不了信封：一個偽造的大 ctr 會擋掉真的設備；程式碼審查 2026-11-18 起 relay 改成「看過沒」）。
  * 只在信封**驗證通過之後**才呼叫 {@link accept}——否則偽造的大 ctr 會把真的設備擋在外面。
  */
 export class IotUpCounterGuard {

@@ -156,3 +156,12 @@ DO 休眠喚醒後是新的實例，手機的訂閱要等 `ensureHydrated()` 才
   - 沒有部署到 Cloudflare；
   - 沒有用真的 Tasmota Berry 或 ESPHome 設備跑過；
   - 長輪詢的實際 DO 請求數與 Worker wall time 沒有在 GraphQL Analytics 量過。
+
+## 程式碼審查修正（2026-11-18，v0.92.0）：relay 的 up 計數器
+
+relay 原本對設備送來的 up 幀做「每個 kid 的 ctr 嚴格遞增」檢查（`IotUpCounterGuard`），想先擋掉重放、省一次扇出。
+但 relay 沒有設備金鑰、驗不了信封：拿到設備權杖的人（或被入侵的設備）送一個 `ctr = 2^53−1` 的偽造幀，relay 記下之後，真的設備之後每一則 ack／狀態都會被 relay 丟掉，直到 DO 被回收為止。
+
+改成每台設備一份「最近看過的 `kid#ctr`」（重用 `IotReplayGuard`：最多 256 筆、信封時間要在 120 秒＋未來 5 秒內），只擋同一則重送與很久以前錄下的幀。
+嚴格遞增只在驗過信封之後做（設備自己的計數器、手機端的看過沒，SDK ADR 0139）。拿到權杖的人本來就能送任意多則新的 ctr，所以 relay 的嚴格遞增從來沒有擋住他，只會擋住真的設備。
+`IotUpCounterGuard` 保留給驗過信封的一方使用，文件註明 relay 不能用。

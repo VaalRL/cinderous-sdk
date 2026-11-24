@@ -42,7 +42,7 @@ const BASIC_GROUPS: ReadonlySet<DeployOptionGroup> = new Set(['basic', 'access',
  * 只跟這一題的值有關的錯誤：當場要求重答。其他錯誤（例如「開了檔案塊卻沒有白名單」）可能由後面的題目解決，
  * 先提醒、問完再回頭重問（{@link runInitWizard}）。
  */
-const FIELD_ERROR_CODES: ReadonlySet<string> = new Set([
+export const FIELD_ERROR_CODES: ReadonlySet<string> = new Set([
   'type',
   'too-long',
   'pattern',
@@ -69,8 +69,8 @@ type Text = { readonly 'zh-TW': string; readonly en: string };
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-/** 回傳設好（`value` 是 undefined 就拿掉）之後的新設定；空掉的區段一併拿掉 */
-function withValue(config: Record<string, unknown>, path: string, value: unknown): Record<string, unknown> {
+/** 回傳設好（`value` 是 undefined 就拿掉）之後的新設定；空掉的區段一併拿掉（網頁設定器共用，SDK ADR 0142） */
+export function withValue(config: Record<string, unknown>, path: string, value: unknown): Record<string, unknown> {
   const [head, ...rest] = path.split('.');
   const out = { ...config };
   if (rest.length === 0) {

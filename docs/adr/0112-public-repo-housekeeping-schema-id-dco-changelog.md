@@ -18,7 +18,7 @@ ADR 0110〈後續〉列了公開後要做的事，其中三項：
    - 測試檢查 `$id` 指向 `package.json` 匯出的 `./config.schema.json` 那個路徑，檔案搬家時測試會失敗。
    - 用 `main` 而不是 tag：`$id` 識別的是「這份 schema」，設定檔版本由 `configVersion` 區分（schema 裡是 `const`）。日後有 `configVersion: 2`，要另外決定是否換檔名。
    - 設定檔裡的 `$schema` 仍由使用者自己寫（相對路徑或這個網址都可以），驗證不看 `$id`。
-2. **Docker 只改文件裡的名稱**：預定名稱改為 `ghcr.io/vaalrl/cinderous-relay-lite`，並寫明「還沒發布、目前自己建」。不加發布映像的 Action，產生的部署包也不變。
+2. **Docker 只改文件裡的名稱**：預定名稱改為 `ghcr.io/vaalrl/cinderous-relay-lite`，並寫明「還沒發布、目前自己建」。不加發布映像的 Action，產生的部署包也不變。（**已由 ADR 0143 接續**：加了發布映像的 workflow 與 `relay build --image`。）
 3. **貢獻條款用 DCO**（`git commit -s`，Developer Certificate of Origin 1.1）：
    - 不用 CLA：不需要簽署平台，外部貢獻者門檻低；代價是日後若要改授權（雙授權、商業授權），要所有貢獻者同意。
    - 授權維持 AGPL-3.0-only，著作權留在貢獻者。

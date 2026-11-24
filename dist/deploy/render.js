@@ -17,6 +17,21 @@ export const DEFAULT_FLY_REGION = 'nrt';
 export const FLY_VOLUME_NAME = 'relay_data';
 /** 家中主機＋Cloudflare Tunnel 目標預設的 cloudflared 映像（SDK ADR 0050 §5） */
 export const DEFAULT_CLOUDFLARED_IMAGE = 'cloudflare/cloudflared:latest';
+/**
+ * 預建的 Node 中繼映像（SDK ADR 0143）：公開 repo 推 `v*` tag 時由 `.github/workflows/image.yml` 建置推送
+ * （amd64＋arm64）。GHCR 的倉庫名稱必須全小寫。
+ */
+export const RELAY_IMAGE_REPOSITORY = 'ghcr.io/vaalrl/cinderous-relay-lite';
+/** 某個 SDK 版號對應的映像（標籤帶 `v`，與 git tag 相同） */
+export function relayImageRef(sdkVersion) {
+    return `${RELAY_IMAGE_REPOSITORY}:v${sdkVersion}`;
+}
+/** 映像裡入口程式的標頭（`docker/relay-lite/server.mjs` 就是 `renderServerEntry` 加上這段，測試比對逐位元組相同） */
+export const RELAY_IMAGE_SERVER_HEADER = [
+    '// SPDX-License-Identifier: AGPL-3.0-only',
+    '// ghcr.io/vaalrl/cinderous-relay-lite 的入口（SDK ADR 0143）。與 `relay build` 產生的 server.mjs 同一個產生器（renderServerEntry）；',
+    '// 改了產生器就要重新產生這個檔：tests/deploy/relay-image.test.ts 會擋。',
+];
 /** compose 發布位址的形狀（`node.bindAddress`；SDK ADR 0119）：IPv4 的四段，或只有十六進位與冒號的 IPv6（不加方括號） */
 export const BIND_ADDRESS_PATTERN = /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}|(?=[0-9A-Fa-f:]{2,39}$)[0-9A-Fa-f]*:[0-9A-Fa-f:]*)$/;
 /** 對所有網卡發布的位址 */
@@ -147,7 +162,7 @@ export function renderCompose(opts) {
         ...(opts.header ?? ['# 由 `cinderous relay deploy --provider=docker` 產生（SDK ADR 0018）；重新部署會覆寫。']),
         'services:',
         '  relay:',
-        '    build: .',
+        opts.image === undefined ? '    build: .' : `    image: ${yamlString(opts.image)}`,
         `    container_name: ${opts.name}`,
         '    restart: unless-stopped',
         // Tunnel 模式不發布埠：只有同一個 compose 網路裡的 cloudflared 連得到（不對區網或網際網路開放）
@@ -182,7 +197,7 @@ export function renderFlyToml(opts) {
         `primary_region = ${tomlString(opts.region)}`,
         '',
         '[build]',
-        '  dockerfile = "Dockerfile"',
+        opts.image === undefined ? '  dockerfile = "Dockerfile"' : `  image = ${tomlString(opts.image)}`,
         '',
         '[env]',
         ...env,

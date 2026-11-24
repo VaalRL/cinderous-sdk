@@ -85,13 +85,17 @@ async def main() -> None:
         _say({"event": "link", "state": ev.state, "url": ev.url, **({"retryInMs": ev.retry_in_ms} if ev.retry_in_ms is not None else {}), **({"reset": ev.reset} if ev.reset is not None else {})})
 
     runner = DeviceRunner(core=core, urls=[url, *standby], token=token, clock_synced=clock.synced, now_ms=clock.now_ms, on_link=on_link)
+    clock_task = asyncio.create_task(clock.keep_synced())  # 過期前重新同步；開機沒同步成功的也會一直重試
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
             loop.add_signal_handler(sig, runner.stop)
         except (NotImplementedError, RuntimeError):
             pass  # Windows：Ctrl+C 走 KeyboardInterrupt
-    await runner.run()
+    try:
+        await runner.run()
+    finally:
+        clock_task.cancel()
 
 
 if __name__ == "__main__":

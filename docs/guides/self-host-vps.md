@@ -240,7 +240,7 @@ journalctl -u cinderous-relay -f
 
 - **沒有在真的 VPS 上跑過**（見頁首）。
 - 沒開 `trustProxy`、也沒設 `node.bindAddress` 時，產生的 `docker-compose.yml` 照舊對所有網卡發布（給區網直連的樹莓派）。VPS 上一定要開 `trustProxy`，前面放 Caddy。
-- Docker 映像還沒發布（之後的名稱是 `ghcr.io/vaalrl/cinderous-relay-lite`，SDK ADR 0112）；目前都是在 VPS 上自己建（`--build`）。
+- 從 v0.92.0 起有預建映像 `ghcr.io/vaalrl/cinderous-relay-lite`（SDK ADR 0143）：`relay build` 加 `--image`，VPS 上就改成 `docker compose pull && docker compose up -d`，不用自己建。本頁預設仍是自己建（`--build`）；映像版第一次發布後還沒在 VPS 上實測。
 - Node 主機沒有車道（`appLanes`、`fileLanes` 只有 Cloudflare 版）。
 - 經 Cloudflare 代理（橘色雲）時，Caddy 預設不信任 Cloudflare 帶來的 `X-Forwarded-For`，中繼看到的會是 Cloudflare 的 IP，每個 IP 的限速把很多人算成同一個來源。要用橘色雲，得在 Caddy 設 `trusted_proxies`（Cloudflare 的 IP 範圍）並設 `TRUST_PROXY=2`（兩層代理）；沒驗證過，建議用 DNS only。白名單照樣有效（寫入要認證）。
 - 純記憶體模式（`persist: false`）重啟就清空，每月流量的用量也會歸零；VPS 上建議一律 `persist: true`。
@@ -355,7 +355,7 @@ The same package runs on Node directly (Node **22.13+**; older 22.x needs `--exp
 
 - Not yet run on a real VPS.
 - Without `trustProxy` or `node.bindAddress`, the generated `docker-compose.yml` still publishes on all interfaces (for a Raspberry Pi reached directly on the LAN). On a VPS, always turn on `trustProxy` with Caddy in front.
-- No Docker image is published yet (it will be `ghcr.io/vaalrl/cinderous-relay-lite`, SDK ADR 0112); for now you build it on the VPS.
+- From v0.92.0 there is a prebuilt image `ghcr.io/vaalrl/cinderous-relay-lite` (SDK ADR 0143): add `--image` to `relay build` and the VPS runs `docker compose pull && docker compose up -d` instead of building. This page still builds on the VPS (`--build`) by default; the image path has not been tried on a VPS yet.
 - No lanes on the Node host (`appLanes` / `fileLanes` are Cloudflare-only).
 - Behind Cloudflare's orange-cloud proxy, Caddy does not trust the `X-Forwarded-For` Cloudflare sends by default, so the relay sees Cloudflare's IPs and per-IP limits lump many people together. Using the orange cloud needs Caddy's `trusted_proxies` (Cloudflare's ranges) plus `TRUST_PROXY=2` (two proxies); this is untested, so use DNS only. The allowlist still holds (writes require AUTH).
 - Memory-only mode (`persist: false`) loses everything on restart, including this month's traffic count. Use `persist: true` on a VPS.

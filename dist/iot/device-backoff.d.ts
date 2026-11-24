@@ -48,6 +48,8 @@ export declare const IOT_DEVICE_PROBE_INTERVAL_MS: number;
 export declare const IOT_DEVICE_REPLACED_RETRY_MS = 60000;
 /** 任何狀態下兩次連線嘗試的最小間隔 */
 export declare const IOT_DEVICE_MIN_RETRY_MS = 1000;
+/** 任何狀態下最多等多久：額度每天重置，24 小時＋抖動綽綽有餘（也遠低於 setTimeout 的 2^31−1 毫秒） */
+export declare const IOT_DEVICE_MAX_RETRY_MS: number;
 /** 分類一次斷線或被拒（`nowSec`：unix 秒，只用來推算 reset） */
 export declare function classifyIotDeviceDisconnect(obs: IotDeviceObservation, nowSec: number): IotDeviceDisconnect;
 /** 下一次連線前等多久（毫秒） */

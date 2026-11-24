@@ -98,3 +98,45 @@ describe('一對一通話：Cinderous ADR-0424 的真機問題在 SDK 不能重�
     expect(env.A.media.liveCameras()).toBe(0);
   });
 });
+
+describe('一對一通話：程式碼審查（2026-11-18）——非同步操作晚回來', () => {
+  it('🔴 接聽時還在等權限，對方就掛斷了：權限回來後麥克風與鏡頭都關掉', async () => {
+    const env = setup();
+    const ringing = new Promise((r) => env.B.m.onIncoming(r));
+    await env.A.m.startCall(env.bob.pubkey, 'video');
+    await ringing;
+    env.B.media.holdPermission();
+    const accepting = env.B.m.accept();
+    await until(() => env.B.media.calls.length === 1); // 真的卡在權限提示（不是根本沒取）
+    await env.A.m.hangup();
+    await until(() => env.B.m.state === 'idle' || env.B.m.state === 'ended');
+    env.B.media.release();
+    await accepting;
+    expect(env.B.media.liveDevices()).toBe(0);
+  });
+
+  it('🔴 開視訊時還在等鏡頭，又按了關：最後是語音、鏡頭沒開著、對方最後聽到的是語音', async () => {
+    const env = setup();
+    await connect(env, 'audio');
+    env.A.media.holdPermission();
+    const on = env.A.m.setLocalMedia('video');
+    const off = env.A.m.setLocalMedia('audio');
+    env.A.media.release();
+    await Promise.all([on, off]);
+    expect(env.A.m.localMedia).toBe('audio');
+    expect(env.A.media.liveCameras()).toBe(0);
+    expect(env.network.between(env.alice.pubkey, env.bob.pubkey)!.sends('video')).toBe(false);
+  });
+
+  it('🔴 開視訊時還在等鏡頭，通話就結束了：鏡頭不能留著亮', async () => {
+    const env = setup();
+    await connect(env, 'audio');
+    env.A.media.holdPermission();
+    const on = env.A.m.setLocalMedia('video');
+    await env.B.m.hangup();
+    await until(() => env.A.m.state === 'idle' || env.A.m.state === 'ended');
+    env.A.media.release();
+    await on;
+    expect(env.A.media.liveDevices()).toBe(0);
+  });
+});

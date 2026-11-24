@@ -11,6 +11,15 @@ export declare const DEFAULT_FLY_REGION = "nrt";
 export declare const FLY_VOLUME_NAME = "relay_data";
 /** 家中主機＋Cloudflare Tunnel 目標預設的 cloudflared 映像（SDK ADR 0050 §5） */
 export declare const DEFAULT_CLOUDFLARED_IMAGE = "cloudflare/cloudflared:latest";
+/**
+ * 預建的 Node 中繼映像（SDK ADR 0143）：公開 repo 推 `v*` tag 時由 `.github/workflows/image.yml` 建置推送
+ * （amd64＋arm64）。GHCR 的倉庫名稱必須全小寫。
+ */
+export declare const RELAY_IMAGE_REPOSITORY = "ghcr.io/vaalrl/cinderous-relay-lite";
+/** 某個 SDK 版號對應的映像（標籤帶 `v`，與 git tag 相同） */
+export declare function relayImageRef(sdkVersion: string): string;
+/** 映像裡入口程式的標頭（`docker/relay-lite/server.mjs` 就是 `renderServerEntry` 加上這段，測試比對逐位元組相同） */
+export declare const RELAY_IMAGE_SERVER_HEADER: readonly string[];
 /** compose 發布位址的形狀（`node.bindAddress`；SDK ADR 0119）：IPv4 的四段，或只有十六進位與冒號的 IPv6（不加方括號） */
 export declare const BIND_ADDRESS_PATTERN: RegExp;
 /** 對所有網卡發布的位址 */
@@ -80,6 +89,8 @@ export declare function renderCompose(opts: {
     tunnel?: ComposeTunnelOptions;
     /** 只發布在這個位址（`composeBindAddress` 的結果）；沒給＝所有網卡。Tunnel 模式不發布埠，用不到 */
     bindAddress?: string;
+    /** 用預建映像（SDK ADR 0143），不在本機建置；沒給＝`build: .`（照舊） */
+    image?: string;
 }): string;
 export declare function renderFlyToml(opts: {
     name: string;
@@ -87,6 +98,8 @@ export declare function renderFlyToml(opts: {
     environment: Record<string, string>;
     persist: boolean;
     header?: readonly string[];
+    /** 用預建映像（SDK ADR 0143），不用 Dockerfile；沒給＝照舊以 Dockerfile 建置 */
+    image?: string;
 }): string;
 /** 橋接器容器裡設定檔的位置（唯讀掛載） */
 export declare const IOT_BRIDGE_CONFIG_PATH = "/config/iot-bridge.json";

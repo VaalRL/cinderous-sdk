@@ -61,9 +61,19 @@ export interface GroupCallManagerOptions {
   videoQuality?: VideoQuality;
   /** 含自己的人數上限，預設 `GROUP_CALL_DEFAULT_MAX`，不得超過 `GROUP_CALL_HARD_MAX` */
   maxParticipants?: number;
-  /** 被邀的人多久沒回應就標 `no-answer`（毫秒，預設 45 秒） */
+  /** 被邀的人多久沒回應就標 `no-answer`；收到邀請沒接聽的這一方也在這之後自己結束（毫秒，預設 45 秒） */
   ringTimeoutMs?: number;
+  /**
+   * 某一對加入之後多久還沒連上就當作打不通（毫秒，預設 30 秒）：offer／answer 在信令上遺失、
+   * 對方送完 join 就斷線時，ICE 會永遠停在 new，不會自己變 failed。
+   */
+  connectTimeoutMs?: number;
 }
+
+/** 連線建立前暫存的 ICE candidate，每人最多幾則（多的丟掉：正常一對只有個位數） */
+export const GROUP_CALL_MAX_PENDING_CANDIDATES = 32;
+/** 同一個人在同一通裡最多能讓我重建幾次連線（重送 offer）；超過就忽略 */
+const MAX_REOFFERS = 3;
 
 export type GroupCallState = 'idle' | 'incoming' | 'in-call' | 'ended';
 export type GroupParticipantStatus =
@@ -83,8 +93,8 @@ export interface GroupParticipant {
   /** 對方在送什麼（對方告訴我們的；還沒說之前當作語音） */
   media: CallMedia;
 }
-/** left：我離開；declined：我拒接；empty：其他人都不在了；cancelled：還沒接，邀請的人就走了 */
-export type GroupCallEndReason = 'left' | 'declined' | 'empty' | 'cancelled';
+/** left：我離開；declined：我拒接；empty：其他人都不在了；cancelled：還沒接，邀請的人就走了；no-answer：響鈴逾時我沒接 */
+export type GroupCallEndReason = 'left' | 'declined' | 'empty' | 'cancelled' | 'no-answer';
 export interface GroupIncomingCall {
   groupId: string;
   from: string;
@@ -136,6 +146,7 @@ export class GroupCallManager {
   readonly #isBusyElsewhere: () => boolean;
   readonly #max: number;
   readonly #ringTimeoutMs: number;
+  readonly #connectTimeoutMs: number;
   readonly #subscription: Subscription;
   readonly #seen = new Set<string>();
   #videoQuality: VideoQuality;
@@ -152,6 +163,21 @@ export class GroupCallManager {
   /** 還不在名單上的人送來的加入（名單更新可能晚到）：名單補上他之後重放 */
   #unknownJoins = new Map<string, GroupCallSignal>();
   #timers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** 每一對「加入了但還沒連上」的期限（H3） */
+  #connectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  #incomingTimer: ReturnType<typeof setTimeout> | null = null;
+  #reoffers = new Map<string, number>();
+  /**
+   * 每一通（以及關閉）遞增。非同步操作（取麥克風／鏡頭、建連線）在 await 前記下，回來時不同就代表這一通已經結束：
+   * 取得的裝置要關掉、不能再改狀態或送信令（H1：否則通話會「復活」、相機一直亮）。
+   */
+  #epoch = 0;
+  /** start() 正在取麥克風／鏡頭：算忙線，避免這段時間被別的邀請或第二個 start() 覆蓋 */
+  #starting = false;
+  /** 換鏡頭一次只做一個（連按時第二次要等第一次做完，否則會漏關一顆） */
+  #cameraChain: Promise<void> = Promise.resolve();
+  /** 使用者最後要的型態（開／關視訊連按時以最後一次為準） */
+  #wantedMedia: CallMedia = 'audio';
   #localStream: MediaStreamLike | null = null;
   #audio: MediaTrackLike | null = null;
   #video: MediaTrackLike | null = null;
@@ -188,6 +214,7 @@ export class GroupCallManager {
     this.#videoQuality = opts.videoQuality ?? DEFAULT_VIDEO_QUALITY;
     this.#max = max;
     this.#ringTimeoutMs = opts.ringTimeoutMs ?? 45_000;
+    this.#connectTimeoutMs = opts.connectTimeoutMs ?? 30_000;
     this.#subscription = this.#transport.subscribe([{ kinds: [CALL_SIGNAL_KIND], '#p': [this.#identity.pubkey] }], {
       onEvent: (event) => void this.#onEvent(event as NostrEvent),
     });
@@ -248,10 +275,18 @@ export class GroupCallManager {
     for (const p of others) if (!HEX64.test(p)) throw new Error(`不是合法的 pubkey：${p}`);
     if (others.length + 1 > this.#max) throw new Error(`人數超過上限 ${this.#max}（含自己）`);
     this.#reset();
+    const epoch = this.#epoch;
     this.#groupId = randomGroupId();
     this.#members = [me, ...others];
     this.#inviteMedia = media;
-    await this.#acquire(media);
+    this.#starting = true;
+    let acquired: boolean;
+    try {
+      acquired = await this.#acquire(media, epoch);
+    } finally {
+      this.#starting = false;
+    }
+    if (!acquired) throw new Error('取得麥克風／鏡頭時通話就被關掉了');
     this.#state = 'in-call';
     for (const p of others) {
       this.#parts.set(p, { pubkey: p, status: 'invited', media: 'audio' });
@@ -265,35 +300,51 @@ export class GroupCallManager {
 
   async accept(): Promise<void> {
     if (this.#state !== 'incoming' || !this.#groupId) return;
+    const epoch = this.#epoch;
+    let acquired: boolean;
     try {
-      await this.#acquire(this.#inviteMedia);
+      acquired = await this.#acquire(this.#inviteMedia, epoch);
     } catch (error) {
+      if (this.#epoch !== epoch) return;
       this.#fire('error', `無法取得麥克風／鏡頭：${String(error)}`);
       await this.reject();
       return;
     }
+    // 🔴 H1：等權限的時候對方取消了、或我拒接了 ⇒ 裝置已在 #acquire 關掉，不能復活這一通
+    if (!acquired || this.#state !== 'incoming') return;
+    this.#clearIncomingTimer();
     this.#state = 'in-call';
     this.#fire('state', this.#state);
     const me = this.#identity.pubkey;
     for (const [p, part] of this.#parts) if (part.status === 'invited') this.#startRing(p);
-    for (const p of this.#members) if (p !== me) await this.#send(p, { type: 'group-join', members: this.#members });
+    // 已在通話裡的人：開始計連線期限（我較大的那幾位要等對方的 offer，也可能永遠等不到）
+    for (const [p, part] of this.#parts) if (part.status === 'joined') this.#armConnect(p);
+    for (const p of this.#members) {
+      if (p !== me) await this.#send(p, { type: 'group-join', members: this.#members });
+      if (this.#epoch !== epoch) return;
+    }
     // 已知在通話裡的人（至少有邀請者）：我較小就由我發 offer；我較大的，對方收到我的 join 會發
-    for (const [p, part] of this.#parts) if (part.status === 'joined' && me < p && !this.#legs.has(p)) await this.#offerTo(p);
+    for (const [p, part] of this.#parts) {
+      if (part.status === 'joined' && me < p && !this.#legs.has(p)) await this.#offerTo(p);
+      if (this.#epoch !== epoch) return;
+    }
     this.#emitParticipants();
   }
 
   async reject(): Promise<void> {
     if (this.#state !== 'incoming') return;
     const me = this.#identity.pubkey;
-    for (const p of this.#members) if (p !== me) await this.#send(p, { type: 'group-decline', reason: 'declined' }).catch(() => {});
+    const notify = this.#members.filter((p) => p !== me);
     this.#end('declined');
+    for (const p of notify) await this.#send(p, { type: 'group-decline', reason: 'declined' }).catch(() => {});
   }
 
   async leave(): Promise<void> {
     if (this.#state === 'incoming') return this.reject();
     if (this.#state !== 'in-call') return;
-    for (const [p, part] of this.#parts) if (ALIVE.has(part.status)) await this.#send(p, { type: 'group-leave' }).catch(() => {});
+    const notify = [...this.#parts].filter(([, part]) => ALIVE.has(part.status)).map(([p]) => p);
     this.#end('left');
+    for (const p of notify) await this.#send(p, { type: 'group-leave' }).catch(() => {});
   }
 
   /** 通話中再邀一位（任何已加入的人都可以）；名單變動會告訴其他人 */
@@ -314,18 +365,30 @@ export class GroupCallManager {
 
   /** 改自己這一方送什麼：對每一條連線都生效；先把相機換好，成功了才通知大家 */
   async setLocalMedia(media: CallMedia): Promise<void> {
-    if (this.#state !== 'in-call' || this.#localMedia === media) return;
+    if (this.#state !== 'in-call' || this.#wantedMedia === media) return;
+    this.#wantedMedia = media;
     if (media === 'video') {
+      const epoch = this.#epoch;
       let track: MediaTrackLike;
       try {
         track = await this.#openCamera();
       } catch (error) {
-        this.#fire('error', `無法開啟視訊：${String(error)}`);
+        if (this.#epoch === epoch && this.#wantedMedia === 'video') {
+          this.#wantedMedia = this.#localMedia;
+          this.#fire('error', `無法開啟視訊：${String(error)}`);
+        }
         return;
       }
-      await this.#putVideoOnAllLegs(track);
+      // 🔴 H1：鏡頭開好時通話已結束、使用者又按了關、或另一次開啟已先完成 ⇒ 關掉這顆，不送
+      if (this.#epoch !== epoch || this.#wantedMedia !== 'video' || this.#video) {
+        track.stop();
+        return;
+      }
+      // M9：先記下，await 期間新建的連線（#offerTo／#answer）才拿得到這顆鏡頭
       this.#video = track;
       this.#replaceLocalTrack(track, null);
+      await this.#putVideoOnAllLegs(track);
+      if (this.#epoch !== epoch) return; // #end 已經關了 #video
       this.#applyVideoQuality();
     } else {
       this.#dropVideo();
@@ -349,15 +412,26 @@ export class GroupCallManager {
    * 🔴 遇到「鏡頭忙碌」（多數手機同時只能開一顆）就先停舊的再開。新的開不了就重開原本那顆；
    * 連原本的都開不了就降成語音並通知大家，不送一條死掉的軌（Cinderous ADR-0424）。
    */
-  async setCamera(selection: CameraSelection): Promise<void> {
+  setCamera(selection: CameraSelection): Promise<void> {
+    // 🔴 一次只換一個：連按兩次時，第二次以第一次換好的那顆為「舊的」，不會漏關
+    const run = this.#cameraChain.then(() => this.#swapCamera(selection));
+    this.#cameraChain = run.catch(() => {});
+    return run;
+  }
+
+  async #swapCamera(selection: CameraSelection): Promise<void> {
     const previous = this.#camera;
     this.#camera = selection;
     const old = this.#video;
     if (!old || this.#state !== 'in-call') return;
+    const epoch = this.#epoch;
+    // 開好時這一通已結束、或視訊已被關掉／換掉 ⇒ 這顆不要了
+    const stale = () => this.#epoch !== epoch || this.#video !== old;
     let track: MediaTrackLike;
     try {
       track = await this.#openCamera();
     } catch (error) {
+      if (stale()) return;
       if (!isCameraBusy(error)) {
         this.#camera = previous;
         this.#fire('error', `無法切換鏡頭：${String(error)}`);
@@ -367,22 +441,30 @@ export class GroupCallManager {
       try {
         track = await this.#openCamera();
       } catch (retryError) {
+        if (stale()) return;
         this.#fire('error', `無法切換鏡頭：${String(retryError)}`);
         this.#camera = previous;
         try {
           track = await this.#openCamera();
         } catch {
+          if (stale()) return;
           this.#dropVideo();
           this.#localMedia = 'audio';
+          this.#wantedMedia = 'audio';
           await this.#broadcastMedia();
           return;
         }
       }
     }
-    await this.#putVideoOnAllLegs(track);
-    old.stop();
+    if (stale()) {
+      track.stop();
+      return;
+    }
     this.#video = track;
     this.#replaceLocalTrack(track, old);
+    await this.#putVideoOnAllLegs(track);
+    old.stop();
+    if (this.#epoch !== epoch) return;
     this.#applyVideoQuality();
   }
 
@@ -394,6 +476,7 @@ export class GroupCallManager {
   close(): void {
     if (this.#closed) return;
     this.#closed = true;
+    this.#epoch++;
     this.#subscription.close();
     if (this.#state === 'in-call' || this.#state === 'incoming') this.#end(this.#state === 'incoming' ? 'declined' : 'left');
   }
@@ -415,7 +498,7 @@ export class GroupCallManager {
   }
 
   #busy(): boolean {
-    return this.#state === 'incoming' || this.#state === 'in-call';
+    return this.#starting || this.#state === 'incoming' || this.#state === 'in-call';
   }
 
   async #send(peer: string, body: Record<string, unknown>): Promise<void> {
@@ -477,6 +560,12 @@ export class GroupCallManager {
         this.#parts.set(p, { pubkey: p, status: p === sender ? 'joined' : 'invited', media: p === sender ? sig.media : 'audio' });
       }
       this.#state = 'incoming';
+      const epoch = this.#epoch;
+      // M4：一直不接就自己結束，不會永遠佔著忙線（邀請方同一時間也會把我標成 no-answer）
+      this.#incomingTimer = setTimeout(() => {
+        this.#incomingTimer = null;
+        if (this.#epoch === epoch && this.#state === 'incoming') this.#end('no-answer');
+      }, this.#ringTimeoutMs);
       this.#fire('incoming', { groupId: sig.groupId, from: sender, members: [...sig.members], media: sig.media });
       this.#fire('state', this.#state);
       this.#emitParticipants();
@@ -484,7 +573,7 @@ export class GroupCallManager {
     }
     if (sig.groupId !== this.#groupId || !this.#busy()) return;
     if (!this.#members.includes(sender)) {
-      if (sig.type === 'group-join') this.#unknownJoins.set(sender, sig);
+      if (sig.type === 'group-join' && (this.#unknownJoins.has(sender) || this.#unknownJoins.size < this.#max)) this.#unknownJoins.set(sender, sig);
       return;
     }
     const part = this.#parts.get(sender);
@@ -495,6 +584,7 @@ export class GroupCallManager {
         if (part.status !== 'connecting' && part.status !== 'connected') part.status = 'joined';
         this.#mergeMembers(sig.members);
         if (this.#state === 'in-call' && !this.#legs.has(sender)) {
+          this.#armConnect(sender);
           if (me < sender) await this.#offerTo(sender);
           else if (!sig.ack) await this.#send(sender, { type: 'group-join', members: this.#members, ack: true });
         }
@@ -526,21 +616,37 @@ export class GroupCallManager {
           this.#checkEnd();
         }
         return;
-      case 'group-offer':
+      case 'group-offer': {
         if (this.#state !== 'in-call') return;
-        if (this.#legs.has(sender)) {
-          if (me < sender) return; // 這一對該由我發 offer：對方的忽略
+        // M1：這一對該由字典序小的發 offer——我比較小就不收；已拒接、離開、失敗的人也不能靠 offer 復活。
+        // 「invited」要收：中途加入的人眼中，已在通話裡的人只是名單上的「invited」（他們直接發 offer，不另送 join）
+        if (me < sender) return;
+        if (!ALIVE.has(part.status)) return;
+        const existing = this.#legs.get(sender);
+        if (existing) {
+          // M2：已連上的不讓對方隨便重建；重建次數有上限
+          if (existing.pc.connectionState === 'connected') return;
+          const n = (this.#reoffers.get(sender) ?? 0) + 1;
+          if (n > MAX_REOFFERS) return;
+          this.#reoffers.set(sender, n);
           this.#closeLeg(sender);
         }
         part.media = sig.media;
         await this.#answer(sender, sig.sdp);
         return;
+      }
       case 'group-answer': {
         const leg = this.#legs.get(sender);
         if (!leg || leg.hasRemote) return;
         part.media = sig.media;
-        await leg.pc.setRemoteDescription({ type: 'answer', sdp: sig.sdp });
-        leg.hasRemote = true;
+        leg.hasRemote = true; // 先標起來：await 期間重送的同一個 answer 不會再套一次
+        try {
+          await leg.pc.setRemoteDescription({ type: 'answer', sdp: sig.sdp });
+        } catch (error) {
+          this.#legFailed(sender, leg, error);
+          return;
+        }
+        if (this.#legs.get(sender) !== leg) return;
         await this.#flushCandidates(sender, leg);
         this.#emitParticipants();
         return;
@@ -549,7 +655,10 @@ export class GroupCallManager {
         const candidate = { candidate: sig.candidate, sdpMid: sig.sdpMid ?? null, sdpMLineIndex: sig.sdpMLineIndex ?? null };
         const leg = this.#legs.get(sender);
         if (leg?.hasRemote) await leg.pc.addIceCandidate(candidate).catch(() => {});
-        else this.#pending.set(sender, [...(this.#pending.get(sender) ?? []), candidate]);
+        else {
+          const queued = this.#pending.get(sender) ?? [];
+          if (queued.length < GROUP_CALL_MAX_PENDING_CANDIDATES) this.#pending.set(sender, [...queued, candidate]);
+        }
         return;
       }
       case 'group-media':
@@ -661,6 +770,7 @@ export class GroupCallManager {
       const part = this.#parts.get(peer);
       if (pc.connectionState === 'connected') {
         leg.everConnected = true;
+        this.#clearConnect(peer);
         if (part) part.status = 'connected';
         this.#emitParticipants();
       } else if (pc.connectionState === 'failed') {
@@ -675,11 +785,65 @@ export class GroupCallManager {
     this.#legs.set(peer, leg);
     const part = this.#parts.get(peer);
     if (part) part.status = 'connecting';
+    this.#armConnect(peer);
     return leg;
+  }
+
+  /** H3：這一對在期限內沒連上就當作打不通（ICE 停在 new 時不會自己變 failed） */
+  #armConnect(peer: string): void {
+    this.#clearConnect(peer);
+    const epoch = this.#epoch;
+    this.#connectTimers.set(
+      peer,
+      setTimeout(() => {
+        this.#connectTimers.delete(peer);
+        if (this.#epoch !== epoch || this.#state !== 'in-call') return;
+        const part = this.#parts.get(peer);
+        if (!part || (part.status !== 'joined' && part.status !== 'connecting')) return;
+        const leg = this.#legs.get(peer);
+        this.#closeLeg(peer);
+        part.status = 'failed';
+        this.#fire('peerFailed', peer, leg?.everConnected ? 'lost' : 'unreachable');
+        this.#emitParticipants();
+        this.#checkEnd();
+      }, this.#connectTimeoutMs),
+    );
+  }
+
+  #clearConnect(peer: string): void {
+    const t = this.#connectTimers.get(peer);
+    if (t) clearTimeout(t);
+    this.#connectTimers.delete(peer);
+  }
+
+  #clearIncomingTimer(): void {
+    if (this.#incomingTimer) clearTimeout(this.#incomingTimer);
+    this.#incomingTimer = null;
+  }
+
+  /** H2：建這一對的連線時任何一步失敗：清乾淨、標 failed、通知；不讓他永遠卡在 connecting */
+  #legFailed(peer: string, leg: Leg, error: unknown): void {
+    if (this.#legs.get(peer) !== leg) return; // 已被換掉或這一通已結束
+    this.#closeLeg(peer);
+    this.#clearConnect(peer);
+    const part = this.#parts.get(peer);
+    if (part) part.status = 'failed';
+    this.#fire('error', `和 ${peer.slice(0, 8)} 建立連線失敗：${String(error)}`);
+    this.#fire('peerFailed', peer, 'unreachable');
+    this.#emitParticipants();
+    this.#checkEnd();
   }
 
   async #offerTo(peer: string): Promise<void> {
     const leg = this.#newLeg(peer);
+    try {
+      await this.#doOffer(peer, leg);
+    } catch (error) {
+      this.#legFailed(peer, leg, error);
+    }
+  }
+
+  async #doOffer(peer: string, leg: Leg): Promise<void> {
     const { pc } = leg;
     const stream = this.#localStream ?? this.#createStream([]);
     if (this.#audio) pc.addTrack(this.#audio, stream);
@@ -697,6 +861,7 @@ export class GroupCallManager {
     }
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
+    if (this.#legs.get(peer) !== leg) return;
     this.#applyVideoQuality();
     await this.#send(peer, { type: 'group-offer', sdp: offer.sdp ?? '', media: this.#localMedia });
     this.#emitParticipants();
@@ -704,8 +869,17 @@ export class GroupCallManager {
 
   async #answer(peer: string, sdp: string): Promise<void> {
     const leg = this.#newLeg(peer);
+    try {
+      await this.#doAnswer(peer, leg, sdp);
+    } catch (error) {
+      this.#legFailed(peer, leg, error);
+    }
+  }
+
+  async #doAnswer(peer: string, leg: Leg, sdp: string): Promise<void> {
     const { pc } = leg;
     await pc.setRemoteDescription({ type: 'offer', sdp });
+    if (this.#legs.get(peer) !== leg) return;
     const stream = this.#localStream ?? this.#createStream([]);
     const transceivers = pc.getTransceivers?.();
     if (transceivers) {
@@ -725,6 +899,7 @@ export class GroupCallManager {
     await this.#flushCandidates(peer, leg);
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
+    if (this.#legs.get(peer) !== leg) return;
     this.#applyVideoQuality();
     await this.#send(peer, { type: 'group-answer', sdp: answer.sdp ?? '', media: this.#localMedia });
     this.#emitParticipants();
@@ -749,19 +924,26 @@ export class GroupCallManager {
   }
 
   // ── 本地媒體 ─────────────────────────────────────────────────────────────
-  async #acquire(media: CallMedia): Promise<void> {
+  /** 取麥克風（與鏡頭）。回來時這一通已結束或已關閉 ⇒ 全部關掉、回 false（H1） */
+  async #acquire(media: CallMedia, epoch: number): Promise<boolean> {
     const stream = await this.#getUserMedia({
       audio: true,
       // 不是裸 true（Cinderous ADR-0337）：網狀拓撲每人上傳 N−1 份，畫質上限更要守住
       video: media === 'video' ? videoConstraints(this.#videoQuality, this.#camera) : false,
     });
     const tracks = stream.getTracks();
+    if (this.#epoch !== epoch || this.#closed) {
+      for (const t of tracks) t.stop();
+      return false;
+    }
     this.#audio = tracks.find((t) => t.kind === 'audio') ?? null;
     this.#video = tracks.find((t) => t.kind === 'video') ?? null;
     if (this.#audio) this.#audio.enabled = !this.#muted;
     this.#localMedia = this.#video ? 'video' : 'audio';
+    this.#wantedMedia = this.#localMedia;
     this.#localStream = this.#createStream(tracks);
     this.#fire('localStream', this.#localStream);
+    return true;
   }
 
   async #openCamera(): Promise<MediaTrackLike> {
@@ -827,9 +1009,9 @@ export class GroupCallManager {
 
   // ── 收尾 ─────────────────────────────────────────────────────────────────
   #end(reason: GroupCallEndReason): void {
+    this.#epoch++;
     for (const peer of [...this.#legs.keys()]) this.#closeLeg(peer);
-    for (const t of this.#timers.values()) clearTimeout(t);
-    this.#timers.clear();
+    this.#clearAllTimers();
     if (this.#localStream) for (const track of this.#localStream.getTracks()) track.stop();
     this.#audio?.stop();
     this.#video?.stop();
@@ -842,9 +1024,19 @@ export class GroupCallManager {
     this.#fire('state', this.#state);
   }
 
-  #reset(): void {
+  #clearAllTimers(): void {
     for (const t of this.#timers.values()) clearTimeout(t);
     this.#timers.clear();
+    for (const t of this.#connectTimers.values()) clearTimeout(t);
+    this.#connectTimers.clear();
+    this.#clearIncomingTimer();
+  }
+
+  #reset(): void {
+    this.#epoch++;
+    this.#clearAllTimers();
+    this.#reoffers = new Map();
+    this.#wantedMedia = 'audio';
     this.#parts = new Map();
     this.#legs = new Map();
     this.#pending = new Map();

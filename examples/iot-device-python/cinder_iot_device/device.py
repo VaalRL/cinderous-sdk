@@ -55,6 +55,7 @@ class DeviceRunner:
         self._ws: Optional[ClientConnection] = None
         self._stop = asyncio.Event()
         self._hb_ack = asyncio.Event()
+        self._connected = False
 
     # ── 對外 ──
     async def publish_state(self, state: StateInput, will: Optional[bool] = None) -> bool:
@@ -79,10 +80,12 @@ class DeviceRunner:
         while not self._stop.is_set():
             url = self.urls[index]
             self._emit(LinkEvent("connecting", url))
+            self._connected = False
             outcome = await self._session(url)
             if self._stop.is_set():
                 break
-            attempt = attempt + 1 if outcome.cls == last_class else 0
+            # 這次有連上過 ⇒ 從頭退避（連上之後才斷，不算「連續失敗」）
+            attempt = attempt + 1 if outcome.cls == last_class and not self._connected else 0
             last_class = outcome.cls
             if outcome.cls in ("quota-exhausted", "relay-error", "config-error") and len(self.urls) > 1:
                 index = (index + 1) % len(self.urls)
@@ -128,6 +131,7 @@ class DeviceRunner:
         except (OSError, asyncio.TimeoutError, InvalidHandshake):
             return Disconnect("network-down")
         self._ws = ws
+        self._connected = True
         self._emit(LinkEvent("connected", url))
         heartbeat = asyncio.create_task(self._heartbeat(ws))
         try:

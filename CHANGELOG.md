@@ -4,6 +4,23 @@ Releases are git tags; install one with `npm install github:VaalRL/cinderous-sdk
 
 每個版本是一個 git tag，安裝方式是 `npm install github:VaalRL/cinderous-sdk#vX.Y.Z`。每一版列出那一版的改動（取自 commit 紀錄）；每項改動的理由寫在它引用的 ADR 裡（[docs/adr/](docs/adr/README.md)）。
 
+## v0.92.0 — 2026-11-24
+
+- docs: README 只留各入口的摘要表（英文 822→392 行），各版功能細節與升級須知搬到 `docs/guides/features.md`／`features.zh-TW.md`（說明網站側欄「各版功能說明」）；安裝指令改釘 `#v0.92.0`，新增測試讓 README 的安裝 tag 必須等於 package.json 版號
+- feat(site): 網頁部署設定器（說明網站 `/configurator`、`/zh-TW/configurator`）：依 `DEPLOY_OPTION_SPECS` 產生表單，與 `cinderous init` 精靈同一套驗證與危險選項打字確認；在瀏覽器內產出 `cinderous.config.json`、zip 部署包（SDK 以 `github:VaalRL/cinderous-sdk#v<版號>` 相依引用；Worker 可選自帶中繼）與一行 `relay build` 指令，附成本試算。不部署、不收秘密（只收環境變數名稱）、不發任何網路請求、選擇不進網址。換部署目標時保留新目標也有的欄位（`webSwitchTarget`，危險選項須已確認才帶過去）。物件型別欄位（`site.donations`、`site.doCeilings` 等六個）與推播閘道要下載設定檔後手改（ADR 0142）
+- feat(deploy): `@cinderous/client/deploy` 新增不壓縮的 zip 產生器（CRC-32，無新相依，拒絕 zip slip 路徑），`./deploy/config` 新增網頁設定器的純函式模型（ADR 0142）
+- feat(deploy): Node 中繼容器映像 `ghcr.io/vaalrl/cinderous-relay-lite`，自本版起由公開 repo 推 tag 時建置 amd64＋arm64（非 root、`/data` volume、預設 8080、`/healthz`、OCI 標籤、provenance 與 SBOM）。`relay build` 新增 `--image`（docker／home-tunnel／fly 部署包改用映像，不附 Dockerfile 與 `sdk/`）與 `--image-ref <映像>`；預設仍是自建，既有產出不變（ADR 0143）
+- chore: `yaml` 改為明確的開發相依（映像 workflow 測試用）
+- fix(deploy): 映像的入口以 root 啟動、把資料目錄的擁有者修給 node 後才降權載入中繼——自建版留下的、或 Fly 掛上的 root volume，換成映像後保存模式也寫得進去；以 `--user` 非 root 啟動時不做事（ADR 0143 修訂）
+- fix(deploy): `relay build` 拒絕清單（`.cinderous-generated`）裡指到輸出目錄外的路徑，別人給的部署包不能讓重新產生刪到目錄外的檔案（與 zip 檔名共用 `isSafeRelativePath`）
+- ci: 映像 workflow 的 QEMU／BuildKit 容器映像釘 digest、checkout 不留權杖；`latest` 只在推的是最大正式版時移動（`scripts/image-latest.mjs`）；冒煙測試加驗中繼的 uid 與舊 root volume＋`PERSIST=1`
+- test(site): 檢查網頁設定器元件的 script 沒有未宣告的名稱（審查發現 `webSwitchTarget` 漏匯入，換目標實際沒有作用）
+- fix(call): 群組通話——取麥克風／鏡頭、換鏡頭、建連線晚回來時這一通已結束，不再讓通話復活、相機一直亮（H1）；建連線失敗清乾淨並標 failed（H2）；新選項 `connectTimeoutMs`（預設 30 秒）讓卡在 new 的那一對逾時（H3）；收端強制「字典序小的發 offer」、已離開的人不能靠 offer 復活、重建次數上限；收到邀請不接會在 `ringTimeoutMs` 後自己結束（新結束原因 `no-answer`）；暫存 candidate 每人上限 `GROUP_CALL_MAX_PENDING_CANDIDATES`（ADR 0141 審查修正）
+- fix(call): 一對一 `CallManager`——接聽或開視訊時等權限期間通話結束或又按了關，關掉剛取得的裝置、不通知對方；答方把鏡頭放上連線失敗時關掉鏡頭（ADR 0141 審查修正）
+- fix(iot): 設備重連等待時間上限 `IOT_DEVICE_MAX_RETRY_MS`（25 小時）、relay-error 的 Retry-After 最多 60 分鐘，惡意 relay 不能讓設備睡好幾年；attempt／random 非有限數不再回 NaN（ADR 0140 審查修正；向量新增 4 筆）
+- fix(iot): Python 參考設備 `ClockGuard.keep_synced()` 定期重新同步時鐘（原本 24 小時後所有指令都被拒）；連上過才斷的退避從頭算；分類正規式加 `re.ASCII`（ADR 0140 審查修正）
+- fix(relay): C′ 的 up 幀改成每台設備「看過沒」去重（`IotReplayGuard`），不再嚴格遞增——relay 驗不了信封，偽造的大 ctr 會把真的設備永遠擋在外面（ADR 0138 審查修正）
+
 ## v0.91.0 — 2026-11-18
 
 - feat(call): 網狀小群組通話 `GroupCallManager`：每人直連每人，預設上限 4 人（`GROUP_CALL_DEFAULT_MAX`），硬上限 6（`GROUP_CALL_HARD_MAX`）；信令同一對一走 NIP-59（kind 21002），逐人封裝，內容帶 `v`＋`groupId`；每對由 pubkey 字典序較小者發 offer（`groupCallOfferer`），不會 glare；某一條連線失敗只影響那一對（`onPeerFailed`）；鏡頭忙碌時先停舊軌再開新軌。舊版的 `parseCallSignal` 會忽略群組信令。一對一線上格式不變。`@cinderous/client/protocol` 新增 `parseGroupCallSignal` 等（ADR 0141）

@@ -2,10 +2,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { CallManager } from '../../src/call/call-manager.js';
-import { GroupCallManager, type GroupCallManagerOptions } from '../../src/call/group-call.js';
+import { GROUP_CALL_MAX_PENDING_CANDIDATES, GroupCallManager, type GroupCallManagerOptions } from '../../src/call/group-call.js';
 import type { MediaStreamLike } from '../../src/call/media.js';
 import { Identity } from '../../src/identity.js';
 import { generateSecretKey, nsecEncode } from '../../src/protocol/index.js';
+import { CALL_SIGNAL_KIND } from '../../src/protocol/call.js';
 import { FakeTransport } from '../fake-transport.js';
 import { createStream, RealisticMedia, RealisticNetwork, type RTrack } from './realistic-rtc.js';
 
@@ -274,4 +275,166 @@ describe('網狀小群組通話', () => {
     await until(() => ended.length > 0);
     expect(ended).toEqual(['busy']);
   });
+});
+
+// ── 程式碼審查（2026-11-18）發現的問題 ───────────────────────────────────────
+/** 以 `from` 的身分直接送一則群組信令給 `to`（模擬惡意或錯誤的對端） */
+async function rawSignal(w: ReturnType<typeof world>, from: Person, to: Person, signal: Record<string, unknown>) {
+  const event = from.id.sealAndWrap(
+    { kind: CALL_SIGNAL_KIND, created_at: Math.floor(Date.now() / 1000), tags: [], content: JSON.stringify({ v: 1, ...signal }) },
+    to.pk,
+    { kind: CALL_SIGNAL_KIND, tags: [['p', to.pk]] },
+  );
+  await w.transport.publish(event);
+}
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+describe('審查修正：非同步操作晚回來、連線卡住、惡意對端', () => {
+  it('🔴 H1 接聽時還在等權限，對方就取消了：權限回來後不復活、麥克風與鏡頭都關掉、不送 join', async () => {
+    const w = world();
+    const a = w.person();
+    const b = w.person();
+    await a.m.start([b.pk], 'video');
+    await until(() => b.incoming.length > 0);
+    b.media.holdPermission();
+    const accepting = b.m.accept();
+    await a.m.leave();
+    await until(() => b.m.state === 'ended');
+    b.media.release();
+    await accepting;
+    expect(b.m.state).toBe('ended');
+    expect(b.media.liveDevices()).toBe(0);
+    expect(b.local.at(-1) ?? null).toBeNull();
+  });
+
+  it('🔴 H1 開通話時還在等權限就 close()：取得的裝置全部關掉，start 失敗', async () => {
+    const w = world();
+    const a = w.person();
+    const b = w.person();
+    a.media.holdPermission();
+    const starting = a.m.start([b.pk], 'video');
+    a.m.close();
+    a.media.release();
+    await expect(starting).rejects.toThrow();
+    expect(a.media.liveDevices()).toBe(0);
+    expect(b.incoming).toHaveLength(0);
+  });
+
+  it('🔴 H1 通話中開視訊、鏡頭還在開時通話就結束了：鏡頭不能留著亮', async () => {
+    const w = world();
+    const a = w.person();
+    const b = w.person();
+    await a.m.start([b.pk], 'audio');
+    await until(() => b.incoming.length > 0);
+    await b.m.accept();
+    await until(() => w.status(a, b) === 'connected');
+    a.media.holdPermission();
+    const opening = a.m.setLocalMedia('video');
+    await b.m.leave();
+    await until(() => a.m.state === 'ended');
+    a.media.release();
+    await opening;
+    expect(a.media.liveDevices()).toBe(0);
+    expect(a.m.state).toBe('ended');
+  });
+
+  it('🔴 H1 連按兩次換鏡頭：最後只有一顆鏡頭開著、本地預覽就是送出去的那一顆', async () => {
+    const w = world();
+    const { a, b } = await threeWay(w, 'video');
+    const first = a.m.setCamera({ facingMode: 'environment' });
+    const second = a.m.setCamera({ facingMode: 'user' });
+    await Promise.all([first, second]);
+    expect(a.media.liveCameras()).toBe(1);
+    const live = a.media.cameras.filter((c) => !c.stopped)[0]!;
+    expect(a.local.at(-1)?.getVideoTracks()).toEqual([live]);
+    const sent = w.network.between(a.pk, b.pk)!.transceivers.find((t) => t.kind === 'video' && t.mid != null)!.sender.track;
+    expect(sent).toBe(live);
+  });
+
+  it('🔴 H2 對方的 offer 套不上（壞 SDP）：這一對清乾淨、標 failed 並通知，不會永遠卡在 connecting', async () => {
+    const w = world();
+    const a = w.person();
+    const b = w.person();
+    const [small, big] = a.pk < b.pk ? [a, b] : [b, a];
+    w.network.rejectOffersAt.add(big.pk); // 小的發 offer、大的套不上
+    await a.m.start([b.pk], 'audio');
+    await until(() => b.incoming.length > 0);
+    await b.m.accept();
+    await until(() => w.status(big, small) === 'failed');
+    expect(big.failed).toEqual([[small.pk, 'unreachable']]);
+    expect(w.network.created.filter((pc) => pc.owner === big.pk && !pc.closed)).toHaveLength(0);
+  });
+
+  it('🔴 H3 有人送完 join 就沒下文（ICE 一直停在 new）：連線逾時後標 failed，只剩自己時通話結束', async () => {
+    const w = world({ connectTimeoutMs: 300 });
+    const a = w.person();
+    const b = w.person();
+    w.network.stalled.add([a.pk, b.pk].sort().join('|'));
+    await a.m.start([b.pk], 'audio');
+    await until(() => b.incoming.length > 0);
+    await b.m.accept();
+    await until(() => a.m.state === 'ended' && b.m.state === 'ended', 3_000);
+    expect(a.failed).toEqual([[b.pk, 'unreachable']]);
+    expect(a.ended).toEqual(['empty']);
+    expect(a.media.liveDevices() + b.media.liveDevices()).toBe(0);
+  });
+
+  it('🔴 H3 三人中有一對卡住：只有那一對逾時，其他人照常', async () => {
+    // 期限要比「整套測試同時跑時」正常連上的時間長（NIP-59 封裝在負載下很慢）
+    const w = world({ connectTimeoutMs: 2_000, ringTimeoutMs: 30_000 });
+    const a = w.person();
+    const b = w.person();
+    const c = w.person();
+    w.network.stalled.add([b.pk, c.pk].sort().join('|'));
+    await a.m.start([b.pk, c.pk], 'audio');
+    await until(() => b.incoming.length > 0 && c.incoming.length > 0);
+    await b.m.accept();
+    await c.m.accept();
+    await until(() => w.status(b, c) === 'failed' && w.status(c, b) === 'failed', 8_000);
+    expect(w.status(a, b)).toBe('connected');
+    expect(w.status(a, c)).toBe('connected');
+    expect(a.m.state).toBe('in-call');
+  }, 15_000);
+
+  it('M1 該由我發 offer 的人送來 offer、或已經離開的人送 offer：忽略，不建連線、不讓他復活', async () => {
+    const w = world();
+    const { a, b, c } = await threeWay(w, 'audio');
+    const before = w.network.created.length;
+    const [small, big] = a.pk < b.pk ? [a, b] : [b, a];
+    // big 不該對 small 發 offer：small 收到要忽略
+    await rawSignal(w, big, small, { groupId: small.m.groupId, type: 'group-offer', sdp: 'rtc:none', media: 'audio' });
+    await c.m.leave();
+    await until(() => w.status(a, c) === 'left');
+    // 已離開的 c 送 offer 給 a：忽略
+    await rawSignal(w, c, a, { groupId: a.m.groupId, type: 'group-offer', sdp: 'rtc:none', media: 'audio' });
+    await sleep(50);
+    expect(w.network.created.length).toBe(before);
+    expect(w.status(a, c)).toBe('left');
+    expect(w.status(small, big)).toBe('connected');
+  });
+
+  it('M4 收到邀請一直不接：響鈴逾時後自己結束（no-answer），不會永遠佔著忙線', async () => {
+    const w = world();
+    const a = w.person();
+    const b = w.person();
+    await a.m.start([b.pk], 'audio');
+    await until(() => b.incoming.length > 0);
+    await until(() => b.m.state === 'ended', 3_000);
+    expect(b.ended).toEqual(['no-answer']);
+    expect(b.media.calls).toHaveLength(0);
+  });
+
+  it('M7 沒有連線前收到一大堆 candidate：只留上限內的', async () => {
+    const w = world({ ringTimeoutMs: 60_000 }); // 送 80 則封裝信令很久：別讓響鈴先逾時（M4）
+    const a = w.person();
+    const b = w.person();
+    const [small, big] = a.pk < b.pk ? [a, b] : [b, a];
+    await small.m.start([big.pk], 'audio');
+    await until(() => big.incoming.length > 0);
+    for (let i = 0; i < 80; i++) await rawSignal(w, small, big, { groupId: big.m.groupId, type: 'group-candidate', candidate: `candidate:${i}` });
+    await big.m.accept();
+    await until(() => w.status(big, small) === 'connected');
+    const pc = w.network.between(big.pk, small.pk)!;
+    expect(pc.iceCandidatesAdded).toBeLessThanOrEqual(GROUP_CALL_MAX_PENDING_CANDIDATES + 2);
+  }, 30_000);
 });

@@ -232,6 +232,11 @@ function backoffSection() {
     { name: 'relay-error 的 Retry-After 比退避短', disconnect: { class: 'relay-error', retryAfterSec: 1 }, ctx: ctx(6, 0.5) },
     { name: 'random 夾到 [0, 1)', disconnect: { class: 'network-down' }, ctx: ctx(3, 1.5) },
     { name: 'random 負數夾到 0', disconnect: { class: 'network-down' }, ctx: ctx(3, -1) },
+    // 程式碼審查 2026-11-18：上限（任何類別 ≤ 25 小時；relay-error 的 Retry-After ≤ 60 分鐘）
+    { name: '額度 reset 在 30 天後：夾到 25 小時', disconnect: { class: 'quota-exhausted', reset: NOW + 30 * 86_400 }, ctx: ctx(0, 0.5) },
+    { name: '額度 reset 是 2^53−1：夾到 25 小時', disconnect: { class: 'quota-exhausted', reset: Number.MAX_SAFE_INTEGER }, ctx: ctx(0, 0.999999) },
+    { name: '額度 reset 在 24 小時後＋最大抖動：不受上限影響', disconnect: { class: 'quota-exhausted', reset: NOW + 86_400 }, ctx: ctx(0, 0.999999) },
+    { name: 'relay-error 的 Retry-After 很大：夾到 60 分鐘', disconnect: { class: 'relay-error', retryAfterSec: 9_999_999_999 }, ctx: ctx(0, 0.5) },
   );
   return {
     classify: observations.map((c) => ({ ...c, nowSec: NOW, expect: classifyIotDeviceDisconnect(c.observation, NOW) })),

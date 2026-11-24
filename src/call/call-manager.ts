@@ -194,8 +194,10 @@ export class CallManager {
     const actions = this.#session.setLocalMedia(media);
     if (actions.length === 0) return;
     try {
-      if (media === 'video') await this.#attachVideo();
-      else this.#detachVideo();
+      if (media === 'video') {
+        // 鏡頭開好時已經不需要了（又按了關、或通話結束）：不送「我開視訊了」
+        if (!(await this.#attachVideo())) return;
+      } else this.#detachVideo();
     } catch (error) {
       if (previous) this.#session.setLocalMedia(previous); // 回滾，而且不送任何信令
       this.#fire('error', `無法開啟視訊：${String(error)}`);
@@ -358,26 +360,42 @@ export class CallManager {
     return pc.getSenders().find((s) => s.track?.kind === 'video') ?? null;
   }
 
-  async #attachVideo(): Promise<void> {
+  /**
+   * 開鏡頭放上視訊 sender。回 false＝開好時已經不需要了（這一通結束、或使用者又改回語音）：鏡頭已關，不要通知對方。
+   * 🔴 程式碼審查 2026-11-18：等鏡頭的期間通話結束或改回語音，原本會把鏡頭放上去、一直亮著。
+   */
+  async #attachVideo(): Promise<boolean> {
+    const pc = this.#pc;
     const sender = this.#videoSender();
     if (!sender) throw new Error('這通沒有可用的視訊軌道');
     const stream = await this.#getUserMedia({ audio: false, video: videoConstraints(this.#videoQuality) });
     const track = stream.getVideoTracks()[0];
     if (!track) throw new Error('取不到視訊軌');
+    const stale = () => this.#pc !== pc || this.#session.localMedia !== 'video';
+    if (stale()) {
+      track.stop();
+      return false;
+    }
     try {
       await sender.replaceTrack(track);
     } catch (error) {
       track.stop(); // 取到之後失敗一定要停掉：不然相機一直亮著
       throw error;
     }
+    if (stale()) {
+      track.stop();
+      void sender.replaceTrack(null).catch(() => {});
+      return false;
+    }
     this.#replaceLocalTrack(track, null);
     this.#applyVideoQuality();
+    return true;
   }
 
   #detachVideo(): void {
     const sender = this.#videoSender();
     const track = sender?.track ?? null;
-    void sender?.replaceTrack(null);
+    void sender?.replaceTrack(null).catch(() => {}); // 連線已關時會 reject：不留未處理的 rejection
     if (track) track.stop(); // 真的關相機，不只是送黑畫面
     this.#replaceLocalTrack(null, track);
   }
@@ -454,26 +472,45 @@ export class CallManager {
   }
 
   async #acquireMedia(media: CallMedia): Promise<void> {
-    if (!this.#pc) return;
+    const pc = this.#pc;
+    if (!pc) return;
     const stream = await this.#getUserMedia({
       audio: true,
       // 不是裸 true（ADR-0337）：裸 true 拿相機預設，使用者付行動數據、站方付 TURN 流量，兩邊都不知道
       video: media === 'video' ? videoConstraints(this.#videoQuality) : false,
     });
+    // 🔴 程式碼審查 2026-11-18：等權限的期間對方掛斷或我拒接（teardown 已跑過）⇒ 這些裝置沒人會關，現在關
+    if (this.#pc !== pc) {
+      for (const track of stream.getTracks()) track.stop();
+      return;
+    }
     this.#localStream = stream;
+    let local = stream;
     for (const track of stream.getTracks()) {
       // 🔴 ADR-0424：答方（已套用 offer）有協商過、還沒上軌的視訊 transceiver 就直接放上去；
       // 交給 addTrack 會重用自己鋪、沒進 SDP 的那條 ⇒ 鏡頭開了、對方看不到。setStreams 補上 msid。
       const target = track.kind === 'video' ? this.#unusedNegotiatedVideoSender() : null;
       if (target) {
-        await target.replaceTrack(track);
-        target.setStreams?.(stream);
+        try {
+          await target.replaceTrack(track);
+          target.setStreams?.(stream);
+        } catch (error) {
+          // 放不上去：關掉鏡頭（指示燈要誠實），這一通先用語音
+          track.stop();
+          local = this.#createStream(local.getTracks().filter((t) => t !== track));
+          this.#fire('error', `無法開啟視訊：${String(error)}`);
+        }
       } else {
-        this.#pc.addTrack(track, stream);
+        pc.addTrack(track, stream);
+      }
+      if (this.#pc !== pc) {
+        for (const t of stream.getTracks()) t.stop();
+        return;
       }
     }
+    this.#localStream = local;
     this.#applyVideoQuality();
-    this.#fire('localStream', stream);
+    this.#fire('localStream', local);
   }
 
   #unusedNegotiatedVideoSender(): RtpSenderLike | null {

@@ -17,6 +17,9 @@
 //   config-error：60 分鐘；replaced：60 秒
 //   relay-error：min(10 分鐘, 5 秒 × 2^attempt) × (0.7 + 0.6 × random)，不小於 Retry-After
 //   network-down：min(60 秒, 1 秒 × 2^attempt) × (0.7 + 0.6 × random)
+//   任何類別最後都夾在 [1 秒, 25 小時]；relay-error 連同 Retry-After 最多 60 分鐘（程式碼審查 2026-11-18：
+//   惡意或有 bug 的 relay 給很遠的 reset／很大的 Retry-After 不能讓設備睡好幾天，JS 的 setTimeout 超過 2^31−1 毫秒還會溢位成立刻重連）
+// attempt、random 不是有限數就當 0。
 // 乘法順序固定（先夾上限、再乘抖動、最後取整數），JavaScript 與 Python 的倍精度結果逐位相同。
 /** 額度重置後分散重連的最大隨機延遲：20 分鐘 */
 export const IOT_DEVICE_QUOTA_JITTER_MS = 20 * 60_000;
@@ -26,6 +29,8 @@ export const IOT_DEVICE_PROBE_INTERVAL_MS = 60 * 60_000;
 export const IOT_DEVICE_REPLACED_RETRY_MS = 60_000;
 /** 任何狀態下兩次連線嘗試的最小間隔 */
 export const IOT_DEVICE_MIN_RETRY_MS = 1_000;
+/** 任何狀態下最多等多久：額度每天重置，24 小時＋抖動綽綽有餘（也遠低於 setTimeout 的 2^31−1 毫秒） */
+export const IOT_DEVICE_MAX_RETRY_MS = 25 * 3_600_000;
 const RELAY_ERROR = { minMs: 5_000, maxMs: 600_000 };
 const NETWORK_DOWN = { minMs: 1_000, maxMs: 60_000 };
 const CONFIG_TOKENS = /\b(iot-token|iot-home|iot-device|iot-disabled|iot-path|iot-upgrade):/;
@@ -84,16 +89,20 @@ export function classifyIotDeviceDisconnect(obs, nowSec) {
     return { class: 'relay-error', ...(retryAfterSec !== undefined ? { retryAfterSec } : {}) };
 }
 function exponential(range, attempt, random) {
-    const base = Math.min(range.maxMs, range.minMs * 2 ** Math.max(0, Math.min(attempt, 30)));
+    const base = Math.min(range.maxMs, range.minMs * 2 ** Math.max(0, Math.min(Number.isFinite(attempt) ? Math.floor(attempt) : 0, 30)));
     return Math.floor(base * (0.7 + 0.6 * random));
 }
 /** 下一次連線前等多久（毫秒） */
 export function iotDeviceRetryDelayMs(d, ctx) {
-    const random = Math.min(Math.max(ctx.random, 0), 0.999999);
+    const random = Number.isFinite(ctx.random) ? Math.min(Math.max(ctx.random, 0), 0.999999) : 0;
     let ms;
     switch (d.class) {
         case 'quota-exhausted':
-            ms = ctx.clockSynced && d.reset !== undefined ? (d.reset - ctx.nowSec) * 1000 + Math.floor(random * IOT_DEVICE_QUOTA_JITTER_MS) : IOT_DEVICE_PROBE_INTERVAL_MS;
+            // 先把秒數夾在上限內再換成毫秒：reset 接近 2^53 時兩種語言都不會失去精度
+            ms =
+                ctx.clockSynced && d.reset !== undefined
+                    ? Math.min(d.reset - ctx.nowSec, IOT_DEVICE_MAX_RETRY_MS / 1000) * 1000 + Math.floor(random * IOT_DEVICE_QUOTA_JITTER_MS)
+                    : IOT_DEVICE_PROBE_INTERVAL_MS;
             break;
         case 'config-error':
             ms = IOT_DEVICE_PROBE_INTERVAL_MS;
@@ -102,12 +111,12 @@ export function iotDeviceRetryDelayMs(d, ctx) {
             ms = IOT_DEVICE_REPLACED_RETRY_MS;
             break;
         case 'relay-error':
-            ms = Math.max(exponential(RELAY_ERROR, ctx.attempt, random), (d.retryAfterSec ?? 0) * 1000);
+            ms = Math.max(exponential(RELAY_ERROR, ctx.attempt, random), Math.min(d.retryAfterSec ?? 0, IOT_DEVICE_PROBE_INTERVAL_MS / 1000) * 1000);
             break;
         case 'network-down':
             ms = exponential(NETWORK_DOWN, ctx.attempt, random);
             break;
     }
-    return Math.max(IOT_DEVICE_MIN_RETRY_MS, ms);
+    return Math.min(IOT_DEVICE_MAX_RETRY_MS, Math.max(IOT_DEVICE_MIN_RETRY_MS, ms));
 }
 //# sourceMappingURL=device-backoff.js.map

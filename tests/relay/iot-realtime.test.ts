@@ -334,6 +334,32 @@ describe('設備 → 全家：狀態（ADR 0049 §9.4）', () => {
     expect(eventsTo(fromDevice(lamp, frame('lamp.0', 9)), 'w')).toHaveLength(0);
     expect(eventsTo(fromDevice(lamp, '{"t":"cmd"}'), 'w')).toHaveLength(0);
   });
+
+  it('🔴 程式碼審查 2026-11-18：拿到權杖的人送一個超大 ctr（relay 驗不了信封），真的設備之後照樣送得出去', () => {
+    const { core, fromDevice, nowMs } = setup();
+    const lamp = home.blind('dev:lamp');
+    core.connect('w');
+    core.handle('w', REQ('s', { kinds: [IOT_KIND_STATE], '#h': [home.homeTag] }));
+    const forged = encodeIotDeviceFrame({
+      t: 'state',
+      // 格式正確、但不是用設備金鑰封的（relay 沒有金鑰，分不出來）
+      env: sealIotEnvelope({ key: new Uint8Array(32).fill(7), kid: 'lamp.1', dir: 'up', ctr: Number.MAX_SAFE_INTEGER, ts: Math.floor(nowMs() / 1000), plaintext: 'forged' }),
+    });
+    fromDevice(lamp, forged);
+    const real = (ctr: number) =>
+      encodeIotDeviceFrame({ t: 'state', env: sealIotEnvelope({ key: keyLamp, kid: 'lamp.1', dir: 'up', ctr, ts: Math.floor(nowMs() / 1000), plaintext: 'x' }) });
+    expect(eventsTo(fromDevice(lamp, real(6)), 'w')).toHaveLength(1);
+    expect(eventsTo(fromDevice(lamp, real(6)), 'w')).toHaveLength(0); // 同一則重送仍然擋
+  });
+
+  it('信封時間太舊（重放很久以前錄下的幀）→ 丟掉', () => {
+    const { core, fromDevice, nowMs } = setup();
+    const lamp = home.blind('dev:lamp');
+    core.connect('w');
+    core.handle('w', REQ('s', { kinds: [IOT_KIND_STATE], '#h': [home.homeTag] }));
+    const old = encodeIotDeviceFrame({ t: 'state', env: sealIotEnvelope({ key: keyLamp, kid: 'lamp.1', dir: 'up', ctr: 1, ts: Math.floor(nowMs() / 1000) - 3600, plaintext: 'x' }) });
+    expect(eventsTo(fromDevice(lamp, old), 'w')).toHaveLength(0);
+  });
 });
 
 describe('金鑰輪換寬限（ADR 0049 §2.6）', () => {

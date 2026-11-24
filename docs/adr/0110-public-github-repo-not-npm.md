@@ -11,7 +11,7 @@
 - **名稱被別人佔了**：
   - npm 上的 `cinderous` 是不相關的使用者，名下有別的套件。npm 的範圍就是帳號或組織名稱，所以 `@cinderous/client` 發不出去；對方也隨時可以發一個同名的套件。
   - GitHub 的 `cinderous` 也是別人的帳號。`VaalRL/cinderous` 不能用：GitHub 的 repo 名稱不分大小寫，已經有公開的 `VaalRL/Cinderous`（Cinderous App）。
-- **文件裡有能連到使用者本人的資訊**：測試用 Cloudflare 帳號名稱與帳號 ID、Apple 的 Team ID 與 Key ID、帶 Propfolk 名稱的 Bundle ID、錨點的 workers.dev 子網域（其中一個和使用者的 email 相近）。金鑰都已撤銷，但公開後可以由這些資訊連到使用者的其他身分。
+- **文件裡有能連到使用者本人的資訊**：測試用 Cloudflare 帳號名稱與帳號 ID、Apple 的 Team ID 與 Key ID、帶另一個產品名稱的 Bundle ID、錨點的 workers.dev 子網域（其中一個和使用者的 email 相近）。金鑰都已撤銷，但公開後可以由這些資訊連到使用者的其他身分。
 - **用詞**：PRD 有一句「堅不可摧的抗量子……防禦能力」，不符合 ADR 0065。
 - **缺的檔案**：沒有回報漏洞的管道（`SECURITY.md`），中繼 Worker 打包裡的第三方程式碼只留了簡短的授權註解，`package.json` 沒有 repo 資訊。
 
@@ -73,7 +73,7 @@
 **公開時要做：**
 - ADR 0094：發布流程把 `relayWorkerSource` 上傳成 release asset，外掛改用 `fetchRelayWorker`。
 - ADR 0050：部署包預設從內嵌 `sdk/` 改成 `github:VaalRL/cinderous-sdk#vX.Y.Z`；JSON Schema 的 `$id` 從 URN 改成可解析的網址（`$id` 已改，ADR 0112）。
-- Docker 映像改名 `ghcr.io/vaalrl/cinderous-relay-lite`（`cinderous/relay-lite` 也被佔了）。（文件已改名、映像尚未發布，ADR 0112）
+- Docker 映像改名 `ghcr.io/vaalrl/cinderous-relay-lite`（`cinderous/relay-lite` 也被佔了）。（文件已改名、映像尚未發布，ADR 0112；**ADR 0143 起由公開 repo 推 tag 時發布**，v0.92.0 起）
 - 使用方（四款遊戲、CinderSync、Coffice、Cinderous PR #9）的相依網址從 dev repo 換成公開 repo。PR #9 照使用者的規則，要在 SDK 公開之後才合併。
 - `THIRD-PARTY-NOTICES.md` 在相依升版時要重新產生；`relay build` 產出的部署包（內嵌 `sdk/` 或 `relay.mjs`）要附上它。
 - 補 `CONTRIBUTING.md`（貢獻條款：DCO 或 CLA）與 `CHANGELOG.md`（版本紀錄目前散在 ADR 裡）。（已補，DCO，ADR 0112）

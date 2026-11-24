@@ -21,6 +21,8 @@ export interface DeployGuideContext {
   embedSdk?: boolean;
   /** Workers：附預打包的 `src/relay.mjs`，不需要安裝 SDK */
   selfContained?: boolean;
+  /** Node 目標用預建映像（SDK ADR 0143）：說明改成拉映像，不在本機建置 */
+  prebuiltImage?: string;
 }
 
 /** SDK 的原始碼位置（私有期間對第三方無效，見 SOURCE.md） */
@@ -83,6 +85,7 @@ export function renderDeployGuide(config: DeployConfig, locale: DeployGuideLocal
   const site = config.site ?? {};
   const embed = ctx.embedSdk !== false;
   const selfContained = worker && ctx.selfContained === true;
+  const image = worker ? undefined : ctx.prebuiltImage;
   const endpoints = deployEndpoints(config);
   const persist = config.node?.persist === true;
   const allowlist = site.allowedPubkeys?.length ?? 0;
@@ -136,7 +139,7 @@ export function renderDeployGuide(config: DeployConfig, locale: DeployGuideLocal
   }
   if (lanes > 0) summary.push(`- ${t('已知租戶車道', 'Known app lanes')}：${site.appLanes!.map((l) => `\`${l}\``).join(', ')}`);
   summary.push(
-    `- SDK：${selfContained ? t('預打包在 `src/relay.mjs`', 'pre-bundled in `src/relay.mjs`') : embed ? t('內嵌在 `sdk/`（`file:./sdk`）', 'embedded in `sdk/` (`file:./sdk`)') : t('以 `package.json` 的相依安裝', 'installed from the dependency in `package.json`')}（${ctx.sdkVersion}）`,
+    `- SDK：${image !== undefined ? t(`預建映像 \`${image}\`（SDK ADR 0143）`, `prebuilt image \`${image}\` (SDK ADR 0143)`) : selfContained ? t('預打包在 `src/relay.mjs`', 'pre-bundled in `src/relay.mjs`') : embed ? t('內嵌在 `sdk/`（`file:./sdk`）', 'embedded in `sdk/` (`file:./sdk`)') : t('以 `package.json` 的相依安裝', 'installed from the dependency in `package.json`')}（${ctx.sdkVersion}）`,
   );
   out.push(...summary);
 
@@ -331,7 +334,7 @@ export function renderDeployGuide(config: DeployConfig, locale: DeployGuideLocal
     if (plaintextEnv !== undefined) {
       out.push(t(`Shelly 的設備金鑰從 \`.env\` 的 \`${plaintextEnv}\` 代入 \`IOT_PLAINTEXT_DEVICE_KEYS\`；沒設就不會啟動（SDK ADR 0139）。`, `The Shelly device keys come from \`${plaintextEnv}\` in \`.env\` into \`IOT_PLAINTEXT_DEVICE_KEYS\`; compose refuses to start without them (SDK ADR 0139).`), '');
     }
-    code('bash', 'docker compose up -d --build', target === 'home-tunnel' ? t('docker compose logs -f cloudflared   # 看到 "Registered tunnel connection" 就通了', 'docker compose logs -f cloudflared   # "Registered tunnel connection" means it is up') : 'docker compose ps');
+    code('bash', ...(image !== undefined ? ['docker compose pull', 'docker compose up -d'] : ['docker compose up -d --build']), target === 'home-tunnel' ? t('docker compose logs -f cloudflared   # 看到 "Registered tunnel connection" 就通了', 'docker compose logs -f cloudflared   # "Registered tunnel connection" means it is up') : 'docker compose ps');
     if (target === 'docker') {
       out.push(
         '',
@@ -444,6 +447,16 @@ export function renderDeployGuide(config: DeployConfig, locale: DeployGuideLocal
     );
   } else if (target === 'fly') {
     code('bash', `fly releases --app ${name} --image`, `fly deploy --app ${name} --image <${t('上一版的映像', 'previous image')}> --ha=false`);
+  } else if (image !== undefined) {
+    out.push(
+      t(
+        '把部署包放進 git：回滾就是切回上一個提交（`docker-compose.yml` 裡的映像標籤跟著回到上一版），再拉映像重啟。',
+        'Keep the package in git: rolling back is checking out the previous commit (the image tag in `docker-compose.yml` goes back with it), then pulling and restarting.',
+      ),
+      '',
+    );
+    code('bash', 'git checkout <' + t('上一個提交', 'previous commit') + '> -- .', 'docker compose pull', 'docker compose up -d');
+    if (persist) out.push('', t('volume 裡的 SQLite 會保留。回滾到較舊的 SDK 版本前，先看這幾版之間的 ADR 有沒有改中繼的資料表。', 'The SQLite file on the volume is kept. Before rolling back to an older SDK version, check the ADRs in between for changes to the relay tables.'));
   } else {
     out.push(t('把部署包放進 git：回滾就是切回上一個提交，再重建。', 'Keep the package in git: rolling back is checking out the previous commit and rebuilding.'), '');
     code('bash', 'git checkout <' + t('上一個提交', 'previous commit') + '> -- .', 'docker compose up -d --build');
@@ -539,8 +552,8 @@ export function renderDeployGuide(config: DeployConfig, locale: DeployGuideLocal
   h2(t('10. 授權', '10. License'));
   out.push(
     t(
-      `- SDK（@cinderous/client）是 **AGPL-3.0-only**（\`LICENSE\`）。這個部署包${selfContained ? '附了預打包的中繼（`src/relay.mjs`）' : embed ? '內嵌了 SDK（`sdk/`）' : '以相依引用 SDK'}，對應原始碼見 \`SOURCE.md\`。`,
-      `- The SDK (@cinderous/client) is **AGPL-3.0-only** (\`LICENSE\`). This package ${selfContained ? 'ships the pre-bundled relay (`src/relay.mjs`)' : embed ? 'embeds the SDK (`sdk/`)' : 'depends on the SDK'}; see \`SOURCE.md\` for the corresponding source.`,
+      `- SDK（@cinderous/client）是 **AGPL-3.0-only**（\`LICENSE\`）。這個部署包${image !== undefined ? `使用預建映像 \`${image}\`（內含 SDK）` : selfContained ? '附了預打包的中繼（`src/relay.mjs`）' : embed ? '內嵌了 SDK（`sdk/`）' : '以相依引用 SDK'}，對應原始碼見 \`SOURCE.md\`。`,
+      `- The SDK (@cinderous/client) is **AGPL-3.0-only** (\`LICENSE\`). This package ${image !== undefined ? `uses the prebuilt image \`${image}\` (which contains the SDK)` : selfContained ? 'ships the pre-bundled relay (`src/relay.mjs`)' : embed ? 'embeds the SDK (`sdk/`)' : 'depends on the SDK'}; see \`SOURCE.md\` for the corresponding source.`,
     ),
     t(
       '- 產生的設定檔與膠水程式（`wrangler.toml`、`docker-compose.yml`、`fly.toml`、`Dockerfile`、`server.mjs`、`src/entry.mjs`、`.env.example`、這份說明……）以 **MIT-0** 授權：隨你改、不必署名。',

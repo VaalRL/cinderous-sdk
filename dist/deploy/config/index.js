@@ -20,5 +20,7 @@ export { DEPLOY_CONFIG_MIGRATIONS, migrateDeployConfig, } from './migrate.js';
 // 設定檔 → REST 一鍵部署的參數（SDK ADR 0118）
 export { cloudflareApiOptionsFromConfig } from './cloudflare-api.js';
 export { parseWizardAnswer, runInitWizard, WIZARD_MAX_TRIES, wizardQuestions, } from './wizard.js';
+// 網頁部署設定器的模型（SDK ADR 0142）：說明網站的頁面用它；外掛或其他前端也能重用
+export { setWebField, WEB_GROUP_LABELS, webBuildCommand, webEstimate, webFieldKind, webFieldText, webFormGroups, webInitialConfig, webOutputs, webSdkSpec, webSwitchTarget, webUnsupportedFields, } from './web.js';
 export { collectRelaySiteIssues, generatePrivateLaneId, isPrivateLaneId, PRIVATE_LANE_MIN_LENGTH, privateLaneEndpoint, privateLaneFromUrl, READ_ONLY_GRACE_DAYS, readOnlyLanesVar, } from '../shared.js';
 //# sourceMappingURL=index.js.map

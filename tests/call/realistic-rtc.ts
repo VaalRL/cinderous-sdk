@@ -158,8 +158,11 @@ export class RealisticPc implements CallPeerConnectionLike {
     }, 0);
   }
   async setRemoteDescription(description: { type: string; sdp: string }) {
+    if (this.closed) throw new Error('InvalidStateError: The RTCPeerConnection is closed');
+    if (this.network.rejectOffersAt.has(this.owner) && description.type === 'offer') throw new Error('OperationError: Failed to parse SessionDescription');
     const other = this.network.pcs.get(description.sdp.slice('rtc:'.length));
     if (!other) throw new Error('unknown remote sdp');
+    this.hasRemoteDescription = true;
     this.remote = other;
     if (description.type === 'offer') {
       for (const line of other.localLines) {
@@ -191,7 +194,13 @@ export class RealisticPc implements CallPeerConnectionLike {
     });
     this.ontrack?.({ track: t.receiver.track, streams });
   }
-  async addIceCandidate() {}
+  hasRemoteDescription = false;
+  iceCandidatesAdded = 0;
+  async addIceCandidate() {
+    if (this.closed) throw new Error('InvalidStateError: The RTCPeerConnection is closed');
+    if (!this.hasRemoteDescription) throw new Error('InvalidStateError: The remote description was null');
+    this.iceCandidatesAdded++;
+  }
   addTrack(track: MediaTrackLike, stream: MediaStreamLike) {
     const pick = this.transceivers.find((t) => t.kind === track.kind && t.sender.track === null && !t.sender.everUsed);
     if (pick?.direction === 'stopped') throw new Error('InvalidAccessError: The existing transceiver is stopping');
@@ -248,6 +257,10 @@ export class RealisticNetwork {
   readonly created: RealisticPc[] = [];
   /** 這兩人之間打不通（`'a|b'`，順序不拘） */
   readonly failing = new Set<string>();
+  /** 這兩人之間 ICE 永遠停在 new（沒有 connected 也沒有 failed：例如對方送完 join 就斷了） */
+  readonly stalled = new Set<string>();
+  /** 這些人收到 offer 時 setRemoteDescription 丟例外（壞 SDP） */
+  readonly rejectOffersAt = new Set<string>();
   factoryFor(owner: string): CallRtcFactory {
     return () => {
       const pc = new RealisticPc(this, owner);
@@ -263,6 +276,7 @@ export class RealisticNetwork {
     setTimeout(() => {
       if (a.closed || b.closed) return;
       const key = [a.owner, b.owner].sort().join('|');
+      if (this.stalled.has(key)) return;
       const state = this.failing.has(key) ? 'failed' : 'connected';
       a.setState(state);
       b.setState(state);
@@ -277,10 +291,27 @@ export class RealisticMedia {
   oneCameraAtATime = false;
   /** 這些鏡頭（facingMode 或 deviceId）根本打不開 */
   readonly broken = new Set<string>();
+  /** 每一條發出去的軌（麥克風、鏡頭） */
+  readonly tracks: RTrack[] = [];
+  /** 設了就卡在權限提示，直到呼叫 release() */
+  #gate: Promise<void> | null = null;
+  #release: (() => void) | null = null;
+  holdPermission(): void {
+    this.#gate = new Promise((resolve) => (this.#release = resolve));
+  }
+  release(): void {
+    this.#release?.();
+    this.#gate = null;
+  }
   readonly getUserMedia: GetUserMedia = async (constraints) => {
     this.calls.push(constraints);
+    if (this.#gate) await this.#gate;
     const tracks: RTrack[] = [];
-    if (constraints.audio) tracks.push(new RTrack('audio', 'mic'));
+    if (constraints.audio) {
+      const mic = new RTrack('audio', 'mic');
+      this.tracks.push(mic);
+      tracks.push(mic);
+    }
     if (constraints.video) {
       const v = constraints.video as { facingMode?: { ideal?: string }; deviceId?: { exact?: string } };
       const label = v.deviceId?.exact ?? v.facingMode?.ideal ?? 'user';
@@ -290,12 +321,17 @@ export class RealisticMedia {
       }
       const cam = new RTrack('video', label);
       this.cameras.push(cam);
+      this.tracks.push(cam);
       tracks.push(cam);
     }
     return new RStream(tracks);
   };
   liveCameras(): number {
     return this.cameras.filter((c) => !c.stopped).length;
+  }
+  /** 還開著的裝置（麥克風＋鏡頭）：通話結束後必須是 0 */
+  liveDevices(): number {
+    return this.tracks.filter((t) => !t.stopped).length;
   }
 }
 

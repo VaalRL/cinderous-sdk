@@ -63,3 +63,14 @@ close 4429／4409 兩種，而且額度用完的隨機延遲是 0–60 秒（ADR
   - Home Assistant 整合沒在 HA 裡跑過；
   - Python 的 topic 長度以 UTF-16 碼元計（與 JavaScript 相同），但 `reason` 截斷是以碼位計——只有非 BMP 字元會差，設備自己的 reason 不該用到。
 - R4（長輪詢）與 R5（Shelly 轉譯）不在這份 ADR。
+
+## 程式碼審查修正（2026-11-18，v0.92.0）
+
+- **等待時間有上限**：`iotDeviceRetryDelayMs` 任何類別最後夾在 [1 秒, `IOT_DEVICE_MAX_RETRY_MS`＝25 小時]；`relay-error` 的 `Retry-After` 最多算 60 分鐘。
+  原本惡意或有 bug 的 relay 給一個很遠的 `reset`（或很大的 `Retry-After`）就能讓設備睡好幾年；JavaScript 的 `setTimeout` 超過 2^31−1 毫秒還會溢位成「立刻重連」。
+  額度的 reset 先夾秒數再換毫秒（`reset` 接近 2^53 時兩種語言結果仍逐位相同）。向量新增 4 筆邊界案例，舊案例的期望值都沒變。
+- `attempt`、`random` 不是有限數就當 0（原本會回 NaN）。
+- Python 的 `\d` 預設認所有文字的數字（`int("٣٠") == 30`），TypeScript 不認：分類用的正規式一律加 `re.ASCII`。
+- **Python 參考設備定期重新同步時鐘**：原本只在開機同步一次，`max_age_sec`（24 小時）後變成「不同步」、之後所有指令都回 `clock-unsynced`——設備等於壞掉。
+  新增 `ClockGuard.keep_synced()`（每 5 分鐘檢查、超過 6 小時就重新同步、失敗下一輪再試；SNTP 放到執行緒，不卡事件迴圈），`python -m cinder_iot_device` 會在背景跑它。開機沒同步成功的也會一直重試。
+- Python `DeviceRunner`：這一輪有連上過才斷的，下一次退避從頭算（原本每天斷一次的設備，幾天後每次都要等到上限）。

@@ -1,0 +1,9 @@
+# 映像的建置內容（repo 根目錄）只放執行需要的檔案（SDK ADR 0143）：先排除全部，再列白名單。
+# BuildKit 會優先讀 Dockerfile 旁邊這個 <Dockerfile>.dockerignore。
+*
+!package.json
+!package-lock.json
+!LICENSE
+!dist
+!docker/relay-lite/server.mjs
+!docker/relay-lite/entrypoint.mjs

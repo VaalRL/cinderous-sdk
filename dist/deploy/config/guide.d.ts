@@ -12,6 +12,8 @@ export interface DeployGuideContext {
     embedSdk?: boolean;
     /** Workers：附預打包的 `src/relay.mjs`，不需要安裝 SDK */
     selfContained?: boolean;
+    /** Node 目標用預建映像（SDK ADR 0143）：說明改成拉映像，不在本機建置 */
+    prebuiltImage?: string;
 }
 /** SDK 的原始碼位置（私有期間對第三方無效，見 SOURCE.md） */
 export declare const SDK_SOURCE_REPO = "https://github.com/VaalRL/cinderous-sdk";

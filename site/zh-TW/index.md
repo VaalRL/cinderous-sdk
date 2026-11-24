@@ -13,6 +13,9 @@ hero:
       text: 閱讀說明
       link: /README.zh-TW
     - theme: alt
+      text: 中繼設定器
+      link: /zh-TW/configurator
+    - theme: alt
       text: 自架中繼
       link: /docs/guides/self-host-vps
     - theme: alt

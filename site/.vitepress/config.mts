@@ -14,12 +14,14 @@ const guide = (lang: 'en' | 'zh-TW') => {
       text: zh ? '開始' : 'Start',
       items: [
         { text: zh ? '說明（README）' : 'Overview (README)', link: zh ? '/README.zh-TW' : '/README' },
+        { text: zh ? '各版功能說明' : 'Features by version', link: zh ? '/docs/guides/features.zh-TW' : '/docs/guides/features' },
         { text: zh ? '產品規格（PRD）' : 'Product spec (PRD)', link: '/PRD' },
       ],
     },
     {
       text: zh ? '自架中繼' : 'Self-host a relay',
       items: [
+        { text: zh ? '中繼設定器（網頁）' : 'Relay configurator (web)', link: zh ? '/zh-TW/configurator' : '/configurator' },
         { text: zh ? 'VPS 自架指南' : 'VPS guide', link: '/docs/guides/self-host-vps' },
         { text: zh ? '部署設定參考' : 'Deploy options', link: zh ? '/docs/reference/deploy-options.zh-TW' : '/docs/reference/deploy-options' },
         { text: zh ? 'Cloudflare API token' : 'Cloudflare API token', link: '/docs/guides/cloudflare-api-token' },
@@ -45,7 +47,13 @@ export default defineConfig({
   base: '/cinderous-sdk/',
   srcDir: '..',
   srcExclude: ['**/node_modules/**', 'dist/**', 'site/.vitepress/**', ...PRIVATE_PATHS.map((p) => (p.endsWith('.md') ? p : `${p}/**`))],
-  rewrites: { 'site/index.md': 'index.md', 'site/zh-TW/index.md': 'zh-TW/index.md' },
+  rewrites: {
+    'site/index.md': 'index.md',
+    'site/zh-TW/index.md': 'zh-TW/index.md',
+    // 網頁部署設定器（SDK ADR 0142）
+    'site/configurator.md': 'configurator.md',
+    'site/zh-TW/configurator.md': 'zh-TW/configurator.md',
+  },
   lastUpdated: false,
   head: [['link', { rel: 'icon', href: '/cinderous-sdk/logo.svg', type: 'image/svg+xml' }]],
   markdown: { config: (md) => md.use(siteMarkdown) },
@@ -65,6 +73,7 @@ export default defineConfig({
         nav: [
           { text: 'Guide', link: '/README' },
           { text: 'Self-host', link: '/docs/guides/self-host-vps' },
+          { text: 'Configurator', link: '/configurator' },
           { text: 'ADR', link: '/docs/adr/README' },
           { text: 'Changelog', link: '/CHANGELOG' },
           api('API'),
@@ -80,6 +89,7 @@ export default defineConfig({
         nav: [
           { text: '說明', link: '/README.zh-TW' },
           { text: '自架', link: '/docs/guides/self-host-vps' },
+          { text: '設定器', link: '/zh-TW/configurator' },
           { text: 'ADR', link: '/docs/adr/README' },
           { text: '版本紀錄', link: '/CHANGELOG' },
           api('API 參考'),

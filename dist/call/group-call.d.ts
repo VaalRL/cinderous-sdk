@@ -18,9 +18,16 @@ export interface GroupCallManagerOptions {
     videoQuality?: VideoQuality;
     /** 含自己的人數上限，預設 `GROUP_CALL_DEFAULT_MAX`，不得超過 `GROUP_CALL_HARD_MAX` */
     maxParticipants?: number;
-    /** 被邀的人多久沒回應就標 `no-answer`（毫秒，預設 45 秒） */
+    /** 被邀的人多久沒回應就標 `no-answer`；收到邀請沒接聽的這一方也在這之後自己結束（毫秒，預設 45 秒） */
     ringTimeoutMs?: number;
+    /**
+     * 某一對加入之後多久還沒連上就當作打不通（毫秒，預設 30 秒）：offer／answer 在信令上遺失、
+     * 對方送完 join 就斷線時，ICE 會永遠停在 new，不會自己變 failed。
+     */
+    connectTimeoutMs?: number;
 }
+/** 連線建立前暫存的 ICE candidate，每人最多幾則（多的丟掉：正常一對只有個位數） */
+export declare const GROUP_CALL_MAX_PENDING_CANDIDATES = 32;
 export type GroupCallState = 'idle' | 'incoming' | 'in-call' | 'ended';
 export type GroupParticipantStatus = 'invited' | 'joined' | 'connecting' | 'connected' | 'declined' | 'busy' | 'full' | 'no-answer' | 'left' | 'failed';
 export interface GroupParticipant {
@@ -29,8 +36,8 @@ export interface GroupParticipant {
     /** 對方在送什麼（對方告訴我們的；還沒說之前當作語音） */
     media: CallMedia;
 }
-/** left：我離開；declined：我拒接；empty：其他人都不在了；cancelled：還沒接，邀請的人就走了 */
-export type GroupCallEndReason = 'left' | 'declined' | 'empty' | 'cancelled';
+/** left：我離開；declined：我拒接；empty：其他人都不在了；cancelled：還沒接，邀請的人就走了；no-answer：響鈴逾時我沒接 */
+export type GroupCallEndReason = 'left' | 'declined' | 'empty' | 'cancelled' | 'no-answer';
 export interface GroupIncomingCall {
     groupId: string;
     from: string;

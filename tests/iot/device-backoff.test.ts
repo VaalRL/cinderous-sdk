@@ -1,7 +1,7 @@
 // 設備端的斷線分類與重連間隔（SDK ADR 0049 §10.2；SDK ADR 0140）。純函式——韌體照同一份測試向量實作。
 import { describe, expect, it } from 'vitest';
 
-import { classifyIotDeviceDisconnect, iotDeviceRetryDelayMs, IOT_DEVICE_QUOTA_JITTER_MS } from '../../src/iot/device-backoff.js';
+import { classifyIotDeviceDisconnect, iotDeviceRetryDelayMs, IOT_DEVICE_MAX_RETRY_MS, IOT_DEVICE_QUOTA_JITTER_MS } from '../../src/iot/device-backoff.js';
 
 const NOW = 1_800_000_000;
 const relayHeaders = (extra: Record<string, string> = {}) => ({ 'Cinder-Relay': '1', ...extra });
@@ -79,5 +79,35 @@ describe('iotDeviceRetryDelayMs', () => {
     expect(iotDeviceRetryDelayMs({ class: 'network-down' }, { ...base, random: 0 })).toBe(1_000);
     expect(iotDeviceRetryDelayMs({ class: 'network-down' }, { ...base, attempt: 2, random: 0.999 })).toBe(5_197);
     expect(iotDeviceRetryDelayMs({ class: 'network-down' }, { ...base, attempt: 30, random: 0.5 })).toBe(60_000);
+  });
+});
+
+describe('程式碼審查（2026-11-18）：等待時間有上限、怪值不會變 NaN', () => {
+  const ctx = { attempt: 0, nowSec: NOW, clockSynced: true, random: 0.5 };
+  it('🔴 額度 reset 很遠（惡意或有 bug 的 relay）：最多等 IOT_DEVICE_MAX_RETRY_MS（25 小時），不會睡好幾年', () => {
+    expect(IOT_DEVICE_MAX_RETRY_MS).toBe(25 * 3_600_000);
+    for (const reset of [NOW + 30 * 86_400, 99_999_999_999, Number.MAX_SAFE_INTEGER]) {
+      expect(iotDeviceRetryDelayMs({ class: 'quota-exhausted', reset }, ctx)).toBe(IOT_DEVICE_MAX_RETRY_MS);
+    }
+    // 正常情況（明天 0 點重置＋抖動）不受影響
+    expect(iotDeviceRetryDelayMs({ class: 'quota-exhausted', reset: NOW + 86_400 }, { ...ctx, random: 0.999999 })).toBe(86_400_000 + Math.floor(0.999999 * IOT_DEVICE_QUOTA_JITTER_MS));
+  });
+
+  it('🔴 relay-error 的 Retry-After 最多讓設備等 60 分鐘（暫時錯誤不該讓設備失聯好幾天）', () => {
+    expect(iotDeviceRetryDelayMs({ class: 'relay-error', retryAfterSec: 9_999_999_999 }, ctx)).toBe(60 * 60_000);
+    expect(iotDeviceRetryDelayMs({ class: 'relay-error', retryAfterSec: 120 }, ctx)).toBe(120_000);
+  });
+
+  it('attempt、random 是 NaN 或無限大：當成 0，不會回 NaN', () => {
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      const ms = iotDeviceRetryDelayMs({ class: 'network-down' }, { ...ctx, attempt: bad, random: bad });
+      expect(Number.isFinite(ms)).toBe(true);
+      expect(ms).toBe(iotDeviceRetryDelayMs({ class: 'network-down' }, { ...ctx, attempt: 0, random: 0 }));
+    }
+  });
+
+  it('Retry-After 只認 ASCII 數字（Python 的 \d 預設含其他文字的數字，跨語言要一致）', () => {
+    const d = classifyIotDeviceDisconnect({ kind: 'http', status: 429, headers: relayHeaders({ 'Retry-After': '٣٠' }), body: '{"error":"rate-limited: iot-upgrade: x"}' }, NOW);
+    expect(d).toEqual({ class: 'relay-error' });
   });
 });

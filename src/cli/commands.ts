@@ -151,8 +151,10 @@ export const USAGE = `用法：cinderous <指令> [選項]
       --config, -c <檔>           預設 cinderous.config.json
       --out, -o <目錄>            預設設定檔所在的資料夾
       --self-contained            Workers：附預打包的中繼（src/relay.mjs），不需要安裝 SDK
-      --sdk-spec <相依>           SDK 改以套件相依安裝（例如 github:VaalRL/cinderous-sdk#v0.91.0），不內嵌 sdk/
-      --force                     覆寫被手改過、或不是 relay build 產生的檔案
+      --sdk-spec <相依>           SDK 改以套件相依安裝（例如 github:VaalRL/cinderous-sdk#v0.92.0），不內嵌 sdk/
+      --image                     docker、home-tunnel、fly：直接用預建映像 ghcr.io/vaalrl/cinderous-relay-lite:v<SDK 版號>，不建置（SDK ADR 0143）
+      --image-ref <映像>          同上，改用指定的映像（例如自己的鏡像站）
+      --force                    覆寫被手改過、或不是 relay build 產生的檔案
 
   cinderous init           逐題產生設定檔 cinderous.config.json（SDK ADR 0117）；危險選項要打字確認才會開
       --out, -o <檔>              預設 cinderous.config.json
@@ -716,9 +718,17 @@ async function relayBuild(argv: string[], deps: CliDeps): Promise<number> {
       out: { type: 'string', short: 'o' },
       'self-contained': { type: 'boolean' },
       'sdk-spec': { type: 'string' },
+      image: { type: 'boolean' },
+      'image-ref': { type: 'string' },
       force: { type: 'boolean' },
     },
   });
+  // 預建映像（SDK ADR 0143）：--image-ref 本身就代表 --image
+  const image = values['image-ref'] !== undefined ? values['image-ref'] : values.image === true ? (true as const) : undefined;
+  if (values['image-ref'] === '') throw new UsageError('--image-ref 不能是空字串');
+  if (image !== undefined && (values['sdk-spec'] !== undefined || values['self-contained'])) {
+    throw new UsageError('--image／--image-ref 不能與 --sdk-spec、--self-contained 一起用：映像裡已經有 SDK');
+  }
   if (!deps.buildRelayPackage) {
     deps.stderr('這個環境不支援 relay build');
     return 1;
@@ -734,6 +744,7 @@ async function relayBuild(argv: string[], deps: CliDeps): Promise<number> {
       outDir,
       ...(values['self-contained'] ? { selfContained: true } : {}),
       ...(values['sdk-spec'] !== undefined ? { sdkSpec: values['sdk-spec'] } : {}),
+      ...(image !== undefined ? { image } : {}),
       ...(values.force ? { force: true } : {}),
     });
     reportIssues(result.warnings, deps);

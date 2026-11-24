@@ -1,0 +1,101 @@
+# 預建的 Node 中繼映像 ghcr.io/vaalrl/cinderous-relay-lite（SDK ADR 0143）。
+# 只在公開 repo 推 v* tag 時跑：先確認 tag 與 package.json 版號一致、建 amd64 冒煙測試，過了才建 amd64＋arm64 推送。
+# 所有 action 釘 commit SHA（註解寫版號）；action 會以特權模式拉的容器映像（binfmt、buildkit）也釘 digest，
+# 因為這個 job 有 packages: write。checkout 不把權杖留在磁碟上。
+name: image
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    if: github.repository == 'VaalRL/cinderous-sdk'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: tag 必須與 package.json 的版號一致
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$v" != "$pkg" ]; then echo "tag $GITHUB_REF_NAME 與 package.json 的 $pkg 不一致" >&2; exit 1; fi
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+
+      - name: latest 只在這是目前最大的正式版時才移（補舊版不能讓 latest 倒退）
+        run: node scripts/image-latest.mjs "$VERSION"
+
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          image: tonistiigi/binfmt:qemu-v10.2.3@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+          platforms: arm64
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=moby/buildkit:buildx-stable-1@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe
+
+      - name: 先建 amd64（冒煙測試用，不推送）
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/relay-lite/Dockerfile
+          build-args: RELAY_VERSION=${{ env.VERSION }}
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: cinderous-relay-lite:smoke
+
+      - name: 冒煙測試：/healthz、NIP-11 版號、非 root
+        run: |
+          docker run -d --name smoke -p 8080:8080 cinderous-relay-lite:smoke
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/healthz; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8080/healthz | grep -qx ok
+          curl -fsS -H 'Accept: application/nostr+json' http://127.0.0.1:8080/ \
+            | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const v=JSON.parse(s).version;if(v!==process.env.VERSION){console.error('NIP-11 version',v,'≠',process.env.VERSION);process.exit(1)}})"
+          # 中繼本身以 node（uid 1000）跑：入口以 root 啟動、修好 /data 後降權
+          docker exec smoke grep -Eq '^Uid:\s+1000\s' /proc/1/status
+          docker logs smoke
+          docker rm -f smoke
+          # 舊的自建版 volume 屬於 root：換成映像、開保存模式也要寫得進去
+          docker volume create legacy
+          docker run --rm -v legacy:/data --user root --entrypoint sh cinderous-relay-lite:smoke \
+            -c 'touch /data/relay.db && chown -R root:root /data'
+          docker run -d --name persist -e PERSIST=1 -v legacy:/data -p 8081:8080 cinderous-relay-lite:smoke
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8081/healthz; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8081/healthz | grep -qx ok
+          docker exec persist sh -c 'test "$(stat -c %u /data/relay.db)" = 1000'
+          docker logs persist
+          docker rm -f persist
+
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 建置並推送 amd64＋arm64
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/relay-lite/Dockerfile
+          build-args: RELAY_VERSION=${{ env.VERSION }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: mode=max
+          sbom: true
+          tags: |
+            ghcr.io/vaalrl/cinderous-relay-lite:v${{ env.VERSION }}
+            ${{ env.LATEST == 'true' && 'ghcr.io/vaalrl/cinderous-relay-lite:latest' || '' }}

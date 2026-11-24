@@ -104,3 +104,20 @@ SDK 的通話只有一對一（ADR 0016）。使用者要多人通話，從三�
 - － 一對一 `onRemoteStream`／`onLocalStream` 給的是 SDK 建的新串流物件，不再是 `ontrack` 給的那個；比對物件身分的 App 要改看內容。
 - 未驗證：**沒有用真機或真的瀏覽器跑過群組通話**。替身已照 Cinderous ADR-0424 的真機行為寫，但多條連線同時協商、
   手機同時編多路、TURN 下 N−1 倍流量，都要真機驗收（建議比照 Cinderous OPERATOR-TODO §B-Call，三台裝置、每人各當一次邀請者）。
+
+## 程式碼審查修正（2026-11-18，v0.92.0）
+
+審查找到的問題都屬於「替身沒模擬到」：舊的 `realistic-rtc.ts` 不檢查連線狀態、ICE 一定在 5 ms 內有結果、`getUserMedia` 立刻回來。替身先補上（已關閉的連線不能 `setRemoteDescription`、沒有 remote description 不能加 candidate、可以讓某一對「永遠停在 new」、可以讓某人收到 offer 就丟例外、`getUserMedia` 可以卡在權限提示、記下每一條軌含麥克風），再照下面修。
+
+- **H1 非同步操作晚回來讓通話復活**：每一通（以及 `close()`）遞增 `#epoch`；取麥克風／鏡頭、換鏡頭、建連線在 `await` 前記下，回來時不同就關掉剛取得的裝置、不改狀態、不送信令。
+  `start()` 取裝置期間算忙線（`#starting`）。換鏡頭排隊（連按兩次不會漏關一顆）。開／關視訊以最後一次為準（`#wantedMedia`）；開視訊時先記下 `#video` 再換到各連線（M9：期間新建的連線拿得到）。
+- **H2 建連線失敗永遠卡在 connecting**：`#offerTo`／`#answer`／套用 answer 任何一步失敗 ⇒ 關掉這一對、標 `failed`、`onPeerFailed(unreachable)`、檢查是否只剩自己。
+- **H3 沒有連線逾時**：新選項 `connectTimeoutMs`（預設 30 秒）。某一對加入（或建了連線）之後在期限內沒連上 ⇒ 標 `failed`（`unreachable`；連過又斷是 `lost`）。只影響那一對。
+- **M1 offer 規則在收端強制**：我是字典序較小（該由我發）就不收對方的 offer；已拒接、離開、失敗的人送 offer 不能復活。中途加入的人眼中，已在通話裡的人是名單上的 `invited`（他們直接發 offer、不另送 join），所以 `invited` 要收。
+- **M2**：已連上的那一對不讓對方重送 offer 重建；同一個人重建上限 3 次。
+- **M4 收到邀請一直不接**：`ringTimeoutMs` 後自己結束，新的結束原因 `no-answer`（不再永遠佔著忙線）。
+- **M7**：連線建立前暫存的 candidate 每人最多 `GROUP_CALL_MAX_PENDING_CANDIDATES`（32）則；名單外的人送來的 join 最多暫存 `maxParticipants` 則。
+- 拒接、離開時先結束（關裝置）再通知其他人：publish 慢也不會讓相機晚關。
+- **一對一 `CallManager`** 有同一類問題（與 Cinderous 的實作平行）：接聽時等權限期間對方掛斷、開視訊時等鏡頭期間通話結束或又按了關、答方把鏡頭放上連線失敗——都改成關掉剛取得的裝置、不通知對方。
+
+尚未處理（低風險，記錄）：邀請名單裡的其他成員不經驗證（可被偽造成任意 pubkey，受害者接聽時會對他們送 `group-join`）；`invite()` 不能重新邀請已 `no-answer`／`declined`／`left` 的人，這些人也一直佔名額；`start()`／`invite()` 送邀請時 publish 失敗不回滾。

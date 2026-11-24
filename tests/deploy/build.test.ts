@@ -101,6 +101,41 @@ describe('buildRelayPackage', () => {
     expect(readFileSync(join(outDir, 'src', 'relay.mjs'), 'utf8')).toContain('export class RelayRoom');
   });
 
+  it('image: true → 預建映像跟 SDK 版號；從自建改成映像時移除不再需要的 Dockerfile／server.mjs／package.json／sdk/（SDK ADR 0143）', async () => {
+    const outDir = mkdtempSync(join(tmpdir(), 'pkg-'));
+    const sdkRoot = fakeSdk();
+    await buildRelayPackage({ config: dockerConfig, outDir, sdkRoot });
+    expect(existsSync(join(outDir, 'Dockerfile'))).toBe(true);
+    const result = await buildRelayPackage({ config: dockerConfig, outDir, sdkRoot, image: true });
+    expect(result.copiedSdk).toBe(false);
+    expect(result.removed).toEqual(expect.arrayContaining(['Dockerfile', 'server.mjs', 'package.json', '.dockerignore', 'sdk/']));
+    expect(readFileSync(join(outDir, 'docker-compose.yml'), 'utf8')).toContain('image: "ghcr.io/vaalrl/cinderous-relay-lite:v9.9.9"');
+  });
+
+  it('🔴 清單裡指到輸出目錄外的路徑（不信任來源的部署包）：拒絕，不刪不讀目錄外的檔案', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'pkg-parent-'));
+    const outDir = join(parent, 'out');
+    const sdkRoot = fakeSdk();
+    await buildRelayPackage({ config: dockerConfig, outDir, sdkRoot });
+    const victim = join(parent, 'victim.txt');
+    writeFileSync(victim, 'keep me');
+    const manifest = JSON.parse(readFileSync(join(outDir, GENERATED_MANIFEST), 'utf8')) as { files: Record<string, string> };
+    const { createHash } = await import('node:crypto');
+    for (const evil of ['../victim.txt', '/etc/passwd', 'a\\..\\..\\victim.txt']) {
+      const m = { ...manifest, files: { ...manifest.files, [evil]: createHash('sha256').update('keep me').digest('hex') } };
+      writeFileSync(join(outDir, GENERATED_MANIFEST), JSON.stringify(m));
+      await expect(buildRelayPackage({ config: dockerConfig, outDir, sdkRoot, image: true, force: true }), evil).rejects.toThrow(/輸出目錄外/);
+      expect(readFileSync(victim, 'utf8')).toBe('keep me');
+    }
+  });
+
+  it('image 給字串＝指定映像；與 sdkSpec 一起給是錯誤', async () => {
+    const outDir = mkdtempSync(join(tmpdir(), 'pkg-'));
+    await buildRelayPackage({ config: dockerConfig, outDir, sdkRoot: fakeSdk(), image: 'registry.example.com/r:v1' });
+    expect(readFileSync(join(outDir, 'docker-compose.yml'), 'utf8')).toContain('image: "registry.example.com/r:v1"');
+    await expect(buildRelayPackage({ config: dockerConfig, outDir, sdkRoot: fakeSdk(), image: true, sdkSpec: 'github:x/y#v1' })).rejects.toThrow(/image|映像/);
+  });
+
   it('自帶 LICENSE 檢查：SDK 沒有 LICENSE 就拒絕（AGPL 要附全文）', async () => {
     const sdkRoot = mkdtempSync(join(tmpdir(), 'no-license-'));
     writeFileSync(join(sdkRoot, 'package.json'), JSON.stringify({ name: '@cinderous/client', version: '9.9.9' }));

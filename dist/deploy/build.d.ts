@@ -7,8 +7,13 @@ export interface BuildRelayPackageOptions {
     outDir: string;
     /** Workers：附預打包的中繼（`src/relay.mjs`），不需要安裝 SDK */
     selfContained?: boolean;
-    /** SDK 改以套件相依安裝（例如 `github:VaalRL/cinderous-sdk#v0.91.0`），不內嵌 `sdk/` */
+    /** SDK 改以套件相依安裝（例如 `github:VaalRL/cinderous-sdk#v0.92.0`），不內嵌 `sdk/` */
     sdkSpec?: string;
+    /**
+     * Node 目標直接用預建映像（SDK ADR 0143），不建置：`true`＝`ghcr.io/vaalrl/cinderous-relay-lite:v<SDK 版號>`，
+     * 字串＝指定的映像（例如自己的鏡像站）。不能與 `sdkSpec`、`selfContained` 一起用。
+     */
+    image?: true | string;
     /** 覆寫被手改過、或不是 relay build 產生的檔案 */
     force?: boolean;
     /** 以下供測試替換 */

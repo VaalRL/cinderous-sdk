@@ -13,6 +13,9 @@ hero:
       text: Read the overview
       link: /README
     - theme: alt
+      text: Relay configurator
+      link: /configurator
+    - theme: alt
       text: Self-host a relay
       link: /docs/guides/self-host-vps
     - theme: alt

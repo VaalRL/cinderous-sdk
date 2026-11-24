@@ -67,6 +67,7 @@ export function renderDeployGuide(config, locale, ctx) {
     const site = config.site ?? {};
     const embed = ctx.embedSdk !== false;
     const selfContained = worker && ctx.selfContained === true;
+    const image = worker ? undefined : ctx.prebuiltImage;
     const endpoints = deployEndpoints(config);
     const persist = config.node?.persist === true;
     const allowlist = site.allowedPubkeys?.length ?? 0;
@@ -108,7 +109,7 @@ export function renderDeployGuide(config, locale, ctx) {
     }
     if (lanes > 0)
         summary.push(`- ${t('已知租戶車道', 'Known app lanes')}：${site.appLanes.map((l) => `\`${l}\``).join(', ')}`);
-    summary.push(`- SDK：${selfContained ? t('預打包在 `src/relay.mjs`', 'pre-bundled in `src/relay.mjs`') : embed ? t('內嵌在 `sdk/`（`file:./sdk`）', 'embedded in `sdk/` (`file:./sdk`)') : t('以 `package.json` 的相依安裝', 'installed from the dependency in `package.json`')}（${ctx.sdkVersion}）`);
+    summary.push(`- SDK：${image !== undefined ? t(`預建映像 \`${image}\`（SDK ADR 0143）`, `prebuilt image \`${image}\` (SDK ADR 0143)`) : selfContained ? t('預打包在 `src/relay.mjs`', 'pre-bundled in `src/relay.mjs`') : embed ? t('內嵌在 `sdk/`（`file:./sdk`）', 'embedded in `sdk/` (`file:./sdk`)') : t('以 `package.json` 的相依安裝', 'installed from the dependency in `package.json`')}（${ctx.sdkVersion}）`);
     out.push(...summary);
     // 1. 前置工具
     h2(t('1. 前置工具', '1. Prerequisites'));
@@ -227,7 +228,7 @@ export function renderDeployGuide(config, locale, ctx) {
         if (plaintextEnv !== undefined) {
             out.push(t(`Shelly 的設備金鑰從 \`.env\` 的 \`${plaintextEnv}\` 代入 \`IOT_PLAINTEXT_DEVICE_KEYS\`；沒設就不會啟動（SDK ADR 0139）。`, `The Shelly device keys come from \`${plaintextEnv}\` in \`.env\` into \`IOT_PLAINTEXT_DEVICE_KEYS\`; compose refuses to start without them (SDK ADR 0139).`), '');
         }
-        code('bash', 'docker compose up -d --build', target === 'home-tunnel' ? t('docker compose logs -f cloudflared   # 看到 "Registered tunnel connection" 就通了', 'docker compose logs -f cloudflared   # "Registered tunnel connection" means it is up') : 'docker compose ps');
+        code('bash', ...(image !== undefined ? ['docker compose pull', 'docker compose up -d'] : ['docker compose up -d --build']), target === 'home-tunnel' ? t('docker compose logs -f cloudflared   # 看到 "Registered tunnel connection" 就通了', 'docker compose logs -f cloudflared   # "Registered tunnel connection" means it is up') : 'docker compose ps');
         if (target === 'docker') {
             out.push('', t(`中繼在 \`ws://localhost:${config.node?.port ?? DEFAULT_DOCKER_PORT}\`。對外公開要在前面放 TLS 反向代理（例如 Caddy），客戶端才連得到 \`wss://\`；放了代理就在設定檔設 \`node.trustProxy: true\`，IP 限速才看得到真正的來源。`, `The relay listens on \`ws://localhost:${config.node?.port ?? DEFAULT_DOCKER_PORT}\`. To expose it, put a TLS reverse proxy (e.g. Caddy) in front so clients can reach \`wss://\`; then set \`node.trustProxy: true\` in the config so IP rate limits see the real source.`));
             if (dockerBind !== undefined) {
@@ -284,6 +285,12 @@ export function renderDeployGuide(config, locale, ctx) {
     }
     else if (target === 'fly') {
         code('bash', `fly releases --app ${name} --image`, `fly deploy --app ${name} --image <${t('上一版的映像', 'previous image')}> --ha=false`);
+    }
+    else if (image !== undefined) {
+        out.push(t('把部署包放進 git：回滾就是切回上一個提交（`docker-compose.yml` 裡的映像標籤跟著回到上一版），再拉映像重啟。', 'Keep the package in git: rolling back is checking out the previous commit (the image tag in `docker-compose.yml` goes back with it), then pulling and restarting.'), '');
+        code('bash', 'git checkout <' + t('上一個提交', 'previous commit') + '> -- .', 'docker compose pull', 'docker compose up -d');
+        if (persist)
+            out.push('', t('volume 裡的 SQLite 會保留。回滾到較舊的 SDK 版本前，先看這幾版之間的 ADR 有沒有改中繼的資料表。', 'The SQLite file on the volume is kept. Before rolling back to an older SDK version, check the ADRs in between for changes to the relay tables.'));
     }
     else {
         out.push(t('把部署包放進 git：回滾就是切回上一個提交，再重建。', 'Keep the package in git: rolling back is checking out the previous commit and rebuilding.'), '');
@@ -350,7 +357,7 @@ export function renderDeployGuide(config, locale, ctx) {
     out.push(...checks);
     // 10. 授權
     h2(t('10. 授權', '10. License'));
-    out.push(t(`- SDK（@cinderous/client）是 **AGPL-3.0-only**（\`LICENSE\`）。這個部署包${selfContained ? '附了預打包的中繼（`src/relay.mjs`）' : embed ? '內嵌了 SDK（`sdk/`）' : '以相依引用 SDK'}，對應原始碼見 \`SOURCE.md\`。`, `- The SDK (@cinderous/client) is **AGPL-3.0-only** (\`LICENSE\`). This package ${selfContained ? 'ships the pre-bundled relay (`src/relay.mjs`)' : embed ? 'embeds the SDK (`sdk/`)' : 'depends on the SDK'}; see \`SOURCE.md\` for the corresponding source.`), t('- 產生的設定檔與膠水程式（`wrangler.toml`、`docker-compose.yml`、`fly.toml`、`Dockerfile`、`server.mjs`、`src/entry.mjs`、`.env.example`、這份說明……）以 **MIT-0** 授權：隨你改、不必署名。', '- The generated config and glue files (`wrangler.toml`, `docker-compose.yml`, `fly.toml`, `Dockerfile`, `server.mjs`, `src/entry.mjs`, `.env.example`, this guide…) are **MIT-0**: change them freely, no attribution needed.'), t(`- 🔴 **改過中繼程式**再讓別人連線使用，AGPL §13 要求向這些使用者提供修改後的原始碼：把 \`site.relaySoftwareUrl\` 指向它（NIP-11 \`software\`；最長 ${RELAY_SITE_LIMITS.relaySoftwareUrl} 字）。只改設定、沒改程式不必。`, `- 🔴 If you **modify the relay program** and let others connect to it, AGPL §13 requires offering them your modified source: point \`site.relaySoftwareUrl\` at it (NIP-11 \`software\`; at most ${RELAY_SITE_LIMITS.relaySoftwareUrl} characters). Changing only the configuration does not count.`));
+    out.push(t(`- SDK（@cinderous/client）是 **AGPL-3.0-only**（\`LICENSE\`）。這個部署包${image !== undefined ? `使用預建映像 \`${image}\`（內含 SDK）` : selfContained ? '附了預打包的中繼（`src/relay.mjs`）' : embed ? '內嵌了 SDK（`sdk/`）' : '以相依引用 SDK'}，對應原始碼見 \`SOURCE.md\`。`, `- The SDK (@cinderous/client) is **AGPL-3.0-only** (\`LICENSE\`). This package ${image !== undefined ? `uses the prebuilt image \`${image}\` (which contains the SDK)` : selfContained ? 'ships the pre-bundled relay (`src/relay.mjs`)' : embed ? 'embeds the SDK (`sdk/`)' : 'depends on the SDK'}; see \`SOURCE.md\` for the corresponding source.`), t('- 產生的設定檔與膠水程式（`wrangler.toml`、`docker-compose.yml`、`fly.toml`、`Dockerfile`、`server.mjs`、`src/entry.mjs`、`.env.example`、這份說明……）以 **MIT-0** 授權：隨你改、不必署名。', '- The generated config and glue files (`wrangler.toml`, `docker-compose.yml`, `fly.toml`, `Dockerfile`, `server.mjs`, `src/entry.mjs`, `.env.example`, this guide…) are **MIT-0**: change them freely, no attribution needed.'), t(`- 🔴 **改過中繼程式**再讓別人連線使用，AGPL §13 要求向這些使用者提供修改後的原始碼：把 \`site.relaySoftwareUrl\` 指向它（NIP-11 \`software\`；最長 ${RELAY_SITE_LIMITS.relaySoftwareUrl} 字）。只改設定、沒改程式不必。`, `- 🔴 If you **modify the relay program** and let others connect to it, AGPL §13 requires offering them your modified source: point \`site.relaySoftwareUrl\` at it (NIP-11 \`software\`; at most ${RELAY_SITE_LIMITS.relaySoftwareUrl} characters). Changing only the configuration does not count.`));
     // 11. 連上這座中繼
     h2(t('11. 連上這座中繼', '11. Connect to this relay'));
     code('ts', "import { Identity, RelayPool } from '@cinderous/client';", '', t('// 正式使用請以 loadOrCreateIdentity 保存身分', '// in a real app, persist the identity with loadOrCreateIdentity'), 'const identity = Identity.generate();', `const pool = new RelayPool({ urls: ['${endpoints.ws}${lanePath}'], identity });`, 'pool.connect();');

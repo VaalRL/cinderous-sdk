@@ -16,6 +16,7 @@ import {
   renderDockerfile,
   renderDockerignore,
   renderFlyToml,
+  relayImageRef,
   renderServerEntry,
   renderWranglerToml,
 } from '../render.js';
@@ -57,9 +58,11 @@ export interface DeployPackageContext {
   /**
    * SDK 怎麼進到部署包：
    * - `embed`（預設，公開前）：複製到 `sdk/`，以 `file:./sdk` 安裝——由寫檔的一方（CLI）複製，這裡只回報 `copySdk`；
-   * - `spec`：以套件相依安裝，例如 `github:VaalRL/cinderous-sdk#v0.91.0`（公開 repo；不上 npm，SDK ADR 0110）。
+   * - `spec`：以套件相依安裝，例如 `github:VaalRL/cinderous-sdk#v0.92.0`（公開 repo；不上 npm，SDK ADR 0110）。
+   * - `image`：Node 目標（docker、home-tunnel、fly）直接用預建映像（SDK ADR 0143），部署包不含 Dockerfile／server.mjs／package.json；
+   *   `image` 沒給＝`relayImageRef(sdkVersion)`（`ghcr.io/vaalrl/cinderous-relay-lite:v<版號>`）。
    */
-  sdkSource?: { kind: 'embed' } | { kind: 'spec'; spec: string };
+  sdkSource?: { kind: 'embed' } | { kind: 'spec'; spec: string } | { kind: 'image'; image?: string };
   /** Workers 目標：附預打包的中繼（`src/relay.mjs`），不需要安裝 SDK。需要 `relayWorkerSource`。 */
   selfContained?: boolean;
   /** 預打包的中繼 Worker 原始碼（`@cinderous/client/deploy/cloudflare-api` 的 `relayWorkerSource`） */
@@ -185,7 +188,7 @@ function renderGitignore(sdkVersion: string): string {
   return [...header('#', sdkVersion), '.env', '.env.*', '!.env.example', '.secrets/', '.dev.vars', '*.db', 'node_modules/', '.wrangler/', ''].join('\n');
 }
 
-function renderSourceMd(config: DeployConfig, ctx: DeployPackageContext, embed: boolean, selfContained: boolean, mit0Files: readonly string[]): string {
+function renderSourceMd(config: DeployConfig, ctx: DeployPackageContext, embed: boolean, selfContained: boolean, mit0Files: readonly string[], image?: string): string {
   const v = ctx.sdkVersion;
   const sdkFiles = selfContained ? ['src/relay.mjs'] : embed ? ['sdk/'] : [];
   return [
@@ -197,6 +200,12 @@ function renderSourceMd(config: DeployConfig, ctx: DeployPackageContext, embed: 
     `- 原始碼／Source：${SDK_SOURCE_REPO}/tree/v${v}`,
     `- 這個部署包${sdkFiles.length > 0 ? `內含 SDK 的目的碼：${sdkFiles.map((f) => `\`${f}\``).join('、')}` : '以套件相依引用 SDK（不內含它的程式碼）'}。`,
     `  This package ${sdkFiles.length > 0 ? `contains SDK object code: ${sdkFiles.map((f) => `\`${f}\``).join(', ')}` : 'references the SDK as a dependency (it contains none of its code)'}.`,
+    ...(image !== undefined
+      ? [
+          `- 中繼跑在預建映像 \`${image}\`（內含 SDK 的目的碼；建置用的 Dockerfile 在原始碼的 \`docker/relay-lite/\`，SDK ADR 0143）。`,
+          `  The relay runs from the prebuilt image \`${image}\` (it contains SDK object code; its Dockerfile is \`docker/relay-lite/\` in the source, SDK ADR 0143).`,
+        ]
+      : []),
     '',
     '🔴 SDK 目前是私有 repo：上面的連結對沒有權限的人無效。在 SDK 公開之前，**不要把內含 SDK 的部署包交給第三方**（AGPL §6 要求同時提供對應原始碼）。',
     'The SDK repository is currently private, so the link above does not work for people without access. Until the SDK is public, **do not hand a package that contains SDK code to third parties** (AGPL §6 requires providing the corresponding source with it).',
@@ -295,9 +304,12 @@ export function renderDeployPackage(config: DeployConfig, ctx: DeployPackageCont
   if (ctx.selfContained === true && push) throw new Error('--self-contained 只適用於中繼：推播閘道的部署包以相依（或內嵌的 sdk/）引用 SDK');
   if (selfContained && !ctx.relayWorkerSource) throw new Error('selfContained 需要 relayWorkerSource（預打包的中繼 Worker）');
   const source = ctx.sdkSource ?? { kind: 'embed' };
-  const embed = !selfContained && source.kind === 'embed';
-  const dependency = selfContained ? undefined : source.kind === 'spec' ? source.spec : 'file:./sdk';
   const v = ctx.sdkVersion;
+  // 預建映像（SDK ADR 0143）只有 Node 中繼的映像：Workers 沒有容器、推播閘道是另一支程式
+  const image = source.kind === 'image' ? (source.image ?? relayImageRef(v)) : undefined;
+  if (image !== undefined && (worker || push)) throw new Error('預建映像（--image）只適用於 Node 中繼的目標（docker、home-tunnel、fly）');
+  const embed = !selfContained && source.kind === 'embed';
+  const dependency = selfContained || image !== undefined ? undefined : source.kind === 'spec' ? source.spec : 'file:./sdk';
   const name = config.name ?? DEFAULT_WORKER_NAME;
   // 秘密（私人路徑）換成佔位值再產生；用到它的變數下面改寫成從環境讀（部署包不含秘密，SDK ADR 0051）
   const site: RelaySiteOptions = siteWithPlaceholders(config.site);
@@ -357,12 +369,15 @@ export function renderDeployPackage(config: DeployConfig, ctx: DeployPackageCont
     if (config.site?.iotPlaintextDevices === true && config.target !== 'fly') {
       environment[IOT_PLAINTEXT_DEVICE_KEYS_ENV] = composeRequiredEnv(secretEnvName(config, 'iotPlaintextDeviceKeys'), 'Shelly device keys, SDK ADR 0139');
     }
-    add('Dockerfile', renderDockerfile(v, { embedSdk: embed, header: header('#', v) }));
-    add('server.mjs', renderServerEntry({ header: header('//', v) }));
-    add('package.json', packageJson(config, dependency, false));
-    add('.dockerignore', [...header('#', v), renderDockerignore()].join('\n'));
+    if (image === undefined) {
+      add('Dockerfile', renderDockerfile(v, { embedSdk: embed, header: header('#', v) }));
+      add('server.mjs', renderServerEntry({ header: header('//', v) }));
+      add('package.json', packageJson(config, dependency, false));
+      add('.dockerignore', [...header('#', v), renderDockerignore()].join('\n'));
+    }
+    const imageOption = image === undefined ? {} : { image };
     if (config.target === 'fly') {
-      add('fly.toml', renderFlyToml({ name, region: config.fly?.region ?? DEFAULT_FLY_REGION, environment, persist, header: header('#', v) }));
+      add('fly.toml', renderFlyToml({ name, region: config.fly?.region ?? DEFAULT_FLY_REGION, environment, persist, header: header('#', v), ...imageOption }));
     } else {
       add(
         'docker-compose.yml',
@@ -371,6 +386,7 @@ export function renderDeployPackage(config: DeployConfig, ctx: DeployPackageCont
           port: config.node?.port ?? DEFAULT_DOCKER_PORT,
           environment,
           header: header('#', v),
+          ...imageOption,
           ...(config.target === 'docker' ? bindOption(composeBindAddress(config.node?.bindAddress, trustProxy)) : {}),
           ...(config.target === 'home-tunnel'
             ? {
@@ -387,11 +403,11 @@ export function renderDeployPackage(config: DeployConfig, ctx: DeployPackageCont
   add('.env.example', renderEnvExample(config, v));
   add('.gitignore', renderGitignore(v));
   for (const locale of DEPLOY_GUIDE_LOCALES) {
-    add(DEPLOY_GUIDE_FILES[locale], renderDeployGuide(config, locale, { sdkVersion: v, embedSdk: embed, selfContained }));
+    add(DEPLOY_GUIDE_FILES[locale], renderDeployGuide(config, locale, { sdkVersion: v, embedSdk: embed, selfContained, ...(image !== undefined ? { prebuiltImage: image } : {}) }));
   }
   add('LICENSE', ctx.licenseText, 'text');
   const mit0 = files.filter((f) => f.license === 'MIT-0').map((f) => f.path);
-  add('SOURCE.md', renderSourceMd(config, ctx, embed, selfContained, [...mit0, 'SOURCE.md', GENERATED_MANIFEST]));
+  add('SOURCE.md', renderSourceMd(config, ctx, embed, selfContained, [...mit0, 'SOURCE.md', GENERATED_MANIFEST], image));
   add(GENERATED_MANIFEST, renderManifest(config, v, files, embed));
   return { files, copySdk: embed };
 }

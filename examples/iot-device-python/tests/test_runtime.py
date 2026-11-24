@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import random
 import struct
 import time
 
@@ -218,3 +219,104 @@ async def test_unreachable_is_network_down_fast_retry():
     await asyncio.wait_for(task, 5)
     ev = next(e for e in events if e.state == "network-down")
     assert 1_000 <= ev.retry_in_ms <= 1_300
+
+
+# ── 程式碼審查（2026-11-18）────────────────────────────────────────────────
+
+
+async def test_clock_guard_resyncs_before_it_expires():
+    """🔴 開機只同步一次的話，24 小時後時鐘變「不同步」、之後所有指令都被拒絕——要在過期前自己重新同步。"""
+    mono = {"t": 0.0}
+    calls: list[float] = []
+
+    def query(server: str) -> float:
+        calls.append(mono["t"])
+        return 1.0
+
+    g = ClockGuard(servers=["a"], query=query, monotonic=lambda: mono["t"], wall=lambda: 1000.0, max_age_sec=100)
+    assert g.sync()
+    ticks: list[float] = []
+
+    async def fake_sleep(sec: float) -> None:
+        mono["t"] += sec
+        ticks.append(sec)
+        if len(ticks) >= 30:
+            raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        await g.keep_synced(refresh_sec=30, check_sec=10, sleep=fake_sleep)
+    assert mono["t"] == 300
+    assert g.synced()
+    assert len(calls) >= 8
+
+
+async def test_clock_guard_keeps_retrying_until_first_sync():
+    mono = {"t": 0.0}
+    results = [OSError("down"), OSError("down"), 2.0]
+
+    def query(server: str) -> float:
+        r = results.pop(0) if results else 2.0
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+    g = ClockGuard(servers=["a"], query=query, monotonic=lambda: mono["t"], wall=lambda: 1000.0, max_age_sec=100)
+    n = {"i": 0}
+
+    async def fake_sleep(sec: float) -> None:
+        mono["t"] += sec
+        n["i"] += 1
+        if n["i"] >= 3:
+            raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        await g.keep_synced(refresh_sec=30, check_sec=10, sleep=fake_sleep)
+    assert g.synced()
+    assert g.now_ms() == 1_002_000
+
+
+def test_trusted_system_clock_never_queries():
+    def query(server: str) -> float:
+        raise AssertionError("不該查 SNTP")
+
+    g = ClockGuard(servers=["a"], query=query, trust_system_clock=True)
+    assert g.due(30) is False
+
+
+def test_retry_after_only_ascii_digits_and_nan_is_safe():
+    from cinder_iot_device import backoff
+
+    d = backoff.classify_http(429, {"Cinder-Relay": "1", "Retry-After": "٣٠"}, '{"error":"rate-limited: iot-upgrade: x"}', 1_800_000_000)
+    assert d.to_json_obj() == {"class": "relay-error"}
+    assert backoff.classify_close(4429, "iot-quota:٣٠").to_json_obj() == {"class": "quota-exhausted"}
+    for bad in (math.nan, math.inf, -math.inf):
+        ms = backoff.retry_delay_ms(backoff.Disconnect("network-down"), bad, 0, True, bad)
+        assert ms == backoff.retry_delay_ms(backoff.Disconnect("network-down"), 0, 0, True, 0.0)
+
+
+class _ZeroRandom(random.Random):
+    def random(self) -> float:
+        return 0.0
+
+
+async def test_reconnect_backoff_resets_after_a_successful_connection():
+    """連上過、之後才斷：下一次從頭退避（不然每天斷一次的設備，一週後每次都要等 60 秒）。"""
+    events, seen = [], asyncio.Event()
+
+    def on_link(ev):
+        events.append(ev)
+        if sum(e.state == "network-down" for e in events) >= 3:
+            seen.set()
+
+    async def drop(ws):
+        await ws.close(1011, "bye")
+
+    async with serve(drop, "127.0.0.1", 0) as server:
+        port = server.sockets[0].getsockname()[1]
+        runner = DeviceRunner(core=_core([]), urls=[f"ws://127.0.0.1:{port}/x"], token=TOKEN, on_link=on_link, now_ms=lambda: 0, rng=_ZeroRandom())
+        task = asyncio.create_task(runner.run())
+        await asyncio.wait_for(seen.wait(), 10)
+        runner.stop()
+        await asyncio.wait_for(task, 5)
+    delays = [e.retry_in_ms for e in events if e.state == "network-down"]
+    assert delays[:3] == [1_000, 1_000, 1_000]

@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { sdkRootDir, sdkVersion } from './common.js';
 import { copySdkRuntime } from './container.js';
 import { DEPLOY_CONFIG_FILE, GENERATED_MANIFEST, modifiedGeneratedFiles, renderDeployPackage, validateDeployConfig, } from './config/index.js';
+import { isSafeRelativePath } from './zip.js';
 async function loadRelayWorkerSource(sdkRoot) {
     // 動態載入：打包好的 Worker（約 60KB）只屬於 ./deploy/cloudflare-api，不進 ./deploy 的模組圖（SDK ADR 0021 的守門）
     const url = pathToFileURL(join(sdkRoot, 'dist', 'deploy', 'cloudflare-api', 'relay-worker-bundle.js')).href;
@@ -26,6 +27,9 @@ export async function buildRelayPackage(opts) {
         throw new Error(`設定檔有 ${lines.length} 個錯誤，沒有產生任何檔案：\n${lines.join('\n')}`);
     }
     const config = opts.config;
+    if (opts.image !== undefined && (opts.sdkSpec !== undefined || opts.selfContained)) {
+        throw new Error('預建映像（image）不能與 sdkSpec、selfContained 一起用：映像裡已經有 SDK');
+    }
     const licensePath = join(sdkRoot, 'LICENSE');
     const licenseText = existsSync(licensePath) ? readFileSync(licensePath, 'utf8') : '';
     if (licenseText === '')
@@ -34,6 +38,7 @@ export async function buildRelayPackage(opts) {
         sdkVersion: version,
         licenseText,
         ...(opts.sdkSpec !== undefined ? { sdkSource: { kind: 'spec', spec: opts.sdkSpec } } : {}),
+        ...(opts.image !== undefined ? { sdkSource: { kind: 'image', ...(opts.image === true ? {} : { image: opts.image }) } } : {}),
         ...(opts.selfContained ? { selfContained: true, relayWorkerSource: opts.relayWorkerSource ?? (await loadRelayWorkerSource(sdkRoot)) } : {}),
     });
     const outDir = resolve(opts.outDir);
@@ -52,6 +57,12 @@ export async function buildRelayPackage(opts) {
         }
         catch {
             previous = undefined;
+        }
+        // 🔴 清單來自輸出目錄（可能是別人給的部署包）：路徑必須留在輸出目錄裡，否則下面的比對與刪檔會碰到目錄外的檔案
+        const escaping = Object.keys(previous?.files ?? {}).filter((path) => !isSafeRelativePath(path));
+        if (escaping.length > 0) {
+            throw new Error(`${join(outDir, GENERATED_MANIFEST)} 列了指到輸出目錄外的路徑：${escaping.map((p) => JSON.stringify(p)).join('、')}。` +
+                '這不是 relay build 會寫出的清單；檢查這個部署包的來源，或刪掉這個清單檔再重新產生');
         }
         conflicts.push(...modifiedGeneratedFiles(previousText, read).filter((path) => !isInputConfig(path)));
     }
